@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 数据转换器 - 智能数据格式化工具</title>
+    <link rel="preload" href="style.css?v=3" as="style">
+    <link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+    <!-- 背景视频 -->
+    <div class="bg-container">
+        <video class="bg-video" autoplay muted loop playsinline preload="metadata">
+            <source src="background/Genshin%20Impact%20-%20%20Kusanali%20in%20the%20forest%20-%20PC.mp4" type="video/mp4">
+        </video>
+    </div>
+
+    <!-- 主容器 -->
+    <div class="container">
+        <!-- 顶部导航栏 -->
+        <header class="header">
+            <h1 class="logo">AI 数据转换器</h1>
+            <p class="subtitle">自动将各种格式数据转换为AI可识别的标准化数据</p>
+        </header>
+
+        <!-- 主要内容区 -->
+        <main class="main-content">
+            <!-- 上传区域 -->
+            <section class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">&#128193;</div>
+                    <div class="upload-text">
+                        <h3>拖放文件到此处或点击上传</h3>
+                        <p class="upload-hint">支持 PPT、PDF、图片、TXT、CSV 等格式，文件大小不超过 50MB</p>
+                    </div>
+                    <input type="file" id="fileInput" accept=".ppt,.pptx,.pdf,.jpg,.jpeg,.png,.gif,.txt,.csv" style="display: none;">
+                    <button class="btn-primary btn-upload">选择文件</button>
+                </div>
+
+                <!-- 已上传文件显示 -->
+                <div class="uploaded-file" id="uploadedFile" style="display: none;">
+                    <div class="file-info">
+                        <span class="file-icon" id="fileIcon">&#128196;</span>
+                        <div class="file-details">
+                            <span class="file-name" id="fileName"></span>
+                            <span class="file-size" id="fileSize"></span>
+                        </div>
+                    </div>
+                    <button class="btn-delete" id="deleteFile" title="删除文件">&#128465;</button>
+                </div>
+            </section>
+
+            <!-- 转换选项 -->
+            <section class="options-section" id="optionsSection" style="display: none;">
+                <div class="option-group">
+                    <label for="conversionType">转换类型</label>
+                    <select id="conversionType">
+                        <option value="auto">自动检测</option>
+                        <option value="text">纯文本提取</option>
+                        <option value="structured">结构化数据</option>
+                        <option value="table">表格提取</option>
+                        <option value="image_desc">图片描述</option>
+                        <option value="ocr">OCR文字识别</option>
+                        <option value="encoding">编码修复</option>
+                    </select>
+                </div>
+                <div class="option-group">
+                    <label for="outputFormat">输出格式</label>
+                    <select id="outputFormat">
+                        <option value="json">JSON</option>
+                        <option value="markdown">Markdown</option>
+                        <option value="text">纯文本</option>
+                        <option value="html">HTML</option>
+                    </select>
+                </div>
+                <div class="option-group full-width">
+                    <label for="customPrompt">自定义指令（可选）</label>
+                    <input type="text" id="customPrompt" placeholder="输入自定义转换要求，例如：提取所有表格并转换为JSON格式">
+                </div>
+            </section>
+
+            <!-- 生成按钮 -->
+            <section class="action-section">
+                <button class="btn-generate" id="convertBtn" disabled>
+                    <span class="btn-text">&#9889; 开始转换</span>
+                    <span class="btn-loading" style="display: none;">
+                        <span class="spinner"></span>
+                        转换中...
+                    </span>
+                </button>
+            </section>
+
+            <!-- 状态显示 -->
+            <section class="status-section" id="statusSection" style="display: none;">
+                <div class="status-message" id="statusMessage"></div>
+                <div class="progress-bar" id="progressBar" style="display: none;">
+                    <div class="progress-fill"></div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 结果展示区域 -->
+        <section class="result-section" id="resultSection" style="display: none;">
+            <div class="result-header">
+                <h2>&#128202; 转换结果</h2>
+                <div class="result-info">
+                    <span id="resultFileName"></span>
+                    <span id="resultConfidence"></span>
+                </div>
+            </div>
+            <div class="result-tabs">
+                <button class="tab-btn active" data-tab="content">转换内容</button>
+                <button class="tab-btn" data-tab="structured">结构化数据</button>
+                <button class="tab-btn" data-tab="logs">处理日志</button>
+            </div>
+            <div class="result-content" id="resultContent"></div>
+            <div class="result-actions">
+                <button class="btn-secondary" id="copyBtn">&#128203; 复制结果</button>
+                <button class="btn-secondary" id="downloadBtn">&#128190; 下载结果</button>
+                <button class="btn-outline" id="newBtn">&#128260; 重新上传</button>
+            </div>
+        </section>
+
+        <!-- 底部信息区 -->
+        <footer class="footer">
+            <p>&copy; 2026 AI 数据转换器 | 智能数据格式化工具</p>
+        </footer>
+    </div>
+
+    <script src="script.js?v=3"></script>
+</body>
+</html>

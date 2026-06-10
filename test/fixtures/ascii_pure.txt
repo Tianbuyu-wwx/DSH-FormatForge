@@ -1,0 +1,6 @@
+ASCII Encoding Test File
+This is a pure ASCII text file.
+No Chinese characters, only English letters and numbers.
+Special chars: !@#$%^&*()_+-=[]{}|;':",./<>?
+Numbers: 1234567890
+Hex: 0x1A 0xFF 0x00

@@ -1,0 +1,14 @@
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.6
+openai==1.12.0
+python-pptx==0.6.23
+pypdf2==3.0.1
+pdfplumber==0.11.9
+aiofiles==23.2.1
+pydantic==2.6.0
+python-dotenv==1.0.0
+httpx==0.26.0
+Pillow==11.3.0
+pdf2image==1.17.0
+pywin32==306; platform_system=="Windows"
