@@ -2,9 +2,9 @@
 依赖注入模块
 提供应用全局共享的单例实例
 """
-from core.converter_engine import DataConverter, BatchConverter
-from core.file_parser import FileParser
 from core.config import settings
+from core.converter_engine import BatchConverter, DataConverter
+from core.file_parser import FileParser
 
 # 全局共享的 DataConverter 实例
 data_converter = DataConverter()

@@ -2,17 +2,16 @@
 安全模块
 文件类型白名单、URL域名白名单、敏感信息脱敏等
 """
-import re
 import logging
+import re
 from pathlib import Path
-from typing import Set, Optional, List
 
 logger = logging.getLogger("security")
 
 # ==================== 文件类型白名单 ====================
 
 # 允许的文件扩展名白名单
-ALLOWED_EXTENSIONS: Set[str] = {
+ALLOWED_EXTENSIONS: set[str] = {
     # 文档
     ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".rtf", ".md",
     # 表格
@@ -28,7 +27,7 @@ ALLOWED_EXTENSIONS: Set[str] = {
 }
 
 # 允许的 MIME 类型白名单
-ALLOWED_MIME_TYPES: Set[str] = {
+ALLOWED_MIME_TYPES: set[str] = {
     "application/pdf",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -62,7 +61,7 @@ def validate_file_extension(filename: str) -> bool:
     return is_allowed
 
 
-def validate_mime_type(mime_type: Optional[str]) -> bool:
+def validate_mime_type(mime_type: str | None) -> bool:
     """
     验证 MIME 类型是否在白名单中
 
@@ -83,10 +82,10 @@ def validate_mime_type(mime_type: Optional[str]) -> bool:
 # ==================== URL 域名白名单 ====================
 
 # 允许下载的域名白名单（空列表表示不做限制，仅阻止已知危险域名）
-ALLOWED_DOMAINS: List[str] = []  # 例如: ["example.com", "cdn.example.com"]
+ALLOWED_DOMAINS: list[str] = []  # 例如: ["example.com", "cdn.example.com"]
 
 # 明确禁止的域名（防止 SSRF 攻击）
-BLOCKED_DOMAINS: Set[str] = {
+BLOCKED_DOMAINS: set[str] = {
     "localhost", "127.0.0.1", "0.0.0.0",
     "169.254.169.254",  # AWS/阿里云元数据
     "metadata.google.internal",
@@ -94,7 +93,7 @@ BLOCKED_DOMAINS: Set[str] = {
 }
 
 # 禁止的内网 IP 段
-BLOCKED_PRIVATE_RANGES: List[str] = [
+BLOCKED_PRIVATE_RANGES: list[str] = [
     "10.", "172.16.", "172.17.", "172.18.", "172.19.",
     "172.20.", "172.21.", "172.22.", "172.23.",
     "172.24.", "172.25.", "172.26.", "172.27.",
@@ -149,7 +148,7 @@ def validate_url_domain(url: str) -> bool:
 
 # ==================== 敏感信息脱敏 ====================
 
-SENSITIVE_PATTERNS: List[str] = [
+SENSITIVE_PATTERNS: list[str] = [
     r'(api[_-]?key["\']?\s*[:=]\s*["\']?)([^"\'\s,;}]+)',
     r'(api[_-]?secret["\']?\s*[:=]\s*["\']?)([^"\'\s,;}]+)',
     r'(secret["\']?\s*[:=]\s*["\']?)([^"\'\s,;}]+)',

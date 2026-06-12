@@ -17,12 +17,14 @@ class TestRichTextParserBasic:
 
     def test_supported_extensions(self):
         parser = RichTextParser()
-        assert ".md" in parser.supported_extensions
-        assert ".markdown" in parser.supported_extensions
+        # Markdown 已由独立的 MarkdownParser 负责
+        assert ".md" not in parser.supported_extensions
+        assert ".markdown" not in parser.supported_extensions
 
     def test_can_parse_md(self):
         parser = RichTextParser()
-        assert parser.can_parse(Path("/tmp/test.md")) == 0.9
+        # .md 不再由 RichTextParser 解析
+        assert parser.can_parse(Path("/tmp/test.md")) == 0.0
 
 
 class TestRichTextParserMarkdown:

@@ -3,11 +3,11 @@ TXT 文件解析器
 支持解析纯文本文件，具备编码自动检测与大文件流式读取能力
 """
 import logging
+from collections.abc import Generator
 from pathlib import Path
-from typing import List, Optional, Generator
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.txt")
 
@@ -24,15 +24,15 @@ class TXTParser(BaseParser):
     """TXT 纯文本解析器"""
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         return [".txt", ".text", ".md", ".log", ".ini", ".conf", ".cfg", ".properties"]
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         # 纯文本无固定魔数，通过扩展名识别
         return []
 
-    def parse(self, file_path: Path) -> List[PageContent]:
+    def parse(self, file_path: Path) -> list[PageContent]:
         """解析 TXT 文件"""
         return list(self.parse_stream(file_path))
 
@@ -60,7 +60,7 @@ class TXTParser(BaseParser):
         total_lines = 0
 
         try:
-            with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
+            with open(file_path, encoding=encoding, errors='ignore') as f:
                 while True:
                     chunk = f.read(chunk_size)
                     if not chunk:
@@ -127,7 +127,7 @@ class TXTParser(BaseParser):
 
         # 回退：尝试 UTF-8，失败则用 GBK
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding='utf-8') as f:
                 f.read(1024)
             return 'utf-8'
         except UnicodeDecodeError:

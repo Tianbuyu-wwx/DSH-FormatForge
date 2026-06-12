@@ -75,6 +75,7 @@ class ConversionType(str, Enum):
 
 class OutputFormat(str, Enum):
     """输出格式"""
+    AUTO = "auto"
     JSON = "json"
     MARKDOWN = "markdown"
     TEXT = "text"

@@ -4,10 +4,9 @@ XLSX/XLS 文件解析器
 """
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.xlsx")
 
@@ -32,16 +31,16 @@ class XLSXParser(BaseParser):
     """Excel 文件解析器"""
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         return [".xlsx", ".xls", ".xlsm", ".xlsb"]
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         # XLSX 是 ZIP 格式
         # XLS 是 OLE2 格式
         return [b"PK\x03\x04", b"\xd0\xcf\x11\xe0"]
 
-    def parse(self, file_path: Path) -> List[PageContent]:
+    def parse(self, file_path: Path) -> list[PageContent]:
         """解析 Excel 文件"""
         ext = file_path.suffix.lower()
 
@@ -53,7 +52,7 @@ class XLSXParser(BaseParser):
             # 尝试用 openpyxl 打开
             return self._parse_xlsx(file_path)
 
-    def _parse_xlsx(self, file_path: Path) -> List[PageContent]:
+    def _parse_xlsx(self, file_path: Path) -> list[PageContent]:
         """解析现代 Excel 格式 (.xlsx, .xlsm)"""
         if not XLSX_AVAILABLE:
             raise ImportError("openpyxl 库未安装，无法解析 XLSX 文件")
@@ -133,13 +132,13 @@ class XLSXParser(BaseParser):
             hasTable=len(elements) > 0
         )]
 
-    def _parse_xls(self, file_path: Path) -> List[PageContent]:
+    def _parse_xls(self, file_path: Path) -> list[PageContent]:
         """解析旧版 Excel 格式 (.xls)"""
         if XLSX_AVAILABLE:
             # 优先尝试用 openpyxl 打开（部分兼容）
             try:
                 return self._parse_xlsx(file_path)
-            except:
+            except Exception:
                 pass
 
         if not XLS_AVAILABLE:
@@ -206,7 +205,7 @@ class XLSXParser(BaseParser):
             hasTable=len(elements) > 0
         )]
 
-    def _detect_header(self, sheet_data: List[List[str]]) -> bool:
+    def _detect_header(self, sheet_data: list[list[str]]) -> bool:
         """检测第一行是否为表头"""
         if len(sheet_data) < 2:
             return False

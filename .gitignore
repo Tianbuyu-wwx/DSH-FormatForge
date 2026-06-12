@@ -1,0 +1,62 @@
+# ==================== Python ====================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ==================== 虚拟环境 ====================
+venv/
+.venv/
+env/
+.env
+
+# ==================== IDE / 编辑器 ====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ==================== 测试与缓存 ====================
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.coverage
+htmlcov/
+cache/
+
+# ==================== 上传与临时文件 ====================
+uploads/
+test_upload.txt
+
+# ==================== 测试目录 ====================
+test/
+
+# ==================== 前端 ====================
+frontend/node_modules/
+frontend/dist/
+frontend/.tsbuildinfo
+*.tsbuildinfo
+
+# ==================== 环境配置 ====================
+# 保留 .env.example 作为模板
+.env
+.env.local
+.env.*.local
+
+# ==================== 日志 ====================
+*.log
+logs/
+
+# ==================== 其他 ====================
+*.bak
+*.orig
+.commit_msg

@@ -2,13 +2,12 @@
 输入适配器模块
 统一处理多种输入源：文件、URL、原始数据、流式数据
 """
-import io
 import logging
 import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Dict, Any, Union, BinaryIO
+from typing import Any, BinaryIO
 from urllib.parse import urlparse
 
 logger = logging.getLogger("input_adapters")
@@ -19,9 +18,9 @@ class InputData:
     """统一输入数据结构"""
     source_type: str  # "file", "url", "raw", "stream"
     data: bytes
-    filename: Optional[str] = None
-    mime_type: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    filename: str | None = None
+    mime_type: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def size(self) -> int:
@@ -58,7 +57,7 @@ class FileInputAdapter(InputAdapter):
             return path.exists() and path.is_file()
         return False
 
-    def read(self, source: Union[str, Path]) -> InputData:
+    def read(self, source: str | Path) -> InputData:
         file_path = Path(source)
 
         if not file_path.exists():
@@ -85,13 +84,13 @@ class FileInputAdapter(InputAdapter):
             }
         )
 
-    def _detect_mime_type(self, file_path: Path) -> Optional[str]:
+    def _detect_mime_type(self, file_path: Path) -> str | None:
         """检测文件 MIME 类型"""
         try:
             import mimetypes
             mime, _ = mimetypes.guess_type(str(file_path))
             return mime
-        except:
+        except Exception:
             return None
 
 
@@ -161,7 +160,7 @@ class UrlInputAdapter(InputAdapter):
             logger.error("下载失败: %s, error=%s", url, e)
             raise RuntimeError(f"下载失败: {e}")
 
-    def _extract_filename(self, url: str, headers: Dict) -> Optional[str]:
+    def _extract_filename(self, url: str, headers: dict) -> str | None:
         """从 URL 或响应头提取文件名"""
         # 从 Content-Disposition 提取
         cd = headers.get('Content-Disposition', '')
@@ -186,7 +185,7 @@ class RawDataAdapter(InputAdapter):
     def can_handle(self, source: Any) -> bool:
         return isinstance(source, (bytes, str))
 
-    def read(self, source: Union[bytes, str], filename: Optional[str] = None) -> InputData:
+    def read(self, source: bytes | str, filename: str | None = None) -> InputData:
         if isinstance(source, str):
             data = source.encode('utf-8')
             logger.debug("原始数据适配器: 字符串输入, length=%d", len(source))
@@ -209,7 +208,7 @@ class StreamInputAdapter(InputAdapter):
     def can_handle(self, source: Any) -> bool:
         return hasattr(source, 'read')
 
-    def read(self, source: BinaryIO, filename: Optional[str] = None, chunk_size: int = 8192) -> InputData:
+    def read(self, source: BinaryIO, filename: str | None = None, chunk_size: int = 8192) -> InputData:
         chunks = []
         total = 0
         while True:

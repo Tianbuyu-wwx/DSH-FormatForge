@@ -3,21 +3,15 @@
 支持解析 .ppt, .pptx, .pdf, .txt, .csv, .doc, .docx, .xls, .xlsx, 图片 等格式
 采用插件化注册表架构，易于扩展新格式
 """
-import os
-import re
-import uuid
 import logging
-from pathlib import Path
-from typing import List, Optional, Dict, Any
+import uuid
 from datetime import datetime
+from pathlib import Path
 
-from core.models import (
-    ParsedFile, PageContent, ExtractedElement,
-    FileType, TaskStatus
-)
+from core.models import FileType, ParsedFile, TaskStatus
 
 # 导入解析器注册表基类
-from parsers import ParserRegistry, BaseParser
+from parsers import ParserRegistry
 
 # 导入各格式解析器
 try:
@@ -86,6 +80,13 @@ try:
 except ImportError:
     RICHTEXT_PARSER_AVAILABLE = False
 
+from parsers.markdown_parser import MarkdownParser
+from parsers.toml_parser import TOMLParser
+from parsers.odf_parser import ODFParser
+from parsers.email_parser import EmailParser
+from parsers.epub_parser import EPUBParser
+from parsers.svg_parser import SVGParser
+
 
 logger = logging.getLogger("file_parser")
 
@@ -95,8 +96,8 @@ class FileParser:
 
     def __init__(self, upload_dir: Path, max_cache_size: int = 1000, cache_ttl: int = 3600):
         self.upload_dir = upload_dir
-        self.parsed_cache: Dict[str, ParsedFile] = {}
-        self._cache_timestamps: Dict[str, float] = {}
+        self.parsed_cache: dict[str, ParsedFile] = {}
+        self._cache_timestamps: dict[str, float] = {}
         self._max_cache_size = max_cache_size
         self._cache_ttl = cache_ttl
 
@@ -160,6 +161,30 @@ class FileParser:
         if RICHTEXT_PARSER_AVAILABLE:
             self.registry.register(RichTextParser())
             logger.info("已注册富文本解析器")
+
+        # 注册 Markdown 解析器（独立注册，位于 RichtextParser 之后以确保覆盖优先级）
+        self.registry.register(MarkdownParser())
+        logger.info("已注册 Markdown 解析器")
+
+        # 注册 TOML 解析器
+        self.registry.register(TOMLParser())
+        logger.info("已注册 TOML 解析器")
+
+        # 注册 ODF 解析器
+        self.registry.register(ODFParser())
+        logger.info("已注册 ODF 解析器")
+
+        # 注册邮件解析器
+        self.registry.register(EmailParser())
+        logger.info("已注册邮件解析器")
+
+        # 注册 EPUB 解析器
+        self.registry.register(EPUBParser())
+        logger.info("已注册 EPUB 解析器")
+
+        # 注册 SVG 解析器
+        self.registry.register(SVGParser())
+        logger.info("已注册 SVG 解析器")
 
         logger.info("解析器注册完成，共 %d 个解析器", len(self.registry.parsers))
 
@@ -309,7 +334,7 @@ class FileParser:
         self._cache_timestamps[parse_id] = now
         logger.debug("缓存已更新: count=%d, max=%d", len(self.parsed_cache), self._max_cache_size)
 
-    def get_parsed_result(self, parse_id: str) -> Optional[ParsedFile]:
+    def get_parsed_result(self, parse_id: str) -> ParsedFile | None:
         """获取解析结果（带TTL检查）"""
         import time
 

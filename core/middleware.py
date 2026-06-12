@@ -2,14 +2,14 @@
 自定义中间件模块
 请求频率限制、请求体积限制等
 """
-import time
 import logging
+import time
+import uuid
 from collections import defaultdict
-from typing import Dict, Tuple
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from core.models import ResponseCode
@@ -36,7 +36,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.window_seconds = window_seconds
         self.enabled = enabled
         # IP -> [(timestamp, count)]
-        self._requests: Dict[str, list] = defaultdict(list)
+        self._requests: dict[str, list] = defaultdict(list)
         logger.info("RateLimitMiddleware 初始化: max=%d/%ds, enabled=%s",
                      max_requests, window_seconds, enabled)
 
@@ -117,3 +117,62 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
                 }
             )
         return await call_next(request)
+
+
+class TraceIDMiddleware(BaseHTTPMiddleware):
+    """
+    Trace ID 中间件
+
+    为每个请求分配唯一 Trace ID，注入到请求状态和日志中
+    """
+
+    def __init__(self, app: ASGIApp, header_name: str = "X-Trace-ID"):
+        super().__init__(app)
+        self.header_name = header_name
+
+    async def dispatch(self, request: Request, call_next):
+        # 从请求头获取 Trace ID，不存在则生成
+        trace_id = request.headers.get(self.header_name) or uuid.uuid4().hex
+        request.state.trace_id = trace_id
+
+        # 记录请求开始
+        start = time.time()
+        method = request.method
+        path = request.url.path
+
+        logger.info(
+            "请求开始",
+            extra={"trace_id": trace_id, "request_method": method, "request_path": path},
+        )
+
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            duration_ms = int((time.time() - start) * 1000)
+            logger.error(
+                "请求异常: %s",
+                exc,
+                extra={
+                    "trace_id": trace_id,
+                    "request_method": method,
+                    "request_path": path,
+                    "duration_ms": duration_ms,
+                },
+            )
+            raise
+
+        # 记录请求完成
+        duration_ms = int((time.time() - start) * 1000)
+        logger.info(
+            "请求完成",
+            extra={
+                "trace_id": trace_id,
+                "request_method": method,
+                "request_path": path,
+                "duration_ms": duration_ms,
+                "status_code": response.status_code,
+            },
+        )
+
+        response.headers[self.header_name] = trace_id
+        return response

@@ -28,8 +28,8 @@ from typing import (
 
 from typing_extensions import Annotated
 
-from .errors import ConfigError
-from .typing import (
+from pydantic.v1.errors import ConfigError
+from pydantic.v1.typing import (
     NoneType,
     WithArgsTypes,
     all_literal_values,
@@ -39,17 +39,17 @@ from .typing import (
     is_literal_type,
     is_union,
 )
-from .version import version_info
+from pydantic.v1.version import version_info
 
 if TYPE_CHECKING:
     from inspect import Signature
     from pathlib import Path
 
-    from .config import BaseConfig
-    from .dataclasses import Dataclass
-    from .fields import ModelField
-    from .main import BaseModel
-    from .typing import AbstractSetIntStr, DictIntStrAny, IntStr, MappingIntStrAny, ReprArgs
+    from pydantic.v1.config import BaseConfig
+    from pydantic.v1.dataclasses import Dataclass
+    from pydantic.v1.fields import ModelField
+    from pydantic.v1.main import BaseModel
+    from pydantic.v1.typing import AbstractSetIntStr, DictIntStrAny, IntStr, MappingIntStrAny, ReprArgs
 
     RichReprResult = Iterable[Union[Any, Tuple[Any], Tuple[str, Any], Tuple[str, Any, Any]]]
 
@@ -66,6 +66,7 @@ __all__ = (
     'almost_equal_floats',
     'get_model',
     'to_camel',
+    'to_lower_camel',
     'is_valid_field',
     'smart_deepcopy',
     'PyObjectStr',
@@ -158,7 +159,7 @@ def sequence_like(v: Any) -> bool:
     return isinstance(v, (list, tuple, set, frozenset, GeneratorType, deque))
 
 
-def validate_field_name(bases: List[Type['BaseModel']], field_name: str) -> None:
+def validate_field_name(bases: Iterable[Type[Any]], field_name: str) -> None:
     """
     Ensure that the field's name does not shadow an existing attribute of the model.
     """
@@ -240,7 +241,7 @@ def generate_model_signature(
     """
     from inspect import Parameter, Signature, signature
 
-    from .config import Extra
+    from pydantic.v1.config import Extra
 
     present_params = signature(init).parameters.values()
     merged_params: Dict[str, Parameter] = {}
@@ -298,7 +299,7 @@ def generate_model_signature(
 
 
 def get_model(obj: Union[Type['BaseModel'], Type['Dataclass']]) -> Type['BaseModel']:
-    from .main import BaseModel
+    from pydantic.v1.main import BaseModel
 
     try:
         model_cls = obj.__pydantic_model__  # type: ignore
@@ -707,6 +708,9 @@ DUNDER_ATTRIBUTES = {
     '__orig_bases__',
     '__orig_class__',
     '__qualname__',
+    '__firstlineno__',
+    '__static_attributes__',
+    '__classdictcell__',
 }
 
 

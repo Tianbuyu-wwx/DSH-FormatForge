@@ -4,10 +4,9 @@ DOCX/DOC 文件解析器
 """
 import logging
 from pathlib import Path
-from typing import List, Optional
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.docx")
 
@@ -26,16 +25,16 @@ class DOCXParser(BaseParser):
     """DOCX/DOC 文件解析器"""
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         return [".docx", ".doc"]
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         # DOCX 是 ZIP 格式
         # DOC 是 OLE2 格式
         return [b"PK\x03\x04", b"\xd0\xcf\x11\xe0"]
 
-    def parse(self, file_path: Path) -> List[PageContent]:
+    def parse(self, file_path: Path) -> list[PageContent]:
         """解析 DOCX 文件"""
         if not DOCX_AVAILABLE:
             raise ImportError("python-docx 库未安装，无法解析 DOCX 文件")

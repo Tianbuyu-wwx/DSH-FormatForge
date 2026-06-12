@@ -126,9 +126,17 @@ def sample_file_info():
 @pytest.fixture(autouse=True)
 def clean_caches():
     """每次测试前清理缓存"""
+    import shutil
+    from pathlib import Path
+
     # 清理 file_parser 缓存
-    from file_parser import FileParser
-    from converter_engine import DataConverter
+    from core.file_parser import FileParser
+    from core.converter_engine import DataConverter
+
+    # 清理 ContentHashCache 的磁盘缓存目录
+    cache_dir = Path("./cache")
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
 
     # 在测试前执行
     yield

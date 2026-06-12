@@ -4,11 +4,11 @@ PDF 文件解析器
 """
 import logging
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import List, Optional, Generator
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.pdf")
 
@@ -36,15 +36,15 @@ class PDFParser(BaseParser):
         self.ocr_engine = ocr_engine
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         return [".pdf"]
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         return [b"%PDF"]
 
     def parse(self, file_path: Path, use_ocr: bool = False,
-              ocr_backend: str = None, ocr_min_confidence: float = 0.5) -> List[PageContent]:
+              ocr_backend: str = None, ocr_min_confidence: float = 0.5) -> list[PageContent]:
         """
         解析 PDF 文件
 
@@ -321,7 +321,7 @@ class PDFParser(BaseParser):
 
         return "text"
 
-    def _format_table(self, table: List[List[Optional[str]]]) -> str:
+    def _format_table(self, table: list[list[str | None]]) -> str:
         """格式化表格为文本"""
         if not table:
             return ""
@@ -355,7 +355,7 @@ class PDFParser(BaseParser):
 
         return "\n---\n".join(summary_parts)
 
-    def extract_tables(self, file_path: Path) -> List[dict]:
+    def extract_tables(self, file_path: Path) -> list[dict]:
         """提取 PDF 中的所有表格"""
         if not PDFPLUMBER_AVAILABLE:
             raise ImportError("pdfplumber 库未安装，无法提取表格")

@@ -40,7 +40,7 @@ def create_text_image(text_lines, width=800, height=1000, bg_color=(255, 255, 25
             font = ImageFont.truetype(fp, font_size)
             title_font = ImageFont.truetype(fp, font_size + 8)
             break
-        except:
+        except Exception:
             continue
 
     if font is None:
@@ -79,7 +79,7 @@ def create_table_image(headers, rows, width=800, height=600):
             font = ImageFont.truetype(fp, 22)
             header_font = ImageFont.truetype(fp, 24)
             break
-        except:
+        except Exception:
             continue
     if font is None:
         font = ImageFont.load_default()
@@ -147,7 +147,7 @@ def create_mixed_content_image(width=800, height=1000):
             font = ImageFont.truetype(fp, 24)
             title_font = ImageFont.truetype(fp, 32)
             break
-        except:
+        except Exception:
             continue
     if font is None:
         font = ImageFont.load_default()

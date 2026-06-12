@@ -3,9 +3,9 @@ AI 预设配置库
 支持多种AI提供商的预设配置，自动发现本地模型
 """
 import logging
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger("ai_presets")
 
@@ -36,11 +36,11 @@ class AiPreset:
     supports_vision: bool = False
     supports_tools: bool = False
     preferred_format: str = "text"
-    headers: Dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
     request_format: str = "openai"  # openai, anthropic, google 等
     description: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
             "model": self.model,
@@ -60,7 +60,7 @@ class AiPresetLibrary:
     """AI预设配置库"""
 
     def __init__(self):
-        self._presets: Dict[str, AiPreset] = {}
+        self._presets: dict[str, AiPreset] = {}
         self._register_default_presets()
 
     def _register_default_presets(self):
@@ -315,7 +315,7 @@ class AiPresetLibrary:
             key = f"{provider_val}/{preset.model}"
             self._presets[key] = preset
 
-    def get_preset(self, provider: str, model: Optional[str] = None) -> Optional[AiPreset]:
+    def get_preset(self, provider: str, model: str | None = None) -> AiPreset | None:
         """获取预设配置"""
         provider_str = provider.value if isinstance(provider, Enum) else str(provider)
         if model:
@@ -329,18 +329,18 @@ class AiPresetLibrary:
                 return preset
         return None
 
-    def get_all_presets(self) -> List[AiPreset]:
+    def get_all_presets(self) -> list[AiPreset]:
         """获取所有预设"""
         return list(self._presets.values())
 
-    def get_providers(self) -> List[str]:
+    def get_providers(self) -> list[str]:
         """获取所有提供商"""
         return list(set(
             p.provider.value if isinstance(p.provider, Enum) else str(p.provider)
             for p in self._presets.values()
         ))
 
-    def get_models_by_provider(self, provider: str) -> List[AiPreset]:
+    def get_models_by_provider(self, provider: str) -> list[AiPreset]:
         """获取指定提供商的所有模型"""
         provider_str = provider.value if isinstance(provider, Enum) else str(provider)
         return [
@@ -355,7 +355,7 @@ class AiPresetLibrary:
         self._presets[key] = preset
         logger.info(f"添加预设: {key}")
 
-    def detect_local_models(self) -> List[AiPreset]:
+    def detect_local_models(self) -> list[AiPreset]:
         """检测本地模型（Ollama, LM Studio）"""
         local_models = []
 
@@ -418,7 +418,7 @@ class AiPresetLibrary:
 
         return local_models
 
-    def get_preset_from_endpoint(self, endpoint: str) -> Optional[AiPreset]:
+    def get_preset_from_endpoint(self, endpoint: str) -> AiPreset | None:
         """从端点URL推断预设"""
         endpoint_lower = endpoint.lower()
 
@@ -444,7 +444,7 @@ class AiPresetLibrary:
 
         return None
 
-    def create_client_config(self, preset: AiPreset, api_key: Optional[str] = None) -> Dict[str, Any]:
+    def create_client_config(self, preset: AiPreset, api_key: str | None = None) -> dict[str, Any]:
         """创建客户端配置"""
         import os
 

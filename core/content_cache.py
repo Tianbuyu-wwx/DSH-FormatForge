@@ -3,14 +3,12 @@
 基于内容哈希的转换结果缓存，支持持久化和跨实例共享
 """
 import hashlib
-import json
 import logging
 import pickle
-import time
-from pathlib import Path
-from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("content_cache")
 
@@ -23,8 +21,8 @@ class CacheEntry:
     created_at: datetime
     expires_at: datetime
     access_count: int = 0
-    last_accessed: Optional[datetime] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    last_accessed: datetime | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class ContentHashCache:
@@ -34,10 +32,10 @@ class ContentHashCache:
         self,
         max_memory_entries: int = 1000,
         default_ttl: int = 3600,
-        persist_path: Optional[Path] = None,
+        persist_path: Path | None = None,
         enable_disk_cache: bool = True
     ):
-        self._memory_cache: Dict[str, CacheEntry] = {}
+        self._memory_cache: dict[str, CacheEntry] = {}
         self._max_memory_entries = max_memory_entries
         self._default_ttl = default_ttl
         self._persist_path = persist_path or Path("./cache")
@@ -52,7 +50,7 @@ class ContentHashCache:
         source_data: bytes,
         conversion_type: str,
         output_format: str,
-        custom_prompt: Optional[str] = None
+        custom_prompt: str | None = None
     ) -> str:
         """计算内容哈希（包含转换参数）"""
         hasher = hashlib.sha256()
@@ -76,8 +74,8 @@ class ContentHashCache:
         source: Any,
         conversion_type: str,
         output_format: str,
-        custom_prompt: Optional[str] = None
-    ) -> Optional[Any]:
+        custom_prompt: str | None = None
+    ) -> Any | None:
         """
         获取缓存结果
 
@@ -119,8 +117,8 @@ class ContentHashCache:
         conversion_type: str,
         output_format: str,
         result_data: Any,
-        custom_prompt: Optional[str] = None,
-        ttl: Optional[int] = None
+        custom_prompt: str | None = None,
+        ttl: int | None = None
     ):
         """
         设置缓存
@@ -150,8 +148,8 @@ class ContentHashCache:
         source: Any,
         conversion_type: str,
         output_format: str,
-        custom_prompt: Optional[str] = None
-    ) -> Optional[str]:
+        custom_prompt: str | None = None
+    ) -> str | None:
         """根据输入源获取内容哈希"""
         try:
             if isinstance(source, (str, Path)):
@@ -252,7 +250,7 @@ class ContentHashCache:
         except Exception as e:
             logger.warning(f"保存磁盘缓存失败: {e}")
 
-    def _load_from_disk_by_hash(self, content_hash: str) -> Optional[Any]:
+    def _load_from_disk_by_hash(self, content_hash: str) -> Any | None:
         """从磁盘加载指定哈希的缓存"""
         try:
             cache_file = self._persist_path / f"{content_hash}.pkl"
@@ -304,7 +302,7 @@ class ContentHashCache:
         if loaded > 0:
             logger.info(f"从磁盘加载 {loaded} 个缓存条目")
 
-    def invalidate(self, content_hash: Optional[str] = None):
+    def invalidate(self, content_hash: str | None = None):
         """使缓存失效"""
         if content_hash:
             self._memory_cache.pop(content_hash, None)
@@ -318,7 +316,7 @@ class ContentHashCache:
                 for f in self._persist_path.glob("*.pkl"):
                     f.unlink(missing_ok=True)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """获取缓存统计信息"""
         total_memory = len(self._memory_cache)
         expired = sum(1 for v in self._memory_cache.values() if self._is_expired(v))
@@ -342,7 +340,7 @@ class SimilarityCache:
     """相似内容缓存（基于内容相似度而非完全匹配）"""
 
     def __init__(self, similarity_threshold: float = 0.95):
-        self._cache: Dict[str, Any] = {}
+        self._cache: dict[str, Any] = {}
         self._threshold = similarity_threshold
 
     def _compute_simhash(self, content: str) -> str:
@@ -359,7 +357,7 @@ class SimilarityCache:
 
         return "".join(hashes)[:32]
 
-    def find_similar(self, content: str) -> Optional[Any]:
+    def find_similar(self, content: str) -> Any | None:
         """查找相似内容的缓存"""
         target_hash = self._compute_simhash(content)
         if not target_hash:

@@ -5,10 +5,9 @@ CSV 文件解析器
 import csv
 import logging
 from pathlib import Path
-from typing import List, Optional
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.csv")
 
@@ -20,15 +19,15 @@ class CSVParser(BaseParser):
     DELIMITERS = [',', '\t', ';', '|', ':']
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         return [".csv", ".tsv", ".tab"]
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         # CSV 无固定魔数，通过扩展名识别
         return []
 
-    def parse(self, file_path: Path) -> List[PageContent]:
+    def parse(self, file_path: Path) -> list[PageContent]:
         """解析 CSV 文件"""
         file_path = Path(file_path)
         logger.info("开始解析 CSV: %s", file_path)
@@ -46,7 +45,7 @@ class CSVParser(BaseParser):
         all_rows = []
 
         try:
-            with open(file_path, 'r', encoding=encoding, errors='ignore', newline='') as f:
+            with open(file_path, encoding=encoding, errors='ignore', newline='') as f:
                 reader = csv.reader(f, delimiter=delimiter)
                 for row in reader:
                     # 过滤空行
@@ -113,7 +112,7 @@ class CSVParser(BaseParser):
             return '\t'
 
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(file_path, encoding='utf-8', errors='ignore') as f:
                 sample_lines = []
                 for _ in range(10):
                     line = f.readline()
@@ -152,13 +151,13 @@ class CSVParser(BaseParser):
     def _detect_encoding(self, file_path: Path) -> str:
         """检测文件编码"""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding='utf-8') as f:
                 f.read(1024)
             return 'utf-8'
         except UnicodeDecodeError:
             return 'gbk'
 
-    def _detect_header(self, rows: List[List[str]]) -> bool:
+    def _detect_header(self, rows: list[list[str]]) -> bool:
         """
         检测第一行是否为表头
 

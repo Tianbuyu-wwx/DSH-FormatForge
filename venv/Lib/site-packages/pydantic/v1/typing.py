@@ -1,3 +1,5 @@
+import functools
+import operator
 import sys
 import typing
 from collections.abc import Callable
@@ -58,12 +60,34 @@ if sys.version_info < (3, 9):
     def evaluate_forwardref(type_: ForwardRef, globalns: Any, localns: Any) -> Any:
         return type_._evaluate(globalns, localns)
 
-else:
+elif sys.version_info < (3, 12, 4):
 
     def evaluate_forwardref(type_: ForwardRef, globalns: Any, localns: Any) -> Any:
         # Even though it is the right signature for python 3.9, mypy complains with
         # `error: Too many arguments for "_evaluate" of "ForwardRef"` hence the cast...
-        return cast(Any, type_)._evaluate(globalns, localns, set())
+        # Python 3.13/3.12.4+ made `recursive_guard` a kwarg, so name it explicitly to avoid:
+        # TypeError: ForwardRef._evaluate() missing 1 required keyword-only argument: 'recursive_guard'
+        return cast(Any, type_)._evaluate(globalns, localns, recursive_guard=set())
+
+elif sys.version_info < (3, 14):
+
+    def evaluate_forwardref(type_: ForwardRef, globalns: Any, localns: Any) -> Any:
+        # Pydantic 1.x will not support PEP 695 syntax, but provide `type_params` to avoid
+        # warnings:
+        return cast(Any, type_)._evaluate(globalns, localns, type_params=(), recursive_guard=set())
+
+else:
+
+    def evaluate_forwardref(type_: ForwardRef, globalns: Any, localns: Any) -> Any:
+        # Pydantic 1.x will not support PEP 695 syntax, but provide `type_params` to avoid
+        # warnings:
+        return typing.evaluate_forward_ref(
+            type_,
+            globals=globalns,
+            locals=localns,
+            type_params=(),
+            _recursive_guard=set(),
+        )
 
 
 if sys.version_info < (3, 9):
@@ -190,9 +214,6 @@ if sys.version_info < (3, 9):
         return tp
 
 else:
-    from typing import _UnionGenericAlias  # type: ignore
-
-    from typing_extensions import _AnnotatedAlias
 
     def convert_generics(tp: Type[Any]) -> Type[Any]:
         """
@@ -212,7 +233,7 @@ else:
 
         # typing.Annotated needs special treatment
         if origin is Annotated:
-            return _AnnotatedAlias(convert_generics(args[0]), args[1:])
+            return Annotated[(convert_generics(args[0]), *args[1:])]  # type: ignore
 
         # recursively replace `str` instances inside of `GenericAlias` with `ForwardRef(arg)`
         converted = tuple(
@@ -226,7 +247,7 @@ else:
             return TypingGenericAlias(origin, converted)
         elif isinstance(tp, TypesUnionType):
             # recreate types.UnionType (PEP604, Python >= 3.10)
-            return _UnionGenericAlias(origin, converted)
+            return functools.reduce(operator.or_, converted)  # type: ignore
         else:
             try:
                 setattr(tp, '__args__', converted)
@@ -256,7 +277,7 @@ StrPath = Union[str, PathLike]
 
 
 if TYPE_CHECKING:
-    from .fields import ModelField
+    from pydantic.v1.fields import ModelField
 
     TupleGenerator = Generator[Tuple[str, Any], None, None]
     DictStrAny = Dict[str, Any]
@@ -397,7 +418,10 @@ def resolve_annotations(raw_annotations: Dict[str, Type[Any]], module_name: Opti
             else:
                 value = ForwardRef(value, is_argument=False)
         try:
-            value = _eval_type(value, base_globals, None)
+            if sys.version_info >= (3, 13):
+                value = _eval_type(value, base_globals, None, type_params=())
+            else:
+                value = _eval_type(value, base_globals, None)
         except NameError:
             # this is ok, it can be fixed with update_forward_refs
             pass
@@ -435,7 +459,7 @@ def is_namedtuple(type_: Type[Any]) -> bool:
     Check if a given class is a named tuple.
     It can be either a `typing.NamedTuple` or `collections.namedtuple`
     """
-    from .utils import lenient_issubclass
+    from pydantic.v1.utils import lenient_issubclass
 
     return lenient_issubclass(type_, tuple) and hasattr(type_, '_fields')
 
@@ -445,7 +469,7 @@ def is_typeddict(type_: Type[Any]) -> bool:
     Check if a given class is a typed dict (from `typing` or `typing_extensions`)
     In 3.10, there will be a public method (https://docs.python.org/3.10/library/typing.html#typing.is_typeddict)
     """
-    from .utils import lenient_issubclass
+    from pydantic.v1.utils import lenient_issubclass
 
     return lenient_issubclass(type_, dict) and hasattr(type_, '__total__')
 

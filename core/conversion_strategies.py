@@ -6,14 +6,11 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
 from datetime import datetime
+from typing import Any
 
-from core.models import (
-    ParsedFile, FileType, ConversionType, OutputFormat,
-    ProcessingLog, PageContent, ExtractedElement
-)
 from core.ai_discovery import AiCapabilities, InputType
+from core.models import ConversionType, FileType, OutputFormat, ParsedFile, ProcessingLog
 
 logger = logging.getLogger("conversion_strategies")
 
@@ -25,10 +22,10 @@ class ConversionStrategy(ABC):
         self.strategy_id = "base"
         self.strategy_name = "基础策略"
         self.description = "基础转换策略"
-        self.supported_types: List[FileType] = []
+        self.supported_types: list[FileType] = []
 
     @abstractmethod
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: Optional[AiCapabilities] = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         """
         评估对输入数据的处理能力
         Args:
@@ -43,9 +40,9 @@ class ConversionStrategy(ABC):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: Optional[AiCapabilities] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
+        ai_caps: AiCapabilities | None = None,
+        custom_prompt: str | None = None
+    ) -> dict[str, Any]:
         """
         执行转换
         Returns: {"content": str, "structured_data": dict, "confidence": float}
@@ -66,7 +63,7 @@ class ConversionStrategy(ABC):
         if output_format == OutputFormat.JSON:
             try:
                 return json.dumps({"content": content}, ensure_ascii=False, indent=2)
-            except:
+            except Exception:
                 return content
         elif output_format == OutputFormat.MARKDOWN:
             return f"# 转换结果\n\n{content}"
@@ -84,16 +81,16 @@ class AutoDetectStrategy(ConversionStrategy):
         self.description = "自动分析内容特征和AI能力，选择最合适的转换策略"
         self.supported_types = [FileType.PPT, FileType.PDF, FileType.IMAGE, FileType.DOC, FileType.TXT, FileType.CSV, FileType.XLS]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: Optional[AiCapabilities] = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         return 0.9
 
     def convert(
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: Optional[AiCapabilities] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
+        ai_caps: AiCapabilities | None = None,
+        custom_prompt: str | None = None
+    ) -> dict[str, Any]:
         logs = [self._create_log("auto_detect", "开始自动检测内容特征")]
         logger.info("[strategy=auto_detect] 开始自动检测: file_type=%s, output_format=%s",
                     parsed_file.fileType.value, output_format.value)
@@ -149,7 +146,7 @@ class TextExtractionStrategy(ConversionStrategy):
         self.description = "提取文件中的纯文本内容，保留原始格式"
         self.supported_types = [FileType.PPT, FileType.PDF, FileType.DOC, FileType.TXT]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: Optional[AiCapabilities] = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         if parsed_file.fileType in self.supported_types:
             return 0.95
         return 0.3
@@ -158,9 +155,9 @@ class TextExtractionStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: Optional[AiCapabilities] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
+        ai_caps: AiCapabilities | None = None,
+        custom_prompt: str | None = None
+    ) -> dict[str, Any]:
         logs = [self._create_log("text_extract", "开始提取纯文本")]
         logger.info("[strategy=text_extract] 开始提取纯文本: pages=%d", len(parsed_file.pages))
 
@@ -192,7 +189,7 @@ class StructuredExtractionStrategy(ConversionStrategy):
         self.description = "将内容提取为结构化格式（JSON/Markdown），保留层级关系"
         self.supported_types = [FileType.PPT, FileType.PDF, FileType.DOC]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: Optional[AiCapabilities] = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         if parsed_file.fileType in [FileType.PPT, FileType.PDF]:
             for page in parsed_file.pages:
                 for elem in page.elements:
@@ -205,9 +202,9 @@ class StructuredExtractionStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: Optional[AiCapabilities] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
+        ai_caps: AiCapabilities | None = None,
+        custom_prompt: str | None = None
+    ) -> dict[str, Any]:
         logs = [self._create_log("structured", "开始结构化提取")]
         logger.info("[strategy=structured] 开始结构化提取: pages=%d", len(parsed_file.pages))
 
@@ -250,7 +247,7 @@ class TableExtractionStrategy(ConversionStrategy):
         self.description = "识别并提取文档中的表格数据，转换为Markdown表格或JSON"
         self.supported_types = [FileType.PDF, FileType.PPT, FileType.CSV, FileType.XLS]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: Optional[AiCapabilities] = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         if any(page.hasTable for page in parsed_file.pages):
             return 0.95
         if parsed_file.fileType in [FileType.CSV, FileType.XLS]:
@@ -261,9 +258,9 @@ class TableExtractionStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: Optional[AiCapabilities] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
+        ai_caps: AiCapabilities | None = None,
+        custom_prompt: str | None = None
+    ) -> dict[str, Any]:
         logs = [self._create_log("table", "开始提取表格数据")]
         logger.info("[strategy=table] 开始提取表格数据: pages=%d", len(parsed_file.pages))
 
@@ -321,7 +318,7 @@ class ImageDescriptionStrategy(ConversionStrategy):
         self.description = "将图片转换为详细的文字描述，使文本AI能够理解图片内容"
         self.supported_types = [FileType.IMAGE, FileType.PPT, FileType.PDF]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: Optional[AiCapabilities] = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         if parsed_file.fileType == FileType.IMAGE:
             return 0.95
         if any(page.hasImage for page in parsed_file.pages):
@@ -332,9 +329,9 @@ class ImageDescriptionStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: Optional[AiCapabilities] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
+        ai_caps: AiCapabilities | None = None,
+        custom_prompt: str | None = None
+    ) -> dict[str, Any]:
         logs = [self._create_log("image_desc", "开始处理图片内容")]
         logger.info("[strategy=image_desc] 开始处理图片内容: pages=%d", len(parsed_file.pages))
 
@@ -387,7 +384,7 @@ class OcrStrategy(ConversionStrategy):
         self.description = "识别图片中的文字内容"
         self.supported_types = [FileType.IMAGE, FileType.PDF, FileType.PPT]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: Optional[AiCapabilities] = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         if parsed_file.fileType == FileType.IMAGE:
             return 0.9
         if any(page.hasImage for page in parsed_file.pages):
@@ -398,9 +395,9 @@ class OcrStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: Optional[AiCapabilities] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
+        ai_caps: AiCapabilities | None = None,
+        custom_prompt: str | None = None
+    ) -> dict[str, Any]:
         logs = [self._create_log("ocr", "开始OCR文字识别")]
         logger.info("[strategy=ocr] 开始OCR文字识别: pages=%d", len(parsed_file.pages))
 
@@ -433,7 +430,7 @@ class EncodingFixStrategy(ConversionStrategy):
         self.description = "检测并修复文本编码问题"
         self.supported_types = [FileType.TXT, FileType.CSV, FileType.UNKNOWN]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: Optional[AiCapabilities] = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         for page in parsed_file.pages:
             text = page.rawText
             if self._has_garbled_text(text):
@@ -444,9 +441,9 @@ class EncodingFixStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: Optional[AiCapabilities] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
+        ai_caps: AiCapabilities | None = None,
+        custom_prompt: str | None = None
+    ) -> dict[str, Any]:
         logs = [self._create_log("encoding", "开始检测编码问题")]
         logger.info("[strategy=encoding_fix] 开始检测编码问题: pages=%d", len(parsed_file.pages))
 
@@ -494,7 +491,7 @@ class AiNativeStrategy(ConversionStrategy):
         self.description = "为支持多模态的AI保留原始媒体文件，同时提取文本索引"
         self.supported_types = [FileType.PDF, FileType.PPT, FileType.IMAGE]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: Optional[AiCapabilities] = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         if not ai_caps:
             return 0.1
         # 如果AI支持图片输入，且文件包含图片，此策略优先级高
@@ -506,9 +503,9 @@ class AiNativeStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: Optional[AiCapabilities] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
+        ai_caps: AiCapabilities | None = None,
+        custom_prompt: str | None = None
+    ) -> dict[str, Any]:
         logs = [self._create_log("ai_native", "生成AI原生格式（保留媒体+文本索引）")]
         logger.info("[strategy=ai_native] 生成AI原生格式: file=%s, pages=%d", parsed_file.fileName, parsed_file.pageCount)
 
@@ -564,7 +561,7 @@ class StrategyRegistry:
     """策略注册表 - 管理所有可用策略"""
 
     def __init__(self):
-        self._strategies: Dict[str, ConversionStrategy] = {}
+        self._strategies: dict[str, ConversionStrategy] = {}
         self._register_default_strategies()
 
     def _register_default_strategies(self):
@@ -583,14 +580,14 @@ class StrategyRegistry:
             self._strategies[s.strategy_id] = s
         logger.info("策略注册表初始化完成，共 %d 个策略", len(self._strategies))
 
-    def get_strategy(self, strategy_id: str) -> Optional[ConversionStrategy]:
+    def get_strategy(self, strategy_id: str) -> ConversionStrategy | None:
         """获取指定策略"""
         strategy = self._strategies.get(strategy_id)
         if strategy is None:
             logger.warning("请求未知策略: %s", strategy_id)
         return strategy
 
-    def get_all_strategies(self) -> List[ConversionStrategy]:
+    def get_all_strategies(self) -> list[ConversionStrategy]:
         """获取所有策略"""
         return list(self._strategies.values())
 
@@ -598,7 +595,7 @@ class StrategyRegistry:
         self,
         parsed_file: ParsedFile,
         conversion_type: ConversionType,
-        ai_caps: Optional[AiCapabilities] = None
+        ai_caps: AiCapabilities | None = None
     ) -> ConversionStrategy:
         """
         选择最佳策略

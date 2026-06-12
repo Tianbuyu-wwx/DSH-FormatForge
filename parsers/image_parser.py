@@ -5,10 +5,10 @@
 """
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.image")
 
@@ -26,11 +26,11 @@ class ImageParser(BaseParser):
     """图片文件解析器"""
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         return [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"]
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         # 常见图片格式魔数
         return [
             b"\xff\xd8\xff",      # JPEG
@@ -47,7 +47,7 @@ class ImageParser(BaseParser):
         super().__init__()
         self.ocr_engine = ocr_engine
 
-    def parse(self, file_path: Path, use_ocr: bool = False) -> List[PageContent]:
+    def parse(self, file_path: Path, use_ocr: bool = False) -> list[PageContent]:
         """
         解析图片文件
 
@@ -143,7 +143,7 @@ class ImageParser(BaseParser):
             hasTable=False
         )]
 
-    def _extract_exif(self, img: "Image") -> Optional[Dict[str, Any]]:
+    def _extract_exif(self, img: "Image") -> dict[str, Any] | None:
         """提取 EXIF 元数据"""
         try:
             exif = img._getexif()
@@ -157,7 +157,7 @@ class ImageParser(BaseParser):
                 if isinstance(value, bytes):
                     try:
                         value = value.decode('utf-8', errors='ignore')
-                    except:
+                    except Exception:
                         value = str(value)
                 exif_data[tag_name] = value
 
@@ -166,7 +166,7 @@ class ImageParser(BaseParser):
             logger.debug("EXIF 提取失败: %s", e)
             return None
 
-    def _format_exif(self, exif_data: Dict[str, Any]) -> str:
+    def _format_exif(self, exif_data: dict[str, Any]) -> str:
         """格式化 EXIF 数据为文本"""
         if not exif_data:
             return ""

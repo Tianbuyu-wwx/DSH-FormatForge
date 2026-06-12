@@ -818,7 +818,7 @@ class TestEndToEndComplexScenarios:
 
     def test_multiple_complex_files_batch(self):
         """测试批量处理多个复杂文件"""
-        from converter_engine import BatchConverter
+        from core.converter_engine import BatchConverter
 
         batch = BatchConverter()
         batch.converter.ai_client = None

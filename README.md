@@ -28,30 +28,33 @@ AI 数据转换器是一个智能数据格式转换服务，支持将 **PPT、PD
 
 ## 核心功能
 
-### 多格式文件解析
-| 格式 | 说明 |
+### 多格式文件解析（30+ 格式）
+| 分类 | 格式 |
 |------|------|
-| PDF | 文本提取、图片识别（OCR）、混合内容处理 |
-| PPT/PPTX | 幻灯片文字、图表、图片提取 |
-| DOCX | Word 文档内容提取 |
-| XLSX/CSV | 表格数据提取与分析 |
-| TXT | 纯文本（自动检测编码：UTF-8 / GBK / GB2312 / Big5） |
-| 图片 | OCR 文字识别、图片描述生成 |
-| HTML | 富文本内容提取 |
-| ZIP/7z/RAR | 压缩包内文件解析 |
+| 文档 | PDF, DOCX, PPTX, TXT, MD, RTF, ODT, ODP |
+| 表格 | XLSX, CSV, ODS |
+| 图片 | JPG/JPEG, PNG, GIF, WEBP, BMP, TIFF, SVG |
+| 数据 | JSON, XML, YAML, TOML |
+| 邮件 | EML, MSG |
+| 电子书 | EPUB |
+| 压缩包 | ZIP, 7z, RAR |
+| 其他 | HTML |
 
 ### 智能数据转换
-- 自动检测输入文件格式
+- 自动检测输入文件格式（魔数 + 扩展名 + 内容分析）
 - 支持 7 种转换类型：自动检测、纯文本提取、结构化数据、表格提取、图片描述、OCR 文字识别、编码修复
 - 4 种输出格式：JSON / Markdown / HTML / 纯文本
 - AI 增强转换：自动发现目标 AI 能力（多模态、输入类型、上下文长度等），选择最优转换策略
 - 自定义转换指令（Prompt）
 
-### Web 前端界面
-- 拖拽上传文件
-- 实时转换进度展示
-- 转换结果预览（内容 / 结构化数据 / 处理日志）
-- 结果复制与下载（支持 JSON / Markdown / HTML / TXT 导出）
+### Web 前端界面（Lit + TypeScript + TailwindCSS）
+- 拖拽上传文件（弹性缩放动画 + "松开上传"提示）
+- 视频背景（渐变回退 + 暗角遮罩 + 光晕点缀）
+- 格式分类标签（6 大分类、34 种格式）
+- SVG 环形进度条 + 阶段文字提示
+- 结果标签页展示（转换内容 / 结构化数据 / 处理日志）
+- Toast 通知（右上角浮动，带滑入/滑出动画）
+- 按类型差异化大小限制（图片 20MB / 其他 50MB）
 
 ### RESTful API
 - **v1 接口**（兼容旧版）：文件上传解析、转换执行、结果查询与导出
@@ -60,13 +63,12 @@ AI 数据转换器是一个智能数据格式转换服务，支持将 **PPT、PD
 
 ### 高级特性
 - OCR 文字识别（支持中文、英文等多语言）
-- 图表提取与分析（饼图、柱状图、折线图、散点图等）
 - 批量文件转换
-- 内容缓存（TTL 过期、LRU 淘汰、持久化）
-- 转换质量评估与置信度评分
+- 内容缓存（TLD 过期 + LRU 淘汰 + 磁盘持久化）
 - 敏感信息脱敏
 - 请求频率限制与请求体积限制
-- 流式数据解析
+- 结构化日志（JSON 格式 + TraceID 全链路追踪）
+- 并发安全（线程锁保护的缓存与单例）
 
 ## 技术栈
 
@@ -235,10 +237,9 @@ pytest --cov=. test/
 │   │
 │   ├── content_cache.py     # 内容缓存（TTL + 持久化）
 │   ├── ocr_engine.py        # OCR 识别引擎
-│   ├── chart_extraction.py  # 图表提取与分析
 │   ├── logging_config.py    # 日志配置（含敏感信息过滤）
 │   │
-├── parsers/                 # 各格式具体解析器
+├── parsers/                 # 各格式具体解析器（18 个）
 │   ├── pdf_parser.py        # PDF 解析
 │   ├── pptx_parser.py       # PPT/PPTX 解析
 │   ├── docx_parser.py       # Word 文档解析
@@ -248,18 +249,44 @@ pytest --cov=. test/
 │   ├── image_parser.py      # 图片解析
 │   ├── html_parser.py       # HTML 解析
 │   ├── archive_parser.py    # 压缩包解析
-│   ├── richtext_parser.py   # 富文本解析
-│   ├── data_parser.py       # 通用数据解析
+│   ├── richtext_parser.py   # 富文本解析（RTF）
+│   ├── data_parser.py       # 通用数据解析（JSON/YAML/XML）
+│   ├── markdown_parser.py   # Markdown 解析（★ 新增）
+│   ├── toml_parser.py       # TOML 解析（★ 新增）
+│   ├── odf_parser.py        # ODF 解析 .odt/.ods/.odp（★ 新增）
+│   ├── email_parser.py      # 邮件解析 .eml/.msg（★ 新增）
+│   ├── epub_parser.py       # EPUB 电子书解析（★ 新增）
+│   └── svg_parser.py        # SVG 矢量图解析（★ 新增）
 │
 ├── api/                     # API 接口层
 │   ├── v1.py                # v1 兼容接口
 │   └── v2.py                # v2 新架构接口
 │
-├── frontend/                # Web 前端
-│   ├── index.html           # 主页面
-│   ├── style.css            # 样式
-│   ├── script.js            # 交互逻辑
-│   └── background/          # 背景资源
+├── frontend/                # Web 前端（TypeScript + Lit + TailwindCSS）
+│   ├── index.html           # 入口页面（Lit 组件挂载点）
+│   ├── package.json          # 前端依赖清单
+│   ├── tsconfig.json         # TypeScript 配置
+│   ├── vite.config.ts        # Vite 构建配置
+│   ├── styles/
+│   │   └── main.css          # TailwindCSS 主题 + 工具类
+│   ├── src/
+│   │   ├── main.ts           # 根组件 <app-root> + 转换流程编排
+│   │   ├── state/
+│   │   │   └── store.ts      # 发布-订阅全局状态管理
+│   │   ├── types/
+│   │   │   └── index.ts      # TypeScript 类型定义
+│   │   ├── utils/
+│   │   │   ├── api.ts        # API 客户端（上传 + 转换）
+│   │   │   └── format.ts     # 格式工具函数（图标/分类/大小限制）
+│   │   └── components/       # Lit Web Components（8 个）
+│   │       ├── app-background.ts   # 视频背景组件
+│   │       ├── app-upload.ts       # 拖拽上传组件
+│   │       ├── app-options.ts      # 转换选项面板
+│   │       ├── app-convert-btn.ts  # 转换按钮 + SVG 进度环
+│   │       ├── app-status.ts       # Toast 通知组件
+│   │       └── app-result.ts       # 结果展示（标签页 + 代码高亮）
+│   └── background/
+│       └── Genshin Impact - Kusanali in the forest - PC.mp4
 │
 ├── test/                    # 测试套件
 │   ├── conftest.py          # pytest 配置
@@ -272,13 +299,81 @@ pytest --cov=. test/
 
 ## 测试
 
-项目提供丰富的测试套件，覆盖各解析器、转换引擎、OCR 引擎、质量评估、编码检测等核心模块。
+项目提供丰富的测试套件，覆盖各解析器、转换引擎、OCR 引擎、编码检测、API 接口等核心模块。
 
-- **单元测试**：`test/unit/` 目录下 20+ 测试文件
-- **集成测试**：`test/integration/` API 接口测试
+- **单元测试**：`test/unit/` 目录下 25+ 测试文件（含 7 个新格式解析器测试）
+- **集成测试**：`test/integration/` API 接口端到端测试
 - **测试数据**：`test/fixtures/` 提供各类编码、格式的测试文件
 
 ## 更新日志
+
+### v1.2.0 (2026-06-12) — 7 种新格式 + 前端现代化重构
+
+**测试体系修复**
+- 修复 `conftest.py` 导入路径错误（`file_parser` → `core.file_parser`），从 452 错误降至 0
+- 修复 3 个测试文件的 patch 路径和导入问题
+- 补充 `pydantic-settings`、`requests`、`PyYAML` 缺失依赖
+
+**并发安全修复**
+- `MiniMaxClient` 单例模式添加 `threading.Lock()` 双重检查加锁
+- `DataConverter` 缓存字典添加 `_cache_lock` 保护并发读写
+
+**统一 OutputFormat 枚举**
+- `ai_discovery.py` 中 `OutputFormat` 重命名为 `AiOutputFormat`，消除与 `models.py` 的命名冲突
+- `models.py` 中补全 `OutputFormat.AUTO = "auto"`
+
+**删除未使用文件**
+- 删除 `core/extended_parsers.py`（未注册的扩展解析器）
+- 删除 `core/chart_extraction.py`（未集成到策略系统）
+- 删除对应测试文件
+
+**基础设施**
+- 创建 `pyproject.toml`（项目元数据 + ruff 规范 + pytest 配置）
+- 创建 `.github/workflows/ci.yml`（Python 3.10/3.11/3.12 矩阵 CI）
+- 创建 `.env.example`（完整环境变量示例含 AI/安全/缓存配置）
+
+**安全加固**
+- CORS 中间件改为使用 `settings.ALLOWED_ORIGINS` 配置项，替代硬编码 `allow_origins=["*"]`
+- `/debug/config` 接口增加 `DEBUG` 模式保护，非调试模式返回 403
+- 临时文件清理改为 `try/finally` 模式，确保异常路径下也被删除
+
+**代码质量加固**
+- 修复 16 处裸 `except:`（涉及 8 个文件），改为捕获具体异常类型
+
+**结构化日志 + TraceID**
+- 新增 `core/logging_config.py`：`JsonFormatter`（JSON 输出）+ `setup_logging()`
+- 新增 `TraceIDMiddleware`：每个请求自动分配 Trace ID，响应头返回 `X-Trace-ID`
+- `main.py` 接入结构化日志，DEBUG 模式用文本，生产用 JSON
+
+**converter_engine 拆分**
+- 新增 `core/decision_engine.py`：提取 `ConversionDecision` + `DecisionEngine` 类
+- 新增 `core/ai_prompt_manager.py`：提取 `AIPromptManager` 类
+- `DataConverter` 现通过组合持有子引擎，职责更单一
+
+**ContentHashCache 集成**
+- 将内存+磁盘两级内容哈希缓存集成到 `DataConverter.convert_with_ai_target()`
+- 相同内容的文件可直接返回缓存结果，减少重复 AI 调用
+
+**7 种新文件格式解析器**
+| 格式 | 解析器 | 特性 |
+|------|--------|------|
+| Markdown (`.md`) | `markdown_parser.py` | 标题层级/代码块/表格/列表/前言元数据 |
+| TOML (`.toml`) | `toml_parser.py` | 键值对/表/表数组/内联表，零依赖（Python 3.11+ `tomllib`） |
+| ODF (`.odt/.ods/.odp`) | `odf_parser.py` | 文本文档/电子表格/演示文稿，零依赖（zipfile + xml） |
+| EML/MSG (`.eml/.msg`) | `email_parser.py` | 邮箱头/正文/附件，MSG 支持可选 `extract-msg` 库 |
+| EPUB (`.epub`) | `epub_parser.py` | 章节分页/OPF 元数据/HTML 净化，零依赖 |
+| SVG (`.svg`) | `svg_parser.py` | 文本提取/图形统计/Title/Desc，零依赖 |
+
+**前端现代化重构（TypeScript + Lit + TailwindCSS）**
+- 技术栈从「原生 JS + CSS」升级为「TypeScript + Lit Web Components + TailwindCSS v4」
+- 单体 `script.js`（700+ 行）拆分为 8 个独立 Web Components + 响应式 `store.ts`
+- 消除 18 处 `style.display` 硬编码，统一用条件渲染 + CSS class 切换
+- 构建产物：JS 59.83 kB (gzip 17.28 kB)，CSS 23.31 kB (gzip 6.50 kB)
+- 删除旧版残留文件 `script.js`、`style.css`、`vite.config.js`
+
+**新增测试用例**
+- 新增 7 个解析器测试文件（markdown 19 个、TOML 14 个、ODF 18 个、email 15 个、EPUB 12 个、SVG 16 个）
+- 总计新增 **~110 个**测试用例
 
 ### v1.1.0 (2026-06-12) — 架构精简
 

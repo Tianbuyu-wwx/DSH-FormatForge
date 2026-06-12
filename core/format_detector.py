@@ -3,10 +3,11 @@
 自动检测输入数据的格式类型
 """
 import logging
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple
+from typing import Any
 
 logger = logging.getLogger("format_detector")
 
@@ -27,6 +28,17 @@ class DataFormat(str, Enum):
     YAML = "yaml"
     XML = "xml"
     HTML = "html"
+    # 配置
+    TOML = "toml"
+    # 开放文档格式
+    ODT = "odt"
+    ODS = "ods"
+    ODP = "odp"
+    # 邮件
+    EML = "eml"
+    MSG = "msg"
+    # 电子书
+    EPUB = "epub"
     # 图片
     PNG = "png"
     JPEG = "jpeg"
@@ -34,6 +46,7 @@ class DataFormat(str, Enum):
     WEBP = "webp"
     BMP = "bmp"
     TIFF = "tiff"
+    SVG = "svg"
     # 压缩包
     ZIP = "zip"
     SEVEN_Z = "7z"
@@ -49,8 +62,8 @@ class FormatDetectionResult:
     format: DataFormat
     mime_type: str
     confidence: float  # 0.0-1.0
-    extension: Optional[str] = None
-    metadata: Dict[str, Any] = None
+    extension: str | None = None
+    metadata: dict[str, Any] = None
 
     def __post_init__(self):
         if self.metadata is None:
@@ -61,7 +74,7 @@ class FormatDetector:
     """格式检测器 - 通过魔数和内容分析检测数据格式"""
 
     # 魔数签名表
-    MAGIC_SIGNATURES: Dict[bytes, Tuple[DataFormat, str]] = {
+    MAGIC_SIGNATURES: dict[bytes, tuple[DataFormat, str]] = {
         # PDF
         b"%PDF": (DataFormat.PDF, "application/pdf"),
         # 图片
@@ -80,7 +93,7 @@ class FormatDetector:
     }
 
     # 扩展名映射
-    EXTENSION_MAP: Dict[str, Tuple[DataFormat, str]] = {
+    EXTENSION_MAP: dict[str, tuple[DataFormat, str]] = {
         ".pdf": (DataFormat.PDF, "application/pdf"),
         ".docx": (DataFormat.DOCX, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
         ".pptx": (DataFormat.PPTX, "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
@@ -109,9 +122,21 @@ class FormatDetector:
         ".zip": (DataFormat.ZIP, "application/zip"),
         ".7z": (DataFormat.SEVEN_Z, "application/x-7z-compressed"),
         ".rar": (DataFormat.RAR, "application/x-rar"),
+        ".toml": (DataFormat.TOML, "application/toml"),
+        # ODF
+        ".odt": (DataFormat.ODT, "application/vnd.oasis.opendocument.text"),
+        ".ods": (DataFormat.ODS, "application/vnd.oasis.opendocument.spreadsheet"),
+        ".odp": (DataFormat.ODP, "application/vnd.oasis.opendocument.presentation"),
+        # 邮件
+        ".eml": (DataFormat.EML, "message/rfc822"),
+        ".msg": (DataFormat.MSG, "application/vnd.ms-outlook"),
+        # 电子书
+        ".epub": (DataFormat.EPUB, "application/epub+zip"),
+        # 矢量图
+        ".svg": (DataFormat.SVG, "image/svg+xml"),
     }
 
-    def detect(self, data: bytes, filename: Optional[str] = None) -> FormatDetectionResult:
+    def detect(self, data: bytes, filename: str | None = None) -> FormatDetectionResult:
         """
         检测数据格式
 
@@ -198,7 +223,7 @@ class FormatDetector:
             extension=filename and Path(filename).suffix
         )
 
-    def _detect_by_magic(self, data: bytes) -> Optional[FormatDetectionResult]:
+    def _detect_by_magic(self, data: bytes) -> FormatDetectionResult | None:
         """通过魔数检测格式"""
         if len(data) < 4:
             return None
@@ -228,10 +253,11 @@ class FormatDetector:
         return None
 
     def _detect_zip_subtype(self, data: bytes) -> FormatDetectionResult:
-        """检测 ZIP 压缩包的子类型（DOCX/PPTX/XLSX）"""
-        # 在 ZIP 的前 1024 字节中查找特征目录名
+        """检测 ZIP 压缩包的子类型（DOCX/PPTX/XLSX/ODF）"""
+        # 在 ZIP 的前 2048 字节中查找特征目录名
         header = data[:2048]
 
+        # Office Open XML 格式
         if b"word/" in header:
             return FormatDetectionResult(
                 format=DataFormat.DOCX,
@@ -251,13 +277,49 @@ class FormatDetector:
                 confidence=0.9
             )
 
+        # EPUB 电子书（检查 META-INF/container.xml）
+        if b"META-INF/container.xml" in header:
+            return FormatDetectionResult(
+                format=DataFormat.EPUB,
+                mime_type="application/epub+zip",
+                confidence=0.9
+            )
+
+        # ODF 格式（通过 mimetype 条目识别）
+        if b"mimetype" in header or b"content.xml" in header:
+            # 区分 ODT/ODS/ODP
+            mimetype_field = header[header.find(b"mimetype"):header.find(b"mimetype") + 200]
+            if b"opendocument.text" in mimetype_field:
+                return FormatDetectionResult(
+                    format=DataFormat.ODT,
+                    mime_type="application/vnd.oasis.opendocument.text",
+                    confidence=0.9
+                )
+            elif b"opendocument.spreadsheet" in mimetype_field:
+                return FormatDetectionResult(
+                    format=DataFormat.ODS,
+                    mime_type="application/vnd.oasis.opendocument.spreadsheet",
+                    confidence=0.9
+                )
+            elif b"opendocument.presentation" in mimetype_field:
+                return FormatDetectionResult(
+                    format=DataFormat.ODP,
+                    mime_type="application/vnd.oasis.opendocument.presentation",
+                    confidence=0.9
+                )
+            return FormatDetectionResult(
+                format=DataFormat.ZIP,
+                mime_type="application/zip",
+                confidence=0.85
+            )
+
         return FormatDetectionResult(
             format=DataFormat.ZIP,
             mime_type="application/zip",
             confidence=0.85
         )
 
-    def _detect_by_extension(self, filename: str) -> Optional[FormatDetectionResult]:
+    def _detect_by_extension(self, filename: str) -> FormatDetectionResult | None:
         """通过扩展名检测格式"""
         ext = Path(filename).suffix.lower()
         if ext in self.EXTENSION_MAP:
@@ -270,12 +332,12 @@ class FormatDetector:
             )
         return None
 
-    def _detect_by_content(self, data: bytes) -> Optional[FormatDetectionResult]:
+    def _detect_by_content(self, data: bytes) -> FormatDetectionResult | None:
         """通过内容分析检测格式"""
         # 尝试解码为文本
         try:
             text = data[:1024].decode('utf-8', errors='ignore').strip()
-        except:
+        except UnicodeDecodeError:
             return None
 
         if not text:
@@ -285,13 +347,13 @@ class FormatDetector:
         if text.startswith(('{', '[')):
             try:
                 import json
-                json.loads(text[:512])
+                parsed = json.loads(text)
                 return FormatDetectionResult(
                     format=DataFormat.JSON,
                     mime_type="application/json",
                     confidence=0.85
                 )
-            except:
+            except (json.JSONDecodeError, ValueError):
                 pass
 
         # XML 检测
@@ -327,6 +389,45 @@ class FormatDetector:
                     confidence=0.6
                 )
 
+        # TOML 检测
+        if '=' in text[:200] and text.strip().startswith(('#', '[')):
+            toml_indicators = 0
+            lines = text.split('\n')[:15]
+            for line in lines:
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                if re.match(r'^\[[\w.]+\]$', stripped):
+                    toml_indicators += 2
+                elif '=' in stripped and not stripped.startswith(('-', '+', '*', '{', '[')):
+                    toml_indicators += 1
+            if toml_indicators >= 3:
+                return FormatDetectionResult(
+                    format=DataFormat.TOML,
+                    mime_type="application/toml",
+                    confidence=0.7
+                )
+
+        # EML 检测（邮件以 From: 或 Return-Path: 等邮件头开头）
+        first_line = text.split('\n')[0].strip()
+        if first_line.startswith('From:') or first_line.startswith('Return-Path:') or first_line.startswith('Received:'):
+            eml_headers = ['From:', 'To:', 'Subject:', 'Date:', 'Message-ID:', 'MIME-Version:', 'Content-Type:']
+            header_count = sum(1 for h in eml_headers if h in text[:2048])
+            if header_count >= 3:
+                return FormatDetectionResult(
+                    format=DataFormat.EML,
+                    mime_type="message/rfc822",
+                    confidence=0.8
+                )
+
+        # SVG 检测
+        if "xmlns=\"http://www.w3.org/2000/svg\"" in text[:1024] or "<svg" in text[:256]:
+            return FormatDetectionResult(
+                format=DataFormat.SVG,
+                mime_type="image/svg+xml",
+                confidence=0.8
+            )
+
         # CSV 检测
         lines = text.split('\n')[:5]
         if len(lines) >= 2:
@@ -356,7 +457,7 @@ class FormatDetector:
             text = data.decode('utf-8', errors='ignore')
             printable = sum(1 for c in text if c.isprintable() or c in '\n\r\t')
             return len(text) > 0 and printable / len(text) > 0.95
-        except:
+        except Exception:
             return False
 
     def detect_file(self, file_path: Path) -> FormatDetectionResult:

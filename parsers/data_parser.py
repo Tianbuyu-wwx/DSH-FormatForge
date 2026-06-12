@@ -6,10 +6,9 @@
 import json
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Union
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.data")
 
@@ -33,11 +32,11 @@ class DataParser(BaseParser):
     """结构化数据文件解析器（JSON/YAML/XML）"""
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         return [".json", ".yaml", ".yml", ".xml"]
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         return [
             b"{",           # JSON 对象
             b"[",           # JSON 数组
@@ -45,7 +44,7 @@ class DataParser(BaseParser):
             b"<!DOCTYPE",   # XML DOCTYPE
         ]
 
-    def parse(self, file_path: Path) -> List[PageContent]:
+    def parse(self, file_path: Path) -> list[PageContent]:
         """解析数据文件"""
         file_path = Path(file_path)
         ext = file_path.suffix.lower()
@@ -60,12 +59,12 @@ class DataParser(BaseParser):
             # 尝试自动检测格式
             return self._parse_auto(file_path)
 
-    def _parse_json(self, file_path: Path) -> List[PageContent]:
+    def _parse_json(self, file_path: Path) -> list[PageContent]:
         """解析 JSON 文件"""
         logger.info("开始解析 JSON: %s", file_path)
 
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(file_path, encoding='utf-8', errors='ignore') as f:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             logger.error("JSON 解析失败: %s", e)
@@ -110,7 +109,7 @@ class DataParser(BaseParser):
             hasTable=isinstance(data, list) and len(data) > 0
         )]
 
-    def _parse_yaml(self, file_path: Path) -> List[PageContent]:
+    def _parse_yaml(self, file_path: Path) -> list[PageContent]:
         """解析 YAML 文件"""
         if not YAML_AVAILABLE:
             raise ImportError("PyYAML 库未安装，无法解析 YAML 文件")
@@ -118,7 +117,7 @@ class DataParser(BaseParser):
         logger.info("开始解析 YAML: %s", file_path)
 
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(file_path, encoding='utf-8', errors='ignore') as f:
                 data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             logger.error("YAML 解析失败: %s", e)
@@ -160,7 +159,7 @@ class DataParser(BaseParser):
             hasTable=isinstance(data, list) and len(data) > 0
         )]
 
-    def _parse_xml(self, file_path: Path) -> List[PageContent]:
+    def _parse_xml(self, file_path: Path) -> list[PageContent]:
         """解析 XML 文件"""
         logger.info("开始解析 XML: %s", file_path)
 
@@ -205,11 +204,11 @@ class DataParser(BaseParser):
             hasTable=False
         )]
 
-    def _parse_auto(self, file_path: Path) -> List[PageContent]:
+    def _parse_auto(self, file_path: Path) -> list[PageContent]:
         """自动检测格式并解析"""
         try:
             return self._parse_json(file_path)
-        except:
+        except Exception:
             pass
 
         if YAML_AVAILABLE:
@@ -220,12 +219,12 @@ class DataParser(BaseParser):
 
         try:
             return self._parse_xml(file_path)
-        except:
+        except Exception:
             pass
 
         raise ValueError(f"无法自动检测文件格式: {file_path}")
 
-    def _extract_dict_elements(self, data: dict, prefix: str) -> List[ExtractedElement]:
+    def _extract_dict_elements(self, data: dict, prefix: str) -> list[ExtractedElement]:
         """从字典提取元素"""
         elements = []
         for idx, (key, value) in enumerate(data.items()):
@@ -256,7 +255,7 @@ class DataParser(BaseParser):
 
         return elements
 
-    def _extract_list_elements(self, data: list, prefix: str) -> List[ExtractedElement]:
+    def _extract_list_elements(self, data: list, prefix: str) -> list[ExtractedElement]:
         """从列表提取元素"""
         elements = []
         for idx, item in enumerate(data[:50]):  # 限制数量避免过大
@@ -280,7 +279,7 @@ class DataParser(BaseParser):
 
         return elements
 
-    def _extract_xml_elements(self, element: "ET.Element", depth: int = 0) -> List[ExtractedElement]:
+    def _extract_xml_elements(self, element: "ET.Element", depth: int = 0) -> list[ExtractedElement]:
         """从 XML 元素提取结构"""
         elements = []
 

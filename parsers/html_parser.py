@@ -6,10 +6,9 @@ HTML 文件解析器
 import logging
 import re
 from pathlib import Path
-from typing import List, Optional
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.html")
 
@@ -128,11 +127,11 @@ class HTMLParser(BaseParser):
     """HTML 网页文件解析器"""
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         return [".html", ".htm", ".xhtml"]
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         return [
             b"<!DOCTYPE html",
             b"<html",
@@ -140,13 +139,13 @@ class HTMLParser(BaseParser):
             b"<?xml",  # XHTML
         ]
 
-    def parse(self, file_path: Path) -> List[PageContent]:
+    def parse(self, file_path: Path) -> list[PageContent]:
         """解析 HTML 文件"""
         file_path = Path(file_path)
         logger.info("开始解析 HTML: %s", file_path)
 
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(file_path, encoding='utf-8', errors='ignore') as f:
                 html_content = f.read()
         except Exception as e:
             logger.error("无法读取 HTML 文件: %s", e)
@@ -215,7 +214,7 @@ class HTMLParser(BaseParser):
 
         return ""
 
-    def _fallback_extract(self, html_content: str) -> List[dict]:
+    def _fallback_extract(self, html_content: str) -> list[dict]:
         """正则回退提取（当 HTMLParser 失败时使用）"""
         elements = []
 

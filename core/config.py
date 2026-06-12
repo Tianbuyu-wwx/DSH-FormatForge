@@ -39,6 +39,7 @@ class AppSettings(BaseSettings):
     APP_HOST: str = Field(default="0.0.0.0")
     APP_PORT: int = Field(default=8000)
     DEBUG: bool = Field(default=False)
+    LOG_LEVEL: str = Field(default="INFO")
 
     # 文件上传配置
     MAX_FILE_SIZE: int = Field(default=52428800, description="50MB")
@@ -62,6 +63,7 @@ class AppSettings(BaseSettings):
     RATE_LIMIT_MAX: int = Field(default=60, description="每分钟最大请求数")
     FILE_TYPE_VALIDATION: bool = Field(default=True)
     URL_DOMAIN_VALIDATION: bool = Field(default=True)
+    ALLOWED_ORIGINS: list = Field(default=["*"], description="CORS 允许的域名，生产环境应设为具体域名")
 
     # 支持的配置
     SUPPORTED_FILE_TYPES: dict = Field(default={

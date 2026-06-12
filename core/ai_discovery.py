@@ -21,7 +21,7 @@ class InputType(str, Enum):
     DOCUMENT = "document"
 
 
-class OutputFormat(str, Enum):
+class AiOutputFormat(str, Enum):
     """AI 偏好的输出格式"""
     JSON = "json"
     MARKDOWN = "markdown"
@@ -39,7 +39,7 @@ class AiCapabilities:
     supports_multimodal: bool = False
     supports_streaming: bool = False
     supports_function_calling: bool = False
-    preferred_format: OutputFormat = OutputFormat.TEXT
+    preferred_format: AiOutputFormat = AiOutputFormat.TEXT
     api_version: str = ""
     extra: Dict[str, Any] = field(default_factory=dict)
 
@@ -188,9 +188,9 @@ class OpenAiCompatibleDiscovery(BaseAiDiscovery):
 
         # 格式偏好
         if provider in ["openai", "anthropic", "minimax"]:
-            capabilities.preferred_format = OutputFormat.MARKDOWN
+            capabilities.preferred_format = AiOutputFormat.MARKDOWN
         else:
-            capabilities.preferred_format = OutputFormat.TEXT
+            capabilities.preferred_format = AiOutputFormat.TEXT
 
         return capabilities
 
@@ -207,7 +207,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_multimodal=True,
             supports_streaming=True,
             supports_function_calling=True,
-            preferred_format=OutputFormat.MARKDOWN,
+            preferred_format=AiOutputFormat.MARKDOWN,
             api_version="v1"
         ),
         "openai": AiCapabilities(
@@ -218,7 +218,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_multimodal=True,
             supports_streaming=True,
             supports_function_calling=True,
-            preferred_format=OutputFormat.MARKDOWN,
+            preferred_format=AiOutputFormat.MARKDOWN,
             api_version="v1"
         ),
         "anthropic": AiCapabilities(
@@ -229,7 +229,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_multimodal=True,
             supports_streaming=True,
             supports_function_calling=True,
-            preferred_format=OutputFormat.MARKDOWN,
+            preferred_format=AiOutputFormat.MARKDOWN,
             api_version="v1"
         ),
         "zhipu": AiCapabilities(
@@ -240,7 +240,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_multimodal=True,
             supports_streaming=True,
             supports_function_calling=True,
-            preferred_format=OutputFormat.TEXT,
+            preferred_format=AiOutputFormat.TEXT,
             api_version="v4"
         ),
         "qwen": AiCapabilities(
@@ -251,7 +251,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_multimodal=True,
             supports_streaming=True,
             supports_function_calling=True,
-            preferred_format=OutputFormat.MARKDOWN,
+            preferred_format=AiOutputFormat.MARKDOWN,
             api_version="v1"
         ),
         "deepseek": AiCapabilities(
@@ -262,7 +262,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_multimodal=False,
             supports_streaming=True,
             supports_function_calling=True,
-            preferred_format=OutputFormat.MARKDOWN,
+            preferred_format=AiOutputFormat.MARKDOWN,
             api_version="v1"
         ),
     }

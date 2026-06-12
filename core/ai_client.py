@@ -16,6 +16,7 @@ import os
 import base64
 import json
 import logging
+import threading
 from typing import List, Optional, Dict, Any
 from abc import ABC, abstractmethod
 
@@ -65,50 +66,58 @@ class MiniMaxClient(AIClient):
     
     _instance = None
     _initialized = False
-    
+    _lock = threading.Lock()
+
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self, api_key: str, base_url: str = "https://api.minimaxi.com/v1", timeout: int = 120):
         # 避免重复初始化
         if MiniMaxClient._initialized:
             return
 
-        self.api_key = api_key
-        self.base_url = base_url.rstrip('/')
-        self.timeout = timeout
-        self.logger = logging.getLogger("ai_client.minimax")
-        
-        # 根据是否有图片输入选择客户端
-        self.openai_client = None
-        self.anthropic_client = None
-        
-        # 初始化 OpenAI 客户端
-        if OPENAI_SDK_AVAILABLE:
-            try:
-                self.openai_client = OpenAI(
-                    api_key=self.api_key,
-                    base_url=self.base_url
-                )
-                self.logger.info("OpenAI SDK 初始化成功")
-            except Exception as e:
-                self.logger.error("OpenAI SDK 初始化失败: %s", e)
-        
-        # 初始化 Anthropic 客户端（用于图片输入）
-        if ANTHROPIC_SDK_AVAILABLE:
-            try:
-                anthropic_base_url = self.base_url.replace('/v1', '/anthropic')
-                self.anthropic_client = anthropic.Anthropic(
-                    api_key=self.api_key,
-                    base_url=anthropic_base_url
-                )
-                self.logger.info("Anthropic SDK 初始化成功")
-            except Exception as e:
-                self.logger.error("Anthropic SDK 初始化失败: %s", e)
-        
-        MiniMaxClient._initialized = True
+        with MiniMaxClient._lock:
+            # 双重检查
+            if MiniMaxClient._initialized:
+                return
+
+            self.api_key = api_key
+            self.base_url = base_url.rstrip('/')
+            self.timeout = timeout
+            self.logger = logging.getLogger("ai_client.minimax")
+
+            # 根据是否有图片输入选择客户端
+            self.openai_client = None
+            self.anthropic_client = None
+
+            # 初始化 OpenAI 客户端
+            if OPENAI_SDK_AVAILABLE:
+                try:
+                    self.openai_client = OpenAI(
+                        api_key=self.api_key,
+                        base_url=self.base_url
+                    )
+                    self.logger.info("OpenAI SDK 初始化成功")
+                except Exception as e:
+                    self.logger.error("OpenAI SDK 初始化失败: %s", e)
+
+            # 初始化 Anthropic 客户端（用于图片输入）
+            if ANTHROPIC_SDK_AVAILABLE:
+                try:
+                    anthropic_base_url = self.base_url.replace('/v1', '/anthropic')
+                    self.anthropic_client = anthropic.Anthropic(
+                        api_key=self.api_key,
+                        base_url=anthropic_base_url
+                    )
+                    self.logger.info("Anthropic SDK 初始化成功")
+                except Exception as e:
+                    self.logger.error("Anthropic SDK 初始化失败: %s", e)
+
+            MiniMaxClient._initialized = True
     
     def _encode_image(self, image_path: str) -> Optional[str]:
         """将图片编码为 base64"""

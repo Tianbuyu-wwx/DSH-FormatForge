@@ -6,10 +6,9 @@
 import logging
 import re
 from pathlib import Path
-from typing import List, Optional
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.richtext")
 
@@ -26,19 +25,19 @@ class RichTextParser(BaseParser):
     """富文本文件解析器（Markdown/RTF）"""
 
     @property
-    def supported_extensions(self) -> List[str]:
-        exts = [".md", ".markdown"]
+    def supported_extensions(self) -> list[str]:
+        exts = []
         if RTF_AVAILABLE:
             exts.append(".rtf")
         return exts
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         return [
             b"{\\rtf",       # RTF 文件头
         ]
 
-    def parse(self, file_path: Path) -> List[PageContent]:
+    def parse(self, file_path: Path) -> list[PageContent]:
         """解析富文本文件"""
         file_path = Path(file_path)
         ext = file_path.suffix.lower()
@@ -50,12 +49,12 @@ class RichTextParser(BaseParser):
         else:
             raise ValueError(f"不支持的富文本格式: {ext}")
 
-    def _parse_markdown(self, file_path: Path) -> List[PageContent]:
+    def _parse_markdown(self, file_path: Path) -> list[PageContent]:
         """解析 Markdown 文件"""
         logger.info("开始解析 Markdown: %s", file_path)
 
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(file_path, encoding='utf-8', errors='ignore') as f:
                 content = f.read()
         except Exception as e:
             logger.error("无法读取 Markdown 文件: %s", e)
@@ -250,7 +249,7 @@ class RichTextParser(BaseParser):
             hasTable=any(e.elementType == 'table' for e in elements)
         )]
 
-    def _parse_rtf(self, file_path: Path) -> List[PageContent]:
+    def _parse_rtf(self, file_path: Path) -> list[PageContent]:
         """解析 RTF 文件"""
         if not RTF_AVAILABLE:
             raise ImportError("striprtf 库未安装，无法解析 RTF 文件")
@@ -258,7 +257,7 @@ class RichTextParser(BaseParser):
         logger.info("开始解析 RTF: %s", file_path)
 
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(file_path, encoding='utf-8', errors='ignore') as f:
                 rtf_content = f.read()
         except Exception as e:
             logger.error("无法读取 RTF 文件: %s", e)

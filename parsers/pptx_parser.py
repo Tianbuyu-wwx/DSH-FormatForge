@@ -5,10 +5,9 @@ PPTX 文件解析器
 """
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.pptx")
 
@@ -26,16 +25,16 @@ class PPTXParser(BaseParser):
     """PPTX 幻灯片解析器"""
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         return [".pptx", ".ppt"]
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         # PPTX 是 ZIP 格式
         # PPT 是 OLE2 格式
         return [b"PK\x03\x04", b"\xd0\xcf\x11\xe0"]
 
-    def parse(self, file_path: Path) -> List[PageContent]:
+    def parse(self, file_path: Path) -> list[PageContent]:
         """解析 PPTX 文件"""
         if not PPTX_AVAILABLE:
             raise ImportError("python-pptx 库未安装，无法解析 PPTX 文件")

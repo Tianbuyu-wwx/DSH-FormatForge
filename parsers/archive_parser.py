@@ -4,12 +4,10 @@
 递归解析压缩包内的文件内容
 """
 import logging
-import tempfile
 from pathlib import Path
-from typing import List, Optional, Generator
 
+from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
-from core.models import PageContent, ExtractedElement
 
 logger = logging.getLogger("parsers.archive")
 
@@ -40,7 +38,7 @@ class ArchiveParser(BaseParser):
     """压缩包文件解析器（ZIP/RAR/7Z）"""
 
     @property
-    def supported_extensions(self) -> List[str]:
+    def supported_extensions(self) -> list[str]:
         exts = [".zip"]
         if SEVENZ_AVAILABLE:
             exts.append(".7z")
@@ -49,7 +47,7 @@ class ArchiveParser(BaseParser):
         return exts
 
     @property
-    def supported_magic(self) -> List[bytes]:
+    def supported_magic(self) -> list[bytes]:
         return [
             b"PK\x03\x04",      # ZIP
             b"PK\x05\x06",      # ZIP 空归档
@@ -62,7 +60,7 @@ class ArchiveParser(BaseParser):
         super().__init__()
         self.inner_parser = inner_parser  # 用于递归解析内部文件
 
-    def parse(self, file_path: Path) -> List[PageContent]:
+    def parse(self, file_path: Path) -> list[PageContent]:
         """解析压缩包文件"""
         file_path = Path(file_path)
         ext = file_path.suffix.lower()
@@ -78,7 +76,7 @@ class ArchiveParser(BaseParser):
         else:
             raise ValueError(f"不支持的压缩格式: {ext}")
 
-    def _parse_zip(self, file_path: Path) -> List[PageContent]:
+    def _parse_zip(self, file_path: Path) -> list[PageContent]:
         """解析 ZIP 文件"""
         elements = []
         raw_lines = [f"[ZIP 压缩包] {file_path.name}"]
@@ -141,7 +139,7 @@ class ArchiveParser(BaseParser):
             hasTable=False
         )]
 
-    def _parse_7z(self, file_path: Path) -> List[PageContent]:
+    def _parse_7z(self, file_path: Path) -> list[PageContent]:
         """解析 7Z 文件"""
         if not SEVENZ_AVAILABLE:
             raise ImportError("py7zr 库未安装，无法解析 7Z 文件")
@@ -196,7 +194,7 @@ class ArchiveParser(BaseParser):
             hasTable=False
         )]
 
-    def _parse_rar(self, file_path: Path) -> List[PageContent]:
+    def _parse_rar(self, file_path: Path) -> list[PageContent]:
         """解析 RAR 文件"""
         if not RAR_AVAILABLE:
             raise ImportError("rarfile 库未安装，无法解析 RAR 文件")

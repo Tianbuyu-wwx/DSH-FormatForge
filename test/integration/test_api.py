@@ -103,6 +103,12 @@ class TestRootEndpoints:
 
     def test_debug_config(self):
         """测试调试配置接口"""
+        import os
+        os.environ["DEBUG"] = "true"
+        # 重新加载 config 使 DEBUG 生效
+        from core.config import settings
+        settings.DEBUG = True
+
         response = client.get("/debug/config")
         assert response.status_code == 200
         data = response.json()
@@ -609,12 +615,17 @@ class TestConcurrency:
     """测试并发处理"""
 
     def test_multiple_uploads(self):
-        """测试多次上传"""
-        test_file = TestFixtures.create_test_txt_file("Concurrent test")
+        """测试多次上传不同内容"""
         parse_ids = []
+        temp_files = []
 
         try:
             for i in range(3):
+                # 使用不同内容以避免内容哈希缓存命中
+                content = f"Concurrent test {i} - unique content {i}!"
+                test_file = TestFixtures.create_test_txt_file(content)
+                temp_files.append(test_file)
+
                 with open(test_file, "rb") as f:
                     response = client.post(
                         "/api/v1/convert/upload",
@@ -627,7 +638,45 @@ class TestConcurrency:
                 parse_ids.append(data["data"]["parseId"])
 
             assert len(parse_ids) == 3
-            assert len(set(parse_ids)) == 3  # 确保ID唯一
+            assert len(set(parse_ids)) == 3  # 不同内容应有不同的 parseId
+        finally:
+            for tf in temp_files:
+                TestFixtures.cleanup_file(tf)
+
+    def test_content_cache_same_content(self):
+        """测试相同内容命中缓存"""
+        content = "Deduplication test content!"
+        test_file = TestFixtures.create_test_txt_file(content)
+        parse_ids = []
+
+        try:
+            # 第一次上传 - 应执行完整转换
+            with open(test_file, "rb") as f:
+                response1 = client.post(
+                    "/api/v1/convert/upload",
+                    data={"fileType": "txt"},
+                    files={"file": ("test.txt", f, "text/plain")}
+                )
+            assert response1.status_code == 200
+            data1 = response1.json()
+            assert data1["code"] == 200
+            parse_ids.append(data1["data"]["parseId"])
+
+            # 第二次上传相同内容 - 应命中缓存
+            with open(test_file, "rb") as f:
+                response2 = client.post(
+                    "/api/v1/convert/upload",
+                    data={"fileType": "txt"},
+                    files={"file": ("test_copy.txt", f, "text/plain")}
+                )
+            assert response2.status_code == 200
+            data2 = response2.json()
+            assert data2["code"] == 200
+            parse_ids.append(data2["data"]["parseId"])
+
+            # 相同内容应返回缓存结果（相同 parseId）
+            assert data1["data"]["parseId"] == data2["data"]["parseId"]
+            assert len(set(parse_ids)) == 1  # 缓存去重生效
         finally:
             TestFixtures.cleanup_file(test_file)
 

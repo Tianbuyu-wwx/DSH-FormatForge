@@ -27,10 +27,11 @@ from typing import (
     Union,
 )
 from uuid import UUID
+from warnings import warn
 
-from . import errors
-from .datetime_parse import parse_date, parse_datetime, parse_duration, parse_time
-from .typing import (
+from pydantic.v1 import errors
+from pydantic.v1.datetime_parse import parse_date, parse_datetime, parse_duration, parse_time
+from pydantic.v1.typing import (
     AnyCallable,
     all_literal_values,
     display_as_type,
@@ -41,14 +42,14 @@ from .typing import (
     is_none_type,
     is_typeddict,
 )
-from .utils import almost_equal_floats, lenient_issubclass, sequence_like
+from pydantic.v1.utils import almost_equal_floats, lenient_issubclass, sequence_like
 
 if TYPE_CHECKING:
     from typing_extensions import Literal, TypedDict
 
-    from .config import BaseConfig
-    from .fields import ModelField
-    from .types import ConstrainedDecimal, ConstrainedFloat, ConstrainedInt
+    from pydantic.v1.config import BaseConfig
+    from pydantic.v1.fields import ModelField
+    from pydantic.v1.types import ConstrainedDecimal, ConstrainedFloat, ConstrainedInt
 
     ConstrainedNumber = Union[ConstrainedDecimal, ConstrainedFloat, ConstrainedInt]
     AnyOrderedDict = OrderedDict[Any, Any]
@@ -594,7 +595,7 @@ NamedTupleT = TypeVar('NamedTupleT', bound=NamedTuple)
 def make_namedtuple_validator(
     namedtuple_cls: Type[NamedTupleT], config: Type['BaseConfig']
 ) -> Callable[[Tuple[Any, ...]], NamedTupleT]:
-    from .annotated_types import create_model_from_namedtuple
+    from pydantic.v1.annotated_types import create_model_from_namedtuple
 
     NamedTupleModel = create_model_from_namedtuple(
         namedtuple_cls,
@@ -619,7 +620,7 @@ def make_namedtuple_validator(
 def make_typeddict_validator(
     typeddict_cls: Type['TypedDict'], config: Type['BaseConfig']  # type: ignore[valid-type]
 ) -> Callable[[Any], Dict[str, Any]]:
-    from .annotated_types import create_model_from_typeddict
+    from pydantic.v1.annotated_types import create_model_from_typeddict
 
     TypedDictModel = create_model_from_typeddict(
         typeddict_cls,
@@ -698,7 +699,7 @@ _VALIDATORS: List[Tuple[Type[Any], List[Any]]] = [
 def find_validators(  # noqa: C901 (ignore complexity)
     type_: Type[Any], config: Type['BaseConfig']
 ) -> Generator[AnyCallable, None, None]:
-    from .dataclasses import is_builtin_dataclass, make_dataclass_validator
+    from pydantic.v1.dataclasses import is_builtin_dataclass, make_dataclass_validator
 
     if type_ is Any or type_ is object:
         return
@@ -762,4 +763,6 @@ def find_validators(  # noqa: C901 (ignore complexity)
     if config.arbitrary_types_allowed:
         yield make_arbitrary_type_validator(type_)
     else:
+        if hasattr(type_, '__pydantic_core_schema__'):
+            warn(f'Mixing V1 and V2 models is not supported. `{type_.__name__}` is a V2 model.', UserWarning)
         raise RuntimeError(f'no validator found for {type_}, see `arbitrary_types_allowed` in Config')

@@ -363,7 +363,7 @@ class TestPDFParserIntegration:
 
     def test_pdf_parser_registered(self):
         """测试 PDF 解析器已注册到注册表"""
-        from file_parser import FileParser
+        from core.file_parser import FileParser
 
         file_parser = FileParser(Path(tempfile.gettempdir()))
         registry = file_parser.registry
@@ -374,7 +374,7 @@ class TestPDFParserIntegration:
 
     def test_pdf_parser_find_by_magic(self, tmp_path):
         """测试通过魔数查找 PDF 解析器"""
-        from file_parser import FileParser
+        from core.file_parser import FileParser
 
         pdf_path = tmp_path / "test.pdf"
         # 写入 PDF 魔数

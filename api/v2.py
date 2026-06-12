@@ -3,21 +3,14 @@ API v2 路由 - 新架构接口
 """
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, File, Form, UploadFile
-from fastapi.responses import PlainTextResponse
 
-from core.models import (
-    ResponseCode, ResponseMsg, ConversionType, OutputFormat
-)
-from core.di import data_converter, batch_converter
-from core.utils import (
-    create_response, save_upload_file, build_convert_response_data,
-    generate_request_id
-)
-from core.security import validate_file_extension, validate_url_domain
 from core.config import settings
+from core.di import batch_converter, data_converter
+from core.models import ConversionType, OutputFormat, ResponseCode, ResponseMsg
+from core.security import validate_file_extension, validate_url_domain
+from core.utils import build_convert_response_data, create_response, save_upload_file
 
 logger = logging.getLogger("api.v2")
 
@@ -28,12 +21,12 @@ router = APIRouter(prefix="/api/v2")
 async def convert_data(
     source: str = Form(..., description="输入源（文件路径/URL/文本内容）"),
     source_type: str = Form(default="auto", description="输入源类型: auto, file, url, raw"),
-    target_ai_endpoint: Optional[str] = Form(default=None, description="目标AI端点"),
-    target_ai_key: Optional[str] = Form(default=None, description="目标AI密钥"),
-    target_ai_provider: Optional[str] = Form(default=None, description="目标AI提供商"),
+    target_ai_endpoint: str | None = Form(default=None, description="目标AI端点"),
+    target_ai_key: str | None = Form(default=None, description="目标AI密钥"),
+    target_ai_provider: str | None = Form(default=None, description="目标AI提供商"),
     conversion_type: ConversionType = Form(default=ConversionType.AUTO),
     output_format: OutputFormat = Form(default=OutputFormat.JSON),
-    custom_prompt: Optional[str] = Form(default=None, description="自定义转换指令"),
+    custom_prompt: str | None = Form(default=None, description="自定义转换指令"),
     use_ai_enhance: bool = Form(default=True)
 ):
     """
@@ -45,7 +38,7 @@ async def convert_data(
             if not validate_url_domain(source):
                 return create_response(
                     code=ResponseCode.PARAM_ERROR,
-                    msg=f"不允许访问的 URL 域名"
+                    msg="不允许访问的 URL 域名"
                 )
 
         # 根据source_type构建输入源
@@ -107,12 +100,12 @@ async def convert_data(
 @router.post("/convert/upload")
 async def convert_upload(
     file: UploadFile = File(..., description="待转换文件"),
-    target_ai_endpoint: Optional[str] = Form(default=None),
-    target_ai_key: Optional[str] = Form(default=None),
-    target_ai_provider: Optional[str] = Form(default=None),
+    target_ai_endpoint: str | None = Form(default=None),
+    target_ai_key: str | None = Form(default=None),
+    target_ai_provider: str | None = Form(default=None),
     conversion_type: ConversionType = Form(default=ConversionType.AUTO),
     output_format: OutputFormat = Form(default=OutputFormat.JSON),
-    custom_prompt: Optional[str] = Form(default=None),
+    custom_prompt: str | None = Form(default=None),
     use_ai_enhance: bool = Form(default=True)
 ):
     """
@@ -173,8 +166,8 @@ async def convert_upload(
 @router.post("/convert/batch")
 async def convert_batch(
     files: list[UploadFile] = File(...),
-    target_ai_endpoint: Optional[str] = Form(default=None),
-    target_ai_key: Optional[str] = Form(default=None),
+    target_ai_endpoint: str | None = Form(default=None),
+    target_ai_key: str | None = Form(default=None),
     conversion_type: ConversionType = Form(default=ConversionType.AUTO),
     output_format: OutputFormat = Form(default=OutputFormat.JSON)
 ):

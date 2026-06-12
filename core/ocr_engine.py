@@ -4,13 +4,12 @@ OCR 引擎模块
 集成多模态 AI 进行图片文字识别
 支持多引擎切换：Tesseract / PaddleOCR / EasyOCR / AI
 """
-import io
 import logging
 import tempfile
-from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
-from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("ocr_engine")
 
@@ -54,14 +53,14 @@ class OcrResult:
     text: str
     confidence: float
     method: str  # "tesseract" | "paddleocr" | "easyocr" | "ai" | "pdfplumber"
-    image_path: Optional[str] = None
+    image_path: str | None = None
 
 
 class BaseOcrBackend(ABC):
     """OCR 后端抽象基类"""
 
     @abstractmethod
-    def recognize(self, image_path: Path) -> Tuple[str, float]:
+    def recognize(self, image_path: Path) -> tuple[str, float]:
         """识别图片，返回 (文字, 置信度)"""
         pass
 
@@ -82,7 +81,7 @@ class TesseractBackend(BaseOcrBackend):
     def name(self) -> str:
         return "tesseract"
 
-    def recognize(self, image_path: Path) -> Tuple[str, float]:
+    def recognize(self, image_path: Path) -> tuple[str, float]:
         if not TESSERACT_AVAILABLE:
             return "", 0.0
         try:
@@ -114,7 +113,7 @@ class PaddleOcrBackend(BaseOcrBackend):
             )
         return self._ocr
 
-    def recognize(self, image_path: Path) -> Tuple[str, float]:
+    def recognize(self, image_path: Path) -> tuple[str, float]:
         if not PADDLEOCR_AVAILABLE:
             return "", 0.0
         try:
@@ -141,7 +140,7 @@ class PaddleOcrBackend(BaseOcrBackend):
 class EasyOcrBackend(BaseOcrBackend):
     """EasyOCR 后端"""
 
-    def __init__(self, lang_list: List[str] = None):
+    def __init__(self, lang_list: list[str] = None):
         self.lang_list = lang_list or ['ch_sim', 'en']
         self._reader = None
 
@@ -154,7 +153,7 @@ class EasyOcrBackend(BaseOcrBackend):
             self._reader = easyocr.Reader(self.lang_list, gpu=False, verbose=False)
         return self._reader
 
-    def recognize(self, image_path: Path) -> Tuple[str, float]:
+    def recognize(self, image_path: Path) -> tuple[str, float]:
         if not EASYOCR_AVAILABLE:
             return "", 0.0
         try:
@@ -185,7 +184,7 @@ class AiOcrBackend(BaseOcrBackend):
     def name(self) -> str:
         return "ai"
 
-    def recognize(self, image_path: Path) -> Tuple[str, float]:
+    def recognize(self, image_path: Path) -> tuple[str, float]:
         if not self.ai_client:
             return "", 0.0
         try:
@@ -280,7 +279,7 @@ class OcrPostProcessor:
         return len(parts) >= 2 and len(parts) <= 10
 
     @staticmethod
-    def _format_table(lines: List[str]) -> str:
+    def _format_table(lines: list[str]) -> str:
         """格式化表格行"""
         if not lines:
             return ""
@@ -344,7 +343,7 @@ class OcrEngine:
         self.logger = logging.getLogger("ocr_engine")
 
         # 初始化后端
-        self._backends: Dict[str, BaseOcrBackend] = {}
+        self._backends: dict[str, BaseOcrBackend] = {}
         self._init_backends()
 
     def _init_backends(self):
@@ -365,12 +364,12 @@ class OcrEngine:
         self.default_backend = backend
         self.logger.info("默认 OCR 后端设置为: %s", backend)
 
-    def get_available_backends(self) -> List[str]:
+    def get_available_backends(self) -> list[str]:
         """获取所有可用的后端名称"""
         return list(self._backends.keys())
 
     def extract_text_from_pdf(self, pdf_path: Path, use_ai_for_images: bool = False,
-                               backend: str = None, apply_postprocess: bool = True) -> List[OcrResult]:
+                               backend: str = None, apply_postprocess: bool = True) -> list[OcrResult]:
         """
         从 PDF 中提取文字，包括图片中的文字
 
@@ -502,8 +501,8 @@ class OcrEngine:
             image_path=str(image_path)
         )
 
-    def batch_ocr(self, image_paths: List[Path], use_ai: bool = False,
-                  backend: str = None, apply_postprocess: bool = True) -> List[OcrResult]:
+    def batch_ocr(self, image_paths: list[Path], use_ai: bool = False,
+                  backend: str = None, apply_postprocess: bool = True) -> list[OcrResult]:
         """批量 OCR 识别"""
         results = []
         for idx, path in enumerate(image_paths, 1):
@@ -521,7 +520,7 @@ class OcrEngine:
         """检查 OCR 是否可用"""
         return len(self._backends) > 0
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """获取 OCR 引擎状态"""
         return {
             "pdfplumber": PDFPLUMBER_AVAILABLE,
