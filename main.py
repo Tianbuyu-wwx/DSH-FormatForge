@@ -18,8 +18,7 @@ import uvicorn
 from core.config import settings
 from core.models import ResponseCode, ResponseMsg
 from core.utils import generate_request_id
-from core.security import SensitiveDataFilter
-from core.middleware import RateLimitMiddleware, RequestSizeLimitMiddleware
+from core.middleware import RateLimitMiddleware, RequestSizeLimitMiddleware, TraceIDMiddleware
 
 from api.v1 import router as v1_router
 from api.v2 import router as v2_router
@@ -29,24 +28,9 @@ from core.di import data_converter, file_parser
 
 # ==================== 日志配置 ====================
 
-class SensitiveFormatter(logging.Formatter):
-    """敏感信息脱敏格式化器"""
-    def format(self, record: logging.LogRecord) -> str:
-        from core.security import mask_sensitive_info
-        original = super().format(record)
-        return mask_sensitive_info(original)
+from core.logging_config import setup_logging
 
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
-
-# 为关键日志器添加敏感信息过滤
-for logger_name in ["main", "api", "converter_engine", "ai_client", "file_parser"]:
-    logger_instance = logging.getLogger(logger_name)
-    logger_instance.addFilter(SensitiveDataFilter())
+setup_logging(level=getattr(settings, "LOG_LEVEL", "INFO"), json_format=not settings.DEBUG)
 
 logger = logging.getLogger("main")
 logger.info("日志系统初始化完成，敏感信息过滤已启用")
@@ -64,7 +48,7 @@ app = FastAPI(
 # CORS 中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -83,6 +67,9 @@ app.add_middleware(
     RequestSizeLimitMiddleware,
     max_body_size=settings.MAX_REQUEST_SIZE
 )
+
+# Trace ID 中间件（放在最后，最先执行）
+app.add_middleware(TraceIDMiddleware)
 
 # ==================== 全局异常处理器 ====================
 
@@ -175,7 +162,13 @@ async def health_check():
 
 @app.get("/debug/config")
 async def debug_config():
-    """调试配置接口 - 返回非敏感配置信息"""
+    """调试配置接口 - 仅 DEBUG 模式下可用"""
+    if not settings.DEBUG:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=403,
+            content={"code": 403, "msg": "调试接口仅在 DEBUG 模式下可用", "data": None}
+        )
     from core.utils import create_response
     return create_response(
         code=ResponseCode.SUCCESS,

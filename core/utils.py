@@ -2,17 +2,19 @@
 公共工具函数
 提取文件保存、响应构建等重复代码
 """
-import uuid
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any
 
 from fastapi import UploadFile
+
 from core.models import (
-    BaseResponse, ResponseCode,
-    ConvertResultData, ConvertResponseData,
-    ProcessingLog, FileInfo, TaskStatus
+    BaseResponse,
+    ConvertResultData,
+    ProcessingLog,
+    TaskStatus,
 )
 
 logger = logging.getLogger("utils")
@@ -39,7 +41,7 @@ def generate_parse_id() -> str:
     return f"parse{timestamp}{random_suffix}"
 
 
-def create_response(code: int, msg: str, data: Optional[Dict[str, Any]] = None) -> BaseResponse:
+def create_response(code: int, msg: str, data: dict[str, Any] | None = None) -> BaseResponse:
     """创建统一响应"""
     return BaseResponse(
         code=code,
@@ -74,7 +76,7 @@ async def save_upload_file(upload_dir: Path, file: UploadFile, max_size: int) ->
     return file_path
 
 
-def build_convert_response_data(result_data: ConvertResultData, base_url: str = "") -> Dict[str, Any]:
+def build_convert_response_data(result_data: ConvertResultData, base_url: str = "") -> dict[str, Any]:
     """
     构建转换响应数据（统一所有接口的响应结构）
 
@@ -101,7 +103,7 @@ def build_convert_response_data(result_data: ConvertResultData, base_url: str = 
     }
 
 
-def build_parse_response_data(result_data: ConvertResultData) -> Dict[str, Any]:
+def build_parse_response_data(result_data: ConvertResultData) -> dict[str, Any]:
     """构建解析响应数据"""
     return {
         "parseId": result_data.resultId,
@@ -123,3 +125,27 @@ def create_processing_log(step: str, message: str, level: str = "info") -> Proce
         message=message,
         step=step
     )
+
+
+def format_output(content: str, output_format: Any, structured_data: dict | None = None) -> str:
+    """根据输出格式格式化内容"""
+    from core.models import OutputFormat
+
+    if output_format == OutputFormat.JSON:
+        if structured_data:
+            import json
+            return json.dumps(structured_data, ensure_ascii=False, indent=2)
+        try:
+            import json
+            return json.dumps({"content": content}, ensure_ascii=False, indent=2)
+        except (json.JSONDecodeError, TypeError):
+            return content
+    elif output_format == OutputFormat.MARKDOWN:
+        if not content.startswith("#"):
+            return f"# 转换结果\n\n{content}"
+        return content
+    elif output_format == OutputFormat.HTML:
+        html = content.replace("\n\n", "</p><p>").replace("\n", "<br>")
+        return f"<div class='converted-content'><p>{html}</p></div>"
+    else:
+        return content

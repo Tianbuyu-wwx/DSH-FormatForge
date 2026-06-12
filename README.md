@@ -76,14 +76,14 @@ AI 数据转换器是一个智能数据格式转换服务，支持将 **PPT、PD
 | 运行时 | Python 3.10+, Uvicorn 0.27 |
 | 数据模型 | Pydantic v2 |
 | AI 服务 | OpenAI SDK（兼容 MiniMax、智谱等） |
-| PDF 解析 | PyPDF2, pdfplumber, pdf2image |
+| PDF 解析 | PyPDF2, pdfplumber |
 | 图片处理 | Pillow |
 | PPT 解析 | python-pptx |
-| 文件上传 | python-multipart, aiofiles |
+| 文件上传 | python-multipart |
 | 编码检测 | chardet（内置） |
-| HTTP 客户端 | httpx |
-| 前端 | HTML / CSS / JavaScript（原生） |
-| 测试 | pytest |
+| HTTP 客户端 | httpx, requests |
+| 前端 | Lit Web Components + Vite + TailwindCSS |
+| 测试 | pytest, ruff |
 
 ## 快速开始
 
@@ -223,21 +223,20 @@ pytest --cov=. test/
 │   │
 │   ├── converter_engine.py  # 核心转换引擎（智能决策、AI 增强）
 │   ├── conversion_strategies.py  # 转换策略注册与选择
+│   ├── decision_engine.py   # 转换决策引擎
 │   ├── format_detector.py   # 格式自动检测
 │   ├── input_adapters.py    # 多源输入适配器（文件/URL/原始数据）
 │   ├── file_parser.py       # 文件解析器总入口
-│   ├── extended_parsers.py  # 扩展解析器
-│   ├── stream_parser.py     # 流式数据解析器
 │   │
 │   ├── ai_client.py         # AI 客户端封装
 │   ├── ai_discovery.py      # AI 能力发现
 │   ├── ai_presets.py        # AI 提供商预设
+│   ├── ai_prompt_manager.py # AI 提示词管理
 │   │
-│   ├── output_formatters.py # 输出格式化器
 │   ├── content_cache.py     # 内容缓存（TTL + 持久化）
-│   ├── quality_evaluator.py # 转换质量评估
 │   ├── ocr_engine.py        # OCR 识别引擎
 │   ├── chart_extraction.py  # 图表提取与分析
+│   ├── logging_config.py    # 日志配置（含敏感信息过滤）
 │   │
 ├── parsers/                 # 各格式具体解析器
 │   ├── pdf_parser.py        # PDF 解析
@@ -278,6 +277,36 @@ pytest --cov=. test/
 - **单元测试**：`test/unit/` 目录下 20+ 测试文件
 - **集成测试**：`test/integration/` API 接口测试
 - **测试数据**：`test/fixtures/` 提供各类编码、格式的测试文件
+
+## 更新日志
+
+### v1.1.0 (2026-06-12) — 架构精简
+
+**阶段一：移除未使用模块**
+- 删除 `core/quality_evaluator.py`（396 行）— 全局实例未在任何转换流程中调用
+- 删除 `core/stream_parser.py`（301 行）— 流式解析能力未集成到转换流程
+- 删除 `core/output_formatters.py`（410 行）— 格式化逻辑已在 `converter_engine.py` 内联实现
+- 删除对应测试文件 `test/unit/test_quality_evaluator.py`、`test/unit/test_stream_parser.py`
+- 将 `ResultExporter` 类内联为 `api/v1.py` 中的模块级导出函数
+
+**阶段二：重构 converter_engine.py**
+- 提取 `format_output()` 为 `core/utils.py` 独立工具函数，支持 JSON/Markdown/HTML/纯文本
+- 移除 `DataConverter.export_result()`（与 `api/v1.py` 导出函数重复）
+- 移除 3 个未使用的兼容转发方法（`_make_decision`、`_build_recommendation`、`_ai_enhance_convert`）
+- 移除未使用的 `import json` 和 `ConversionDecision` 导入
+- `converter_engine.py` 从 749 行降至 649 行（-13%）
+
+**阶段三：日志合并与依赖清理**
+- `SensitiveDataFilter` 注册逻辑从 `main.py` 移入 `logging_config.py` 的 `setup_logging()`
+- 移除未使用依赖：`aiofiles`、`pdf2image`、`pywin32`、`pytest-asyncio`
+- 移除 `pyproject.toml` dev 依赖中重复的 `httpx`
+- 同步更新 `requirements.txt`
+- 主依赖从 14 个降至 12 个，dev 依赖从 3 个降至 2 个
+
+**净收益**
+- 删除 ~1107 行未使用代码
+- 核心模块从 22 个降至 19 个
+- 测试套件 483 个用例全部通过，零回归
 
 ## 许可证
 

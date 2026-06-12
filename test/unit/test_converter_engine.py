@@ -78,8 +78,8 @@ class TestDataConverterInit:
         """测试有AI客户端时的初始化"""
         mock_client = MagicMock()
         with patch('core.converter_engine.create_ai_client', return_value=mock_client):
-            with patch('core.config.AI_PROVIDER', 'minimax'):
-                with patch('core.config.MINIMAX_API_KEY', 'test_key'):
+            with patch('core.converter_engine.settings.AI_PROVIDER', 'minimax'):
+                with patch('core.converter_engine.settings.MINIMAX_API_KEY', 'test_key'):
                     converter = DataConverter()
                     assert converter.ai_client is not None
 
@@ -280,7 +280,8 @@ class TestDataConverterExport:
 
     def test_export_txt(self):
         """测试导出为TXT格式"""
-        content = self.converter.export_result(self.sample_result, "txt")
+        from api.v1 import _export_to_text
+        content = _export_to_text(self.sample_result)
 
         assert "test.pdf" in content
         assert "Converted content" in content
@@ -288,14 +289,16 @@ class TestDataConverterExport:
 
     def test_export_md(self):
         """测试导出为Markdown格式"""
-        content = self.converter.export_result(self.sample_result, "md")
+        from api.v1 import _export_to_markdown
+        content = _export_to_markdown(self.sample_result)
 
         assert "# test.pdf" in content
         assert "Converted content" in content
 
     def test_export_json(self):
         """测试导出为JSON格式"""
-        content = self.converter.export_result(self.sample_result, "json")
+        from api.v1 import _export_to_json
+        content = _export_to_json(self.sample_result)
 
         assert '"resultId"' in content
         assert '"content"' in content
@@ -303,7 +306,8 @@ class TestDataConverterExport:
 
     def test_export_default(self):
         """测试默认导出格式"""
-        content = self.converter.export_result(self.sample_result)
+        from api.v1 import _export_to_text
+        content = _export_to_text(self.sample_result)
 
         assert "test.pdf" in content
         assert "Converted content" in content
@@ -312,27 +316,28 @@ class TestDataConverterExport:
 class TestDataConverterFormatOutput:
     """测试输出格式化"""
 
-    def setup_method(self):
-        self.converter = DataConverter()
-
     def test_format_json_output(self):
         """测试JSON格式化"""
-        content = self.converter._format_output("test", OutputFormat.JSON, None)
+        from core.utils import format_output
+        content = format_output("test", OutputFormat.JSON, None)
         assert "test" in content
 
     def test_format_markdown_output(self):
         """测试Markdown格式化"""
-        content = self.converter._format_output("test", OutputFormat.MARKDOWN, None)
+        from core.utils import format_output
+        content = format_output("test", OutputFormat.MARKDOWN, None)
         assert "#" in content
 
     def test_format_html_output(self):
         """测试HTML格式化"""
-        content = self.converter._format_output("test", OutputFormat.HTML, None)
+        from core.utils import format_output
+        content = format_output("test", OutputFormat.HTML, None)
         assert "<div" in content
 
     def test_format_text_output(self):
         """测试纯文本格式化"""
-        content = self.converter._format_output("test", OutputFormat.TEXT, None)
+        from core.utils import format_output
+        content = format_output("test", OutputFormat.TEXT, None)
         assert content == "test"
 
 

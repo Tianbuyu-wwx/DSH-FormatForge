@@ -1,26 +1,33 @@
 """
 API v1 路由 - 兼容旧版接口
 """
+import json
 import logging
+import re
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import PlainTextResponse
 
-from core.models import (
-    ResponseCode, ResponseMsg, ConversionType, OutputFormat,
-    ConvertRequest, ConvertResponseData,
-    GetResultResponseData, TaskStatus
-)
-from core.di import data_converter, file_parser
-from core.output_formatters import result_exporter
-from core.utils import (
-    create_response, save_upload_file, build_convert_response_data,
-    build_parse_response_data, generate_request_id
-)
-from core.security import validate_file_extension, validate_path_safety
 from core.config import settings
+from core.di import data_converter, file_parser
+from core.models import (
+    ConversionType,
+    ConvertRequest,
+    ConvertResponseData,
+    GetResultResponseData,
+    OutputFormat,
+    ResponseCode,
+    ResponseMsg,
+    TaskStatus,
+)
+from core.security import validate_file_extension
+from core.utils import (
+    build_convert_response_data,
+    build_parse_response_data,
+    create_response,
+    save_upload_file,
+)
 
 logger = logging.getLogger("api.v1")
 
@@ -226,12 +233,12 @@ async def export_result(result_id: str, format: str = "txt"):
         )
 
     format_map = {
-        "json": (result_exporter.to_json, "application/json"),
-        "md": (result_exporter.to_markdown, "text/markdown"),
-        "html": (result_exporter.to_html, "text/html"),
+        "json": (_export_to_json, "application/json"),
+        "md": (_export_to_markdown, "text/markdown"),
+        "html": (_export_to_html, "text/html"),
     }
 
-    exporter, media_type = format_map.get(format, (result_exporter.to_text, "text/plain"))
+    exporter, media_type = format_map.get(format, (_export_to_text, "text/plain"))
     ext = format if format in ("json", "md", "html") else "txt"
     content = exporter(result)
     filename = f"{result.fileInfo.fileName}_converted.{ext}"
@@ -248,7 +255,7 @@ async def auto_convert(
     fileType: str = Form(default="auto", description="文件类型，auto为自动检测"),
     conversionType: ConversionType = Form(default=ConversionType.AUTO),
     outputFormat: OutputFormat = Form(default=OutputFormat.JSON),
-    customPrompt: Optional[str] = Form(default=None),
+    customPrompt: str | None = Form(default=None),
     file: UploadFile = File(...)
 ):
     """
@@ -304,7 +311,7 @@ async def auto_convert(
 async def discover_ai_capabilities(
     endpoint: str = Form(..., description="AI API 端点"),
     api_key: str = Form(..., description="API 密钥"),
-    provider: Optional[str] = Form(default=None, description="AI 提供商")
+    provider: str | None = Form(default=None, description="AI 提供商")
 ):
     """
     发现目标AI的能力
@@ -335,3 +342,102 @@ async def list_ai_providers():
         msg=ResponseMsg.QUERY_SUCCESS,
         data={"providers": providers}
     )
+
+
+# ==================== 结果导出函数 ====================
+
+
+def _export_to_json(result) -> str:
+    """导出为JSON"""
+    return json.dumps({
+        "resultId": result.resultId,
+        "fileName": result.fileInfo.fileName,
+        "conversionType": result.conversionType.value,
+        "outputFormat": result.outputFormat.value,
+        "confidence": result.confidence,
+        "content": result.convertedContent,
+        "structuredData": result.structuredData,
+        "processingLogs": [
+            {"time": log.timestamp.isoformat(), "level": log.level, "message": log.message, "step": log.step}
+            for log in result.processingLogs
+        ]
+    }, ensure_ascii=False, indent=2)
+
+
+def _export_to_markdown(result) -> str:
+    """导出为Markdown"""
+    lines = [
+        f"# {result.fileInfo.fileName} - 转换结果",
+        "",
+        f"- 转换类型: {result.conversionType.value}",
+        f"- 输出格式: {result.outputFormat.value}",
+        f"- 置信度: {result.confidence:.2f}",
+        f"- 生成时间: {result.createdAt.strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "## 转换内容",
+        "",
+        result.convertedContent,
+        "",
+        "## 处理日志",
+        ""
+    ]
+    for log in result.processingLogs:
+        lines.append(f"- [{log.level.upper()}] {log.step}: {log.message}")
+    return "\n".join(lines)
+
+
+def _export_to_text(result) -> str:
+    """导出为纯文本"""
+    lines = [
+        f"转换结果: {result.fileInfo.fileName}",
+        f"类型: {result.conversionType.value} | 格式: {result.outputFormat.value} | 置信度: {result.confidence:.2f}",
+        "=" * 50,
+        "",
+        result.convertedContent,
+        "",
+        "=" * 50,
+        "处理日志:",
+    ]
+    for log in result.processingLogs:
+        lines.append(f"  [{log.level}] {log.step}: {log.message}")
+    return "\n".join(lines)
+
+
+def _export_to_html(result) -> str:
+    """导出为HTML（简易Markdown转HTML）"""
+    md = _export_to_markdown(result)
+    html = md
+
+    # 转义HTML特殊字符
+    html = html.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # 标题
+    for i in range(6, 0, -1):
+        html = re.sub(rf'^\s*{"#" * i}\s*(.+?)$', rf'<h{i}>\1</h{i}>', html, flags=re.MULTILINE)
+
+    # 粗体
+    html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
+    # 段落
+    paragraphs = html.split('\n\n')
+    wrapped = [f'<p>{p.strip()}</p>' if p.strip() and not p.strip().startswith('<') else p for p in paragraphs]
+    html = '\n'.join(wrapped)
+    html = html.replace('\n', '<br>\n')
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="conversion-type" content="{result.conversionType.value}">
+<meta name="confidence" content="{result.confidence:.2f}">
+<title>转换结果</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }}
+h1, h2, h3 {{ color: #333; }}
+code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }}
+pre {{ background: #f4f4f4; padding: 16px; overflow-x: auto; border-radius: 6px; }}
+</style>
+</head>
+<body>
+{html}
+</body>
+</html>"""
