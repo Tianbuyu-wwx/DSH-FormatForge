@@ -1,6 +1,11 @@
 """
 文件解析器插件包
 支持多种文件格式的解析
+
+v2.3 - 统一 Parser 接口：
+  - 所有解析器必须实现 parse() 和 parse_bytes()
+  - name/description 用于 UI 展示和调试
+  - supported_formats 返回 FileType 枚举值
 """
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -10,24 +15,62 @@ from core.models import ExtractedElement, FileType, PageContent, ParsedFile, Tas
 
 
 class BaseParser(ABC):
-    """解析器基类"""
+    """解析器基类 - v2.3 统一接口"""
+
+    # ── 必须实现的属性 ──
 
     @property
     @abstractmethod
     def supported_extensions(self) -> list[str]:
-        """支持的文件扩展名列表"""
+        """支持的文件扩展名列表，如 ['.pdf', '.PDF']"""
         pass
 
     @property
     @abstractmethod
     def supported_magic(self) -> list[bytes]:
-        """支持的文件魔数列表"""
+        """支持的文件魔数列表，如 [b'%PDF']"""
         pass
+
+    @property
+    def name(self) -> str:
+        """解析器名称，默认从类名推断"""
+        return self.__class__.__name__
+
+    @property
+    def description(self) -> str:
+        """解析器描述"""
+        return f"解析 {', '.join(self.supported_extensions[:3])} 格式文件"
+
+    @property
+    def supported_formats(self) -> list[FileType]:
+        """支持的 FileType 枚举值列表"""
+        return []
+
+    # ── 必须实现的解析方法 ──
 
     @abstractmethod
     def parse(self, file_path: Path) -> list[PageContent]:
-        """解析文件，返回页面内容列表"""
+        """解析文件路径，返回页面内容列表"""
         pass
+
+    def parse_bytes(self, data: bytes, file_name: str = "") -> list[PageContent]:
+        """
+        解析字节数据，返回页面内容列表
+
+        默认实现：写入临时文件后调用 parse()。
+        子类可覆盖以提供更高效的内存解析。
+        """
+        import tempfile
+        suffix = Path(file_name).suffix if file_name else ""
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = Path(tmp.name)
+        try:
+            return self.parse(tmp_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    # ── 可选覆盖的方法 ──
 
     def can_parse(self, file_path: Path, content: bytes | None = None) -> float:
         """
@@ -43,6 +86,13 @@ class BaseParser(ABC):
                     return 0.95
 
         return 0.0
+
+    def get_metadata(self, file_path: Path) -> dict[str, Any]:
+        """
+        获取文件元数据（可选覆盖）
+        返回如 {pages, author, creator, ...} 等
+        """
+        return {}
 
 
 class ParserRegistry:

@@ -1,5 +1,7 @@
 """
-API v1 路由 - 兼容旧版接口
+API v1 路由 - 已废弃，请迁移到 /api/v2
+
+所有接口均添加 Deprecation 响应头。
 """
 import json
 import logging
@@ -7,7 +9,7 @@ import re
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from core.config import settings
 from core.di import data_converter, file_parser

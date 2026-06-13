@@ -336,55 +336,6 @@ class ContentHashCache:
         }
 
 
-class SimilarityCache:
-    """相似内容缓存（基于内容相似度而非完全匹配）"""
-
-    def __init__(self, similarity_threshold: float = 0.95):
-        self._cache: dict[str, Any] = {}
-        self._threshold = similarity_threshold
-
-    def _compute_simhash(self, content: str) -> str:
-        """计算 SimHash（局部敏感哈希）"""
-        # 简化实现：使用前缀哈希
-        words = content.split()
-        if not words:
-            return ""
-
-        hashes = []
-        for word in words[:100]:  # 取前100个词
-            h = hashlib.md5(word.encode()).hexdigest()
-            hashes.append(h)
-
-        return "".join(hashes)[:32]
-
-    def find_similar(self, content: str) -> Any | None:
-        """查找相似内容的缓存"""
-        target_hash = self._compute_simhash(content)
-        if not target_hash:
-            return None
-
-        # 简单实现：查找哈希前缀匹配
-        for cached_hash, result in self._cache.items():
-            similarity = self._hash_similarity(target_hash, cached_hash)
-            if similarity >= self._threshold:
-                return result
-
-        return None
-
-    def _hash_similarity(self, hash1: str, hash2: str) -> float:
-        """计算哈希相似度"""
-        if len(hash1) != len(hash2):
-            return 0.0
-
-        matches = sum(1 for a, b in zip(hash1, hash2) if a == b)
-        return matches / len(hash1)
-
-    def store(self, content: str, result: Any):
-        """存储内容缓存"""
-        content_hash = self._compute_simhash(content)
-        self._cache[content_hash] = result
-
-
 # 全局缓存实例
 content_cache = ContentHashCache()
-similarity_cache = SimilarityCache()
+

@@ -104,16 +104,14 @@ class UrlInputAdapter(InputAdapter):
         return False
 
     def read(self, source: str, timeout: int = 30, max_size: int = 100 * 1024 * 1024) -> InputData:
-        import requests
+        import httpx
 
         url = source
         logger.info("正在下载: %s", url)
 
         try:
-            session = requests.Session()
-            session.trust_env = False
-
-            resp = session.get(url, timeout=timeout, stream=True)
+            with httpx.Client(timeout=timeout) as client:
+                resp = client.get(url)
             resp.raise_for_status()
             logger.debug("URL请求成功: status=%d, content_length=%s",
                          resp.status_code, resp.headers.get('Content-Length'))
@@ -124,20 +122,12 @@ class UrlInputAdapter(InputAdapter):
                 logger.error("文件大小超过限制: %s > %d", content_length, max_size)
                 raise ValueError(f"文件大小超过限制: {content_length} > {max_size}")
 
-            # 流式读取
-            chunks = []
-            total_size = 0
-            for chunk in resp.iter_content(chunk_size=8192):
-                chunks.append(chunk)
-                total_size += len(chunk)
-                if total_size > max_size:
-                    logger.error("下载内容超过最大限制: %d > %d", total_size, max_size)
-                    raise ValueError(f"下载内容超过最大限制 {max_size} 字节")
-
-            data = b''.join(chunks)
+            data = resp.content
+            if len(data) > max_size:
+                raise ValueError(f"下载内容超过最大限制 {max_size} 字节")
 
             # 从 URL 或响应头获取文件名
-            filename = self._extract_filename(url, resp.headers)
+            filename = self._extract_filename(url, dict(resp.headers))
             mime_type = resp.headers.get('Content-Type')
 
             logger.info("下载完成: %s, 大小=%d 字节, filename=%s, mime=%s",
@@ -156,7 +146,7 @@ class UrlInputAdapter(InputAdapter):
                 }
             )
 
-        except requests.RequestException as e:
+        except httpx.RequestError as e:
             logger.error("下载失败: %s, error=%s", url, e)
             raise RuntimeError(f"下载失败: {e}")
 

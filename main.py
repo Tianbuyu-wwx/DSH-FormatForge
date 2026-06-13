@@ -3,6 +3,9 @@ AI 数据转换器服务
 自动将各种格式数据转换为AI可识别的标准化数据
 """
 import os
+import sys
+import socket
+import subprocess
 import webbrowser
 import threading
 import time
@@ -19,6 +22,7 @@ from core.config import settings
 from core.models import ResponseCode, ResponseMsg
 from core.utils import generate_request_id
 from core.middleware import RateLimitMiddleware, RequestSizeLimitMiddleware, TraceIDMiddleware
+from core.metrics import MetricsCollector, MetricsMiddleware, get_metrics_collector
 
 from api.v1 import router as v1_router
 from api.v2 import router as v2_router
@@ -70,6 +74,20 @@ app.add_middleware(
 
 # Trace ID 中间件（放在最后，最先执行）
 app.add_middleware(TraceIDMiddleware)
+
+# 指标收集中间件（最外层，捕获完整请求耗时）
+metrics_collector = get_metrics_collector()
+app.add_middleware(MetricsMiddleware, collector=metrics_collector)
+
+# API v1 废弃提示中间件
+@app.middleware("http")
+async def api_v1_deprecation_middleware(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/v1"):
+        response.headers["Deprecation"] = "true"
+        response.headers["Sunset"] = "Sat, 01 Jan 2027 00:00:00 GMT"
+        response.headers["Link"] = '</api/v2>; rel="successor-version"'
+    return response
 
 # ==================== 全局异常处理器 ====================
 
@@ -191,27 +209,79 @@ async def debug_config():
 
 # ==================== 启动服务 ====================
 
-def open_browser(url: str):
+def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
+    """检测指定端口是否被占用"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
+        return s.connect_ex((host, port)) == 0
+
+
+def start_frontend_dev():
+    """启动前端开发服务器（npm run dev）"""
+    frontend_dir = Path(__file__).parent / "frontend"
+    if not frontend_dir.exists():
+        logger.warning("前端目录不存在: %s", frontend_dir)
+        return None
+
+    npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
+    try:
+        logger.info("正在启动前端开发服务器...")
+        proc = subprocess.Popen(
+            [npm_cmd, "run", "dev"],
+            cwd=str(frontend_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=(sys.platform == "win32")
+        )
+        return proc
+    except Exception as e:
+        logger.error("启动前端开发服务器失败: %s", e)
+        return None
+
+
+def open_browser_delayed(url: str, delay: int = 4):
     """延迟打开浏览器，确保服务已启动"""
-    time.sleep(3)
+    time.sleep(delay)
     logger.info("正在打开前端页面: %s", url)
     webbrowser.open(url)
 
 
 if __name__ == "__main__":
-    frontend_url = f"http://localhost:{settings.APP_PORT}/static/index.html"
+    FRONTEND_PORT = 3000
+    FRONTEND_URL = f"http://localhost:{FRONTEND_PORT}/"
+    BACKEND_URL = f"http://localhost:{settings.APP_PORT}/static/index.html"
 
     logger.info("=" * 60)
     logger.info("       AI 数据转换器")
     logger.info("       自动将各种格式数据转换为AI可识别的标准化数据")
     logger.info("=" * 60)
-    logger.info("服务地址: http://%s:%d", settings.APP_HOST, settings.APP_PORT)
+    logger.info("后端服务: http://%s:%d", settings.APP_HOST, settings.APP_PORT)
     logger.info("API 文档: http://%s:%d/docs", settings.APP_HOST, settings.APP_PORT)
-    logger.info("前端页面: %s", frontend_url)
+
+    # 检测前端开发服务器是否已在运行
+    if is_port_open(FRONTEND_PORT):
+        logger.info("前端开发服务器已在运行: %s", FRONTEND_URL)
+        target_url = FRONTEND_URL
+    else:
+        # 尝试启动前端开发服务器
+        frontend_proc = start_frontend_dev()
+        if frontend_proc:
+            logger.info("前端开发服务器启动中，请稍候...")
+            time.sleep(5)  # 等待前端启动
+            target_url = FRONTEND_URL
+        else:
+            logger.info("前端开发服务器未启动，回退到静态文件: %s", BACKEND_URL)
+            target_url = BACKEND_URL
+
+    logger.info("打开页面: %s", target_url)
     logger.info("=" * 60)
 
     # 在新线程中延迟打开浏览器
-    browser_thread = threading.Thread(target=open_browser, args=(frontend_url,), daemon=True)
+    browser_thread = threading.Thread(
+        target=open_browser_delayed,
+        args=(target_url,),
+        daemon=True
+    )
     browser_thread.start()
 
     uvicorn.run(

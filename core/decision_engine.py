@@ -3,10 +3,9 @@
 负责分析输入格式、AI能力，制定最优转换策略
 """
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any
 
-from core.ai_discovery import AiCapabilities
-
+from core.provider_registry import AiCapabilities
 
 logger = logging.getLogger("decision_engine")
 
@@ -17,10 +16,10 @@ class ConversionDecision:
     def __init__(
         self,
         input_format: str,
-        target_ai_capabilities: Optional[AiCapabilities] = None,
+        target_ai_capabilities: AiCapabilities | None = None,
         conversion_needed: bool = True,
         target_format: str = "text",
-        strategies: List[str] = None,
+        strategies: list[str] = None,
         preserve_original: bool = False
     ):
         self.input_format = input_format
@@ -30,7 +29,7 @@ class ConversionDecision:
         self.strategies = strategies or []
         self.preserve_original = preserve_original
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "input_format": self.input_format,
             "target_ai": self.target_ai_capabilities.to_dict() if self.target_ai_capabilities else None,
@@ -57,7 +56,7 @@ class DecisionEngine:
     def make_decision(
         self,
         detected: Any,
-        ai_caps: Optional[AiCapabilities],
+        ai_caps: AiCapabilities | None,
         parsed_file: Any
     ) -> ConversionDecision:
         """制定转换决策"""
@@ -125,7 +124,7 @@ class DecisionEngine:
     def build_recommendation(
         self,
         decision: ConversionDecision,
-        ai_caps: Optional[AiCapabilities]
+        ai_caps: AiCapabilities | None
     ) -> str:
         """构建使用建议"""
         if not decision.conversion_needed:

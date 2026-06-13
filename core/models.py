@@ -2,10 +2,11 @@
 数据模型定义
 AI 数据转换器 - 通用数据转换模型
 """
-from typing import List, Optional, Dict, Any, Literal
-from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
 
 
 class ResponseCode(int, Enum):
@@ -100,7 +101,7 @@ class BaseResponse(BaseModel):
     """通用响应格式"""
     code: int = Field(default=200, description="状态码")
     msg: str = Field(default="操作成功", description="状态描述")
-    data: Optional[Dict[str, Any]] = Field(default=None, description="业务数据")
+    data: dict[str, Any] | None = Field(default=None, description="业务数据")
     requestId: str = Field(description="请求唯一标识")
 
 
@@ -119,14 +120,14 @@ class ExtractedElement(BaseModel):
     elementId: str
     elementType: str = Field(description="元素类型: text, image, table, chart, heading, etc.")
     content: str
-    position: Optional[Dict[str, int]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    position: dict[str, int] | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class PageContent(BaseModel):
     """页面内容"""
     pageNumber: int
-    elements: List[ExtractedElement]
+    elements: list[ExtractedElement]
     rawText: str
     hasImage: bool = False
     hasTable: bool = False
@@ -139,12 +140,12 @@ class ParsedFile(BaseModel):
     fileSize: int
     pageCount: int
     fileType: FileType
-    pages: List[PageContent]
-    structure: Optional[Dict[str, Any]] = None
+    pages: list[PageContent]
+    structure: dict[str, Any] | None = None
     createdAt: datetime
     status: TaskStatus
-    filePath: Optional[str] = None
-    imagePaths: Optional[List[str]] = None
+    filePath: str | None = None
+    imagePaths: list[str] | None = None
 
 
 # ==================== 转换请求/响应模块 ====================
@@ -154,7 +155,7 @@ class ConvertRequest(BaseModel):
     parseId: str = Field(description="文件解析任务ID")
     conversionType: ConversionType = Field(default=ConversionType.AUTO, description="转换类型")
     outputFormat: OutputFormat = Field(default=OutputFormat.JSON, description="输出格式")
-    customPrompt: Optional[str] = Field(default=None, description="自定义转换指令")
+    customPrompt: str | None = Field(default=None, description="自定义转换指令")
     enc: str = Field(description="签名信息")
 
 
@@ -163,7 +164,7 @@ class ConvertUploadRequest(BaseModel):
     fileType: Literal["ppt", "pdf", "image", "doc", "txt", "csv", "xls", "unknown"] = Field(description="文件类型")
     conversionType: ConversionType = Field(default=ConversionType.AUTO, description="转换类型")
     outputFormat: OutputFormat = Field(default=OutputFormat.JSON, description="输出格式")
-    customPrompt: Optional[str] = Field(default=None, description="自定义转换指令")
+    customPrompt: str | None = Field(default=None, description="自定义转换指令")
 
 
 class ProcessingLog(BaseModel):
@@ -183,9 +184,9 @@ class ConvertResultData(BaseModel):
     outputFormat: OutputFormat
     extractedContent: str = Field(description="提取的原始内容摘要")
     convertedContent: str = Field(description="AI转换后的内容")
-    structuredData: Optional[Dict[str, Any]] = Field(default=None, description="结构化数据")
+    structuredData: dict[str, Any] | None = Field(default=None, description="结构化数据")
     confidence: float = Field(default=0.0, description="转换置信度 0.0-1.0")
-    processingLogs: List[ProcessingLog]
+    processingLogs: list[ProcessingLog]
     createdAt: datetime
 
 
@@ -197,8 +198,8 @@ class ConvertResponseData(BaseModel):
     outputFormat: OutputFormat
     preview: str = Field(description="转换结果预览")
     confidence: float
-    resultUrl: Optional[str] = None
-    exportUrl: Optional[str] = None
+    resultUrl: str | None = None
+    exportUrl: str | None = None
 
 
 class GetResultRequest(BaseModel):
@@ -215,10 +216,10 @@ class GetResultResponseData(BaseModel):
     outputFormat: OutputFormat
     extractedContent: str
     convertedContent: str
-    structuredData: Optional[Dict[str, Any]]
+    structuredData: dict[str, Any] | None
     confidence: float
-    processingLogs: List[ProcessingLog]
-    totalProcessingTime: Optional[int] = Field(default=None, description="总处理时间（秒）")
+    processingLogs: list[ProcessingLog]
+    totalProcessingTime: int | None = Field(default=None, description="总处理时间（秒）")
 
 
 # ==================== 内部数据结构 ====================
@@ -228,7 +229,7 @@ class ConversionStrategyInfo(BaseModel):
     strategyId: str
     strategyName: str
     description: str
-    supportedTypes: List[FileType]
+    supportedTypes: list[FileType]
     confidence: float
 
 

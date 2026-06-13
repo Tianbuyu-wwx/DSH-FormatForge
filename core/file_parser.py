@@ -80,13 +80,18 @@ try:
 except ImportError:
     RICHTEXT_PARSER_AVAILABLE = False
 
-from parsers.markdown_parser import MarkdownParser
-from parsers.toml_parser import TOMLParser
-from parsers.odf_parser import ODFParser
 from parsers.email_parser import EmailParser
 from parsers.epub_parser import EPUBParser
+from parsers.markdown_parser import MarkdownParser
+from parsers.odf_parser import ODFParser
 from parsers.svg_parser import SVGParser
+from parsers.toml_parser import TOMLParser
 
+# v2.3 新增解析器
+from parsers.subtitle_parser import SubtitleParser
+from parsers.latex_parser import LaTeXParser
+from parsers.sql_parser import SQLParser
+from parsers.audio_parser import AudioParser
 
 logger = logging.getLogger("file_parser")
 
@@ -186,6 +191,19 @@ class FileParser:
         self.registry.register(SVGParser())
         logger.info("已注册 SVG 解析器")
 
+        # v2.3 新增解析器
+        self.registry.register(SubtitleParser())
+        logger.info("已注册字幕解析器 (SRT/VTT)")
+
+        self.registry.register(LaTeXParser())
+        logger.info("已注册 LaTeX 解析器")
+
+        self.registry.register(SQLParser())
+        logger.info("已注册 SQL 解析器")
+
+        self.registry.register(AudioParser())
+        logger.info("已注册音频解析器 (WAV/MP3/FLAC/OGG/M4A/AIFF)")
+
         logger.info("解析器注册完成，共 %d 个解析器", len(self.registry.parsers))
 
     def _generate_parse_id(self) -> str:
@@ -261,6 +279,20 @@ class FileParser:
             '.7z': FileType.UNKNOWN,
             '.rar': FileType.UNKNOWN,
             '.rtf': FileType.TXT,
+            # v2.3 新增
+            '.srt': FileType.TXT,
+            '.vtt': FileType.TXT,
+            '.tex': FileType.TXT,
+            '.latex': FileType.TXT,
+            '.ltx': FileType.TXT,
+            '.sql': FileType.TXT,
+            '.wav': FileType.UNKNOWN,
+            '.mp3': FileType.UNKNOWN,
+            '.flac': FileType.UNKNOWN,
+            '.ogg': FileType.UNKNOWN,
+            '.m4a': FileType.UNKNOWN,
+            '.aiff': FileType.UNKNOWN,
+            '.aif': FileType.UNKNOWN,
         }
         mapped_type = type_mapping.get(file_type, ext_mapping.get(ext, FileType.UNKNOWN))
         logger.debug("文件类型映射: ext=%s -> mapped_type=%s", ext, mapped_type.value)

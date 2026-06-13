@@ -6,42 +6,38 @@ import logging
 import re
 from pathlib import Path
 
+from core.format_detector import EXTENSION_MAP
+
 logger = logging.getLogger("security")
 
 # ==================== 文件类型白名单 ====================
 
-# 允许的文件扩展名白名单
-ALLOWED_EXTENSIONS: set[str] = {
-    # 文档
-    ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".rtf", ".md",
-    # 表格
-    ".xls", ".xlsx", ".csv", ".tsv",
-    # 图片
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif",
-    # 数据
-    ".json", ".yaml", ".yml", ".xml", ".html", ".htm",
-    # 压缩包
-    ".zip", ".7z", ".rar",
-    # 其他
-    ".epub", ".log",
+# 允许的文件扩展名白名单（从 EXTENSION_MAP 自动生成）
+# 额外添加一些历史兼容格式（.doc/.xls 等）
+_ALLOWED_BASE: set[str] = set(EXTENSION_MAP.keys())
+
+# 额外允许但不在检测映射中的扩展名（出于安全验证的兼容性）
+_ADDITIONAL_EXTENSIONS: set[str] = {
+    ".doc",    # 旧版 Word
+    ".xls",    # 旧版 Excel
+    ".log",    # 日志文件
 }
 
-# 允许的 MIME 类型白名单
-ALLOWED_MIME_TYPES: set[str] = {
-    "application/pdf",
+ALLOWED_EXTENSIONS: set[str] = _ALLOWED_BASE | _ADDITIONAL_EXTENSIONS
+
+# 允许的 MIME 类型白名单（从 EXTENSION_MAP 自动生成）
+_ALLOWED_MIME_BASE: set[str] = {mime for _, mime in EXTENSION_MAP.values()}
+
+# 额外允许的 MIME 类型
+_ADDITIONAL_MIME_TYPES: set[str] = {
     "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "text/plain", "text/csv", "text/markdown", "text/html",
     "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "image/png", "image/jpeg", "image/gif", "image/bmp", "image/webp", "image/tiff",
-    "application/json", "application/xml", "application/yaml",
-    "application/zip", "application/x-7z-compressed", "application/x-rar",
+    "application/x-rar",
     "application/rtf",
-    "application/epub+zip",
 }
+
+ALLOWED_MIME_TYPES: set[str] = _ALLOWED_MIME_BASE | _ADDITIONAL_MIME_TYPES
 
 
 def validate_file_extension(filename: str) -> bool:

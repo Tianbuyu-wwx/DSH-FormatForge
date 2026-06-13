@@ -8,7 +8,6 @@ import time
 
 from core.content_cache import (
     ContentHashCache,
-    SimilarityCache,
     CacheEntry,
     content_cache
 )
@@ -154,50 +153,6 @@ class TestContentHashCache:
 
         assert no_prompt == {"data": "no prompt"}
         assert with_prompt == {"data": "with prompt"}
-
-
-class TestSimilarityCache:
-    """测试相似度缓存"""
-
-    def setup_method(self):
-        self.cache = SimilarityCache(similarity_threshold=0.8)
-
-    def test_compute_simhash(self):
-        """测试SimHash计算"""
-        hash1 = self.cache._compute_simhash("hello world test")
-        hash2 = self.cache._compute_simhash("hello world test")
-        hash3 = self.cache._compute_simhash("completely different content")
-
-        assert hash1 == hash2
-        assert hash1 != hash3
-
-    def test_hash_similarity(self):
-        """测试哈希相似度计算"""
-        similarity = self.cache._hash_similarity("abcd1234", "abcd1234")
-        assert similarity == 1.0
-
-        similarity = self.cache._hash_similarity("abcd1234", "wxyz5678")
-        assert similarity == 0.0
-
-    def test_store_and_find_similar(self):
-        """测试存储和查找相似内容"""
-        content = "This is a test document about Python programming"
-        result = {"converted": "data"}
-
-        self.cache.store(content, result)
-
-        # 查找相似内容
-        similar_content = "This is a test document about Python coding"
-        found = self.cache.find_similar(similar_content)
-
-        assert found == result
-
-    def test_find_similar_not_found(self):
-        """测试查找不存在的相似内容"""
-        self.cache.store("some content", {"data": 1})
-
-        found = self.cache.find_similar("completely different content here")
-        assert found is None
 
 
 class TestGlobalCache:

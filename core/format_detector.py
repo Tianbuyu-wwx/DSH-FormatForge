@@ -54,6 +54,11 @@ class DataFormat(str, Enum):
     # 其他
     UNKNOWN = "unknown"
     BINARY = "binary"
+    # v2.3 新增
+    SRT = "srt"          # 字幕
+    LATEX = "latex"      # LaTeX
+    SQL = "sql"          # SQL 转储
+    AUDIO = "audio"      # 音频元数据
 
 
 @dataclass
@@ -134,6 +139,20 @@ class FormatDetector:
         ".epub": (DataFormat.EPUB, "application/epub+zip"),
         # 矢量图
         ".svg": (DataFormat.SVG, "image/svg+xml"),
+        # v2.3 新增
+        ".srt": (DataFormat.SRT, "text/srt"),
+        ".vtt": (DataFormat.SRT, "text/vtt"),
+        ".tex": (DataFormat.LATEX, "application/x-tex"),
+        ".latex": (DataFormat.LATEX, "application/x-tex"),
+        ".ltx": (DataFormat.LATEX, "application/x-tex"),
+        ".sql": (DataFormat.SQL, "application/sql"),
+        ".wav": (DataFormat.AUDIO, "audio/wav"),
+        ".mp3": (DataFormat.AUDIO, "audio/mpeg"),
+        ".flac": (DataFormat.AUDIO, "audio/flac"),
+        ".ogg": (DataFormat.AUDIO, "audio/ogg"),
+        ".m4a": (DataFormat.AUDIO, "audio/mp4"),
+        ".aiff": (DataFormat.AUDIO, "audio/aiff"),
+        ".aif": (DataFormat.AUDIO, "audio/aiff"),
     }
 
     def detect(self, data: bytes, filename: str | None = None) -> FormatDetectionResult:
@@ -476,3 +495,6 @@ class FormatDetector:
 
 # 全局检测器实例
 format_detector = FormatDetector()
+
+# 模块级别名：作为整个项目的扩展名映射权威来源
+EXTENSION_MAP = FormatDetector.EXTENSION_MAP

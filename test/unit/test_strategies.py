@@ -17,7 +17,6 @@ from core.conversion_strategies import (
     TableExtractionStrategy,
     ImageDescriptionStrategy,
     OcrStrategy,
-    EncodingFixStrategy,
     StrategyRegistry
 )
 
@@ -388,46 +387,6 @@ class TestOcrStrategy:
         assert result["confidence"] == 0.2
 
 
-class TestEncodingFixStrategy:
-    """测试编码修复策略"""
-
-    def setup_method(self):
-        self.strategy = EncodingFixStrategy()
-
-    def test_can_handle_with_garbled_text(self):
-        parsed = TestFixtures.create_parsed_file(
-            FileType.TXT,
-            [TestFixtures.create_text_page("Hello ï¿½ World")]
-        )
-        score = self.strategy.can_handle(parsed)
-        assert score == 0.95
-
-    def test_can_handle_clean_text(self):
-        parsed = TestFixtures.create_parsed_file(
-            FileType.TXT,
-            [TestFixtures.create_text_page("Hello World")]
-        )
-        score = self.strategy.can_handle(parsed)
-        assert score == 0.3
-
-    def test_convert_fix_garbled(self):
-        parsed = TestFixtures.create_parsed_file(
-            FileType.TXT,
-            [TestFixtures.create_text_page("Test ï¿½ text")]
-        )
-        result = self.strategy.convert(parsed, OutputFormat.TEXT)
-
-        assert "ï¿½" not in result["content"]
-        assert result["confidence"] == 0.85
-
-    def test_convert_remove_control_chars(self):
-        parsed = TestFixtures.create_parsed_file(
-            FileType.TXT,
-            [TestFixtures.create_text_page("Hello\x00World")]
-        )
-        result = self.strategy.convert(parsed, OutputFormat.TEXT)
-
-        assert "\x00" not in result["content"]
 
 
 class TestStrategyRegistry:
@@ -447,7 +406,7 @@ class TestStrategyRegistry:
 
     def test_get_all_strategies(self):
         strategies = self.registry.get_all_strategies()
-        assert len(strategies) == 8
+        assert len(strategies) == 7
         strategy_ids = [s.strategy_id for s in strategies]
         assert "auto_detect" in strategy_ids
         assert "text_extraction" in strategy_ids
@@ -484,4 +443,4 @@ class TestStrategyRegistry:
     def test_select_encoding_strategy(self):
         parsed = TestFixtures.create_parsed_file(FileType.TXT)
         strategy = self.registry.select_best_strategy(parsed, ConversionType.ENCODING)
-        assert strategy.strategy_id == "encoding_fix"
+        assert strategy.strategy_id == "text_extraction"

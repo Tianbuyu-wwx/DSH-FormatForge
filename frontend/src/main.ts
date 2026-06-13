@@ -1,149 +1,376 @@
 // ============================================================
-// AI 数据转换器 - 应用入口
+// AI 数据转换器 — v4.0 Sacred Grove
 // ============================================================
+// 布局：左侧边栏（安全区）+ 右侧角色留白
 
 import '../styles/main.css';
-
-// 组件将在后续步骤中逐步引入
 import './components/app-background';
 import './components/app-upload';
 import './components/app-options';
 import './components/app-convert-btn';
 import './components/app-status';
 import './components/app-result';
+import './components/app-history';
+import './components/app-compare.js';
+import './components/ui/icon.js';
 
 import { LitElement, html, css } from 'lit';
-import { customElement, query } from 'lit/decorators.js';
+import { customElement, query, state } from 'lit/decorators.js';
 import { store } from './state/store.js';
-import { uploadAndConvert, ApiError } from './utils/api.js';
+import { getLang, toggleLang } from './i18n/index.js';
+import {
+  uploadAndConvert,
+  convertUrl,
+  convertText,
+  batchConvert,
+  ApiError,
+} from './utils/api.js';
 import { AppUpload } from './components/app-upload.js';
 
-/**
- * 应用根组件
- * 后续步骤中会逐步替换为完整的组件树
- */
 @customElement('app-root')
 export class AppRoot extends LitElement {
   @query('app-upload') private _upload!: AppUpload;
+  @state() private _sidebarOpen = false;
 
   private _onConvertBound = this._onConvert.bind(this);
-  static styles = css`
-    :host {
-      display: block;
-      min-height: 100vh;
-    }
+  private _onConvertUrlBound = this._onConvertUrl.bind(this);
+  private _onConvertTextBound = this._onConvertText.bind(this);
 
-    .container {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 120px 20px 40px;
-      min-height: 100vh;
+  static styles = css`
+    :host { display: block; position: fixed; inset: 0; }
+
+    /* ===== 左侧边栏 ===== */
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: 420px;
+      max-width: 45vw;
+      z-index: 1;
       display: flex;
       flex-direction: column;
-      position: relative;
-      z-index: 1;
+      background: rgba(15, 46, 46, 0.38);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-right: 1px solid rgba(95, 179, 195, 0.08);
+      box-shadow: 4px 0 40px rgba(0,0,0,0.35);
+      animation: sidebarIn 0.9s var(--ease) both;
+      overflow: hidden;
     }
 
-    .header {
-      text-align: center;
-      margin-bottom: 50px;
+    .sidebar::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, rgba(255,248,231,0.2), transparent 80%);
     }
 
+    .sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 28px 20px;
+    }
+
+    .sidebar-footer {
+      padding: 10px 28px;
+      border-top: 1px solid rgba(95, 179, 195, 0.06);
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      letter-spacing: 0.03em;
+    }
+
+    /* ===== Logo ===== */
     .logo {
-      font-size: 2.5rem;
-      font-weight: 700;
-      margin-bottom: 10px;
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+      font-family: var(--font-display);
+      font-size: var(--text-lg);
+      font-style: italic;
+      font-weight: 400;
+      color: var(--light-warm);
+      letter-spacing: -0.01em;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.35);
+      margin-bottom: 20px;
     }
 
-    .subtitle {
-      font-size: 1.1rem;
-      opacity: 0.9;
-      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+    /* ===== 顶栏操作 ===== */
+    .panel-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 20px;
     }
 
-    .footer {
-      text-align: center;
-      padding: 20px;
-      opacity: 0.8;
-      font-size: 0.9rem;
-      margin-top: auto;
+    .top-actions {
+      display: flex;
+      gap: 16px;
+    }
+
+    .top-actions button {
+      font-family: var(--font-body);
+      font-size: var(--text-xs);
+      font-weight: 400;
+      color: var(--text-secondary);
+      background: none;
+      border: none;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: color var(--duration) var(--ease);
+      padding: 0;
+    }
+
+    .top-actions button:hover { color: var(--text); }
+
+    /* ===== 右侧角色区域 ===== */
+    .character-area {
+      position: fixed;
+      top: 0; right: 0; bottom: 0;
+      left: 420px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    @keyframes sidebarIn {
+      from { opacity: 0; transform: translateX(-30px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ===== 响应式 ===== */
+
+    /* 平板横屏 / 小桌面：收窄边栏 */
+    @media (max-width: 1023px) {
+      .sidebar { width: 340px; }
+      .sidebar-scroll { padding: 20px 20px 16px; }
+      .character-area { left: 340px; }
+      .logo { font-size: var(--text-base); margin-bottom: 14px; }
+    }
+
+    /* 平板竖屏：边栏变为可滑出的覆盖面板 */
+    @media (max-width: 767px) {
+      .sidebar {
+        width: 85vw;
+        max-width: 360px;
+        transform: translateX(-100%);
+        transition: transform 0.35s var(--ease);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-scroll { padding: 16px 16px 12px; }
+      .character-area { display: none; }
+      .logo { font-size: var(--text-base); margin-bottom: 12px; }
+    }
+
+    /* 手机：全屏边栏 */
+    @media (max-width: 479px) {
+      .sidebar { width: 100vw; max-width: none; }
+      .sidebar-scroll { padding: 12px 12px 8px; }
+    }
+
+    /* 汉堡菜单按钮（仅移动端显示） */
+    .menu-toggle {
+      display: none;
+      position: fixed;
+      top: 12px; left: 12px;
+      z-index: 10;
+      width: 40px; height: 40px;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 46, 46, 0.6);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(95, 179, 195, 0.12);
+      border-radius: 10px;
+      color: var(--text);
+      cursor: pointer;
+      transition: all var(--duration) var(--ease);
+    }
+    .menu-toggle:hover {
+      background: rgba(15, 46, 46, 0.8);
+      border-color: rgba(95, 179, 195, 0.25);
+    }
+    @media (max-width: 767px) {
+      .menu-toggle { display: flex; }
+    }
+
+    /* 遮罩层（移动端边栏打开时） */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 0;
+      opacity: 0;
+      transition: opacity 0.35s var(--ease);
+    }
+    .overlay.show {
+      display: block;
+      opacity: 1;
+    }
+    @media (min-width: 768px) {
+      .overlay { display: none !important; }
     }
   `;
+
+  private _unsubStore?: () => void;
 
   connectedCallback() {
     super.connectedCallback();
     this.addEventListener('convert', this._onConvertBound);
+    this.addEventListener('convert-url', this._onConvertUrlBound);
+    this.addEventListener('convert-text', this._onConvertTextBound);
+    this._unsubStore = store.subscribe(() => this.requestUpdate());
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this.removeEventListener('convert', this._onConvertBound);
+    this.removeEventListener('convert-url', this._onConvertUrlBound);
+    this.removeEventListener('convert-text', this._onConvertTextBound);
+    this._unsubStore?.();
   }
 
   render() {
     return html`
       <app-background></app-background>
       <app-status></app-status>
-      <div class="container">
-        <header class="header">
-          <h1 class="logo">AI 数据转换器</h1>
-          <p class="subtitle">自动将各种格式数据转换为AI可识别的标准化数据</p>
-        </header>
+      <app-history></app-history>
+      <app-compare></app-compare>
 
-        <main class="flex-1">
+      <button class="menu-toggle" @click=${this._toggleSidebar} aria-label="菜单">
+        <ui-icon name="file-text" size="20"></ui-icon>
+      </button>
+
+      <div class="overlay ${this._sidebarOpen ? 'show' : ''}" @click=${this._closeSidebar}></div>
+
+      <div class="sidebar ${this._sidebarOpen ? 'open' : ''}">
+        <div class="sidebar-scroll">
+          <div class="panel-header">
+            <span class="logo">AI 数据转换器</span>
+            <div class="top-actions">
+              <button @click=${this._toggleHistory}>历史</button>
+              <button @click=${() => toggleLang()}>${getLang() === 'zh' ? 'EN' : '中'}</button>
+            </div>
+          </div>
+
           <app-upload></app-upload>
           <app-options></app-options>
           <app-convert-btn></app-convert-btn>
           <app-result></app-result>
-        </main>
+        </div>
 
-        <footer class="footer">
-          <p>&copy; 2026 AI 数据转换器 | 智能数据格式化工具</p>
-        </footer>
+        <div class="sidebar-footer">
+          <span>${this._statusText()}</span>
+          <span>v4.0 Sacred Grove</span>
+        </div>
       </div>
+
+      <div class="character-area"></div>
     `;
   }
-private async _onConvert() {
-    const rawFile = this._upload?.getRawFile();
-    if (!rawFile) {
-      store.showStatus('请先选择文件', 'error');
+
+  private _statusText(): string {
+    const { files, loading } = store.state;
+    if (loading) return '转换中...';
+    if (files.length) return `${files.length} 个文件 · 就绪`;
+    return '就绪 · 0 文件';
+  }
+
+  private _toggleHistory() {
+    store.toggleHistory();
+  }
+
+  private _toggleSidebar() {
+    this._sidebarOpen = !this._sidebarOpen;
+  }
+
+  private _closeSidebar() {
+    this._sidebarOpen = false;
+  }
+
+  /* ===== 转换逻辑 ===== */
+  private async _onConvert() {
+    const { inputMode, conversionType, outputFormat, customPrompt } = store.state;
+
+    if (inputMode === 'url') {
+      const url = store.state.urlInput;
+      if (!url) { store.showStatus('请输入 URL', 'error'); return; }
+      await this._doConvertUrl(url, { conversionType, outputFormat, customPrompt });
       return;
     }
 
-    const { conversionType, outputFormat, customPrompt } = store.state;
+    if (inputMode === 'text') {
+      const text = store.state.textInput;
+      if (!text) { store.showStatus('请输入文本内容', 'error'); return; }
+      await this._doConvertText(text, { conversionType, outputFormat, customPrompt });
+      return;
+    }
+
+    const rawFiles = this._upload?.getRawFiles();
+    const rawFile = this._upload?.getRawFile();
+
+    if (rawFiles && rawFiles.length > 1) {
+      try {
+        store.clearResult(); store.clearResults(); store.setLoading(true);
+        store.setProgress('upload', 0);
+        const results = await batchConvert(rawFiles, { conversionType, outputFormat },
+          (current, total, fileName) => {
+            store.setProgress('convert', Math.round((current / total) * 100));
+            store.showStatus(`正在转换 ${current}/${total}: ${fileName}`, 'info');
+          });
+        store.setResults(results); store.setResult(results[0] || null);
+        store.showStatus(`批量转换完成！共 ${results.length} 个文件`, 'success');
+      } catch (err) {
+        store.showStatus(err instanceof ApiError ? err.message : '批量转换失败', 'error');
+      } finally { store.setLoading(false); store.setProgress('done', 100); }
+      return;
+    }
+
+    if (!rawFile) { store.showStatus('请先选择文件', 'error'); return; }
 
     try {
-      store.clearResult();
-      store.setLoading(true);
-      store.setProgress('upload', 0);
-
-      const result = await uploadAndConvert(
-        rawFile,
-        { conversionType, outputFormat, customPrompt },
-        (phase, percent) => store.setProgress(phase as Parameters<typeof store.setProgress>[0], percent),
-      );
-
-      store.setResult(result);
-      store.showStatus('转换完成！', 'success');
+      store.clearResult(); store.setLoading(true); store.setProgress('upload', 0);
+      const result = await uploadAndConvert(rawFile, { conversionType, outputFormat, customPrompt },
+        (phase, percent) => store.setProgress(phase as 'upload' | 'parse' | 'convert' | 'done', percent));
+      store.setResult(result); store.showStatus('转换完成！', 'success');
     } catch (err) {
-      const message = err instanceof ApiError
-        ? err.message
-        : '网络错误，请检查后端服务是否启动';
-      store.showStatus(message, 'error');
-    } finally {
-      store.setLoading(false);
-      store.setProgress('done', 100);
-    }
+      store.showStatus(err instanceof ApiError ? err.message : '网络错误', 'error');
+    } finally { store.setLoading(false); store.setProgress('done', 100); }
+  }
+
+  private async _onConvertUrl(e: Event) {
+    const detail = (e as CustomEvent).detail as { url: string };
+    if (!detail?.url) return;
+    const { conversionType, outputFormat, customPrompt } = store.state;
+    await this._doConvertUrl(detail.url, { conversionType, outputFormat, customPrompt });
+  }
+
+  private async _doConvertUrl(url: string, opts: any) {
+    try {
+      store.clearResult(); store.setLoading(true); store.setProgress('upload', 0);
+      const result = await convertUrl(url, opts, (phase, percent) =>
+        store.setProgress(phase as 'upload' | 'parse' | 'convert' | 'done', percent));
+      store.setResult(result); store.showStatus('转换完成！', 'success');
+    } catch (err) {
+      store.showStatus(err instanceof ApiError ? err.message : 'URL 转换失败', 'error');
+    } finally { store.setLoading(false); store.setProgress('done', 100); }
+  }
+
+  private async _onConvertText(e: Event) {
+    const detail = (e as CustomEvent).detail as { text: string };
+    if (!detail?.text) return;
+    const { conversionType, outputFormat, customPrompt } = store.state;
+    await this._doConvertText(detail.text, { conversionType, outputFormat, customPrompt });
+  }
+
+  private async _doConvertText(text: string, opts: any) {
+    try {
+      store.clearResult(); store.setLoading(true); store.setProgress('upload', 0);
+      const result = await convertText(text, opts, (phase, percent) =>
+        store.setProgress(phase as 'upload' | 'parse' | 'convert' | 'done', percent));
+      store.setResult(result); store.showStatus('转换完成！', 'success');
+    } catch (err) {
+      store.showStatus(err instanceof ApiError ? err.message : '文本转换失败', 'error');
+    } finally { store.setLoading(false); store.setProgress('done', 100); }
   }
 }
 
-// 全局错误处理
-window.addEventListener('error', (e) => {
-  console.error('[App Error]', e.error);
-});
-
-// 未捕获的 Promise 错误
-window.addEventListener('unhandledrejection', (e) => {
-  console.error('[Unhandled Promise]', e.reason);
-});
+window.addEventListener('error', (e) => console.error('[App Error]', e.error));
+window.addEventListener('unhandledrejection', (e) => console.error('[Unhandled Promise]', e.reason));

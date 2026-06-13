@@ -3,7 +3,7 @@
 // ============================================================
 // 基于发布-订阅模式的轻量级状态管理，与 Lit 原生集成
 
-import type { AppState, ConvertResult, FileInfo, StatusMessage, ProgressState, ConversionType, OutputFormat } from '../types/index.js';
+import type { AppState, ConvertResult, FileInfo, StatusMessage, ProgressState, ConversionType, OutputFormat, InputMode, HistoryItem } from '../types/index.js';
 
 type StateListener = (state: AppState) => void;
 
@@ -11,13 +11,21 @@ type StateListener = (state: AppState) => void;
 function createInitialState(): AppState {
   return {
     file: null,
+    files: [],
+    inputMode: 'file',
+    urlInput: '',
+    textInput: '',
     result: null,
+    results: [],
     status: null,
     loading: false,
     progress: { phase: 'upload', percent: 0 },
     conversionType: 'auto',
     outputFormat: 'json',
     customPrompt: '',
+    history: [],
+    historyLoading: false,
+    showHistory: false,
   };
 }
 
@@ -55,6 +63,50 @@ class Store {
 
   clearFile() {
     this.setFile(null);
+  }
+
+  // v2.3: 批量文件
+  addFiles(newFiles: FileInfo[]) {
+    this._state = { ...this._state, files: [...this._state.files, ...newFiles] };
+    if (newFiles.length > 0) this._state = { ...this._state, file: newFiles[0] };
+    this._notify();
+  }
+
+  setFiles(files: FileInfo[]) {
+    this._state = { ...this._state, files };
+    this._notify();
+  }
+
+  setBatchFiles(files: FileInfo[] | undefined) {
+    this._state = { ...this._state, files: files || [] };
+    this._notify();
+  }
+
+  removeFile(index: number) {
+    const updated = this._state.files.filter((_, i) => i !== index);
+    this._state = { ...this._state, files: updated, file: updated[0] || null };
+    this._notify();
+  }
+
+  clearFiles() {
+    this._state = { ...this._state, files: [], file: null };
+    this._notify();
+  }
+
+  // v2.3: 输入模式
+  setInputMode(mode: InputMode) {
+    this._state = { ...this._state, inputMode: mode };
+    this._notify();
+  }
+
+  setUrlInput(url: string) {
+    this._state = { ...this._state, urlInput: url };
+    this._notify();
+  }
+
+  setTextInput(text: string) {
+    this._state = { ...this._state, textInput: text };
+    this._notify();
   }
 
   // ==================== 转换选项 ====================
@@ -97,6 +149,22 @@ class Store {
     this.setResult(null);
   }
 
+  // v2.3: 批量结果
+  setResults(results: ConvertResult[]) {
+    this._state = { ...this._state, results };
+    this._notify();
+  }
+
+  appendResult(result: ConvertResult) {
+    this._state = { ...this._state, results: [...this._state.results, result] };
+    this._notify();
+  }
+
+  clearResults() {
+    this._state = { ...this._state, results: [] };
+    this._notify();
+  }
+
   // ==================== Toast 通知 ====================
 
   showStatus(message: string, type: StatusMessage['type'] = 'info') {
@@ -114,6 +182,36 @@ class Store {
   clearStatus() {
     this._state = { ...this._state, status: null };
     this._notify();
+  }
+
+  // ==================== v2.3: 历史记录 ====================
+
+  setHistory(history: HistoryItem[]) {
+    this._state = { ...this._state, history };
+    this._notify();
+  }
+
+  setHistoryLoading(loading: boolean) {
+    this._state = { ...this._state, historyLoading: loading };
+    this._notify();
+  }
+
+  toggleHistory(show?: boolean) {
+    this._state = {
+      ...this._state,
+      showHistory: show !== undefined ? show : !this._state.showHistory
+    };
+    this._notify();
+  }
+
+  async viewHistory(resultId: string) {
+    const { getHistoryDetail } = await import('../utils/api.js');
+    try {
+      const result = await getHistoryDetail(resultId);
+      this.setResult(result);
+    } catch {
+      this.showStatus('加载历史记录失败', 'error');
+    }
   }
 
   // ==================== 重置 ====================

@@ -2,11 +2,10 @@
 应用配置模块
 使用 Pydantic Settings 统一管理所有配置
 """
-import os
 from pathlib import Path
-from typing import Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppSettings(BaseSettings):
@@ -52,7 +51,7 @@ class AppSettings(BaseSettings):
     CACHE_MAX_ENTRIES: int = Field(default=1000)
     CACHE_TTL: int = Field(default=3600, description="缓存过期时间（秒）")
     CACHE_PERSIST_ENABLED: bool = Field(default=True)
-    CACHE_PERSIST_PATH: Optional[Path] = Field(default=None)
+    CACHE_PERSIST_PATH: Path | None = Field(default=None)
 
     # 并发配置
     MAX_CONCURRENT_AI: int = Field(default=5)

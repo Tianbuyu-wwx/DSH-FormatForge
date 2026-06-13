@@ -1,111 +1,72 @@
 // ============================================================
-// <app-convert-btn> 转换按钮 + 进度环
+// <app-convert-btn> v4.0 — 药丸渐变按钮
 // ============================================================
-// 根据 store 状态切换：禁用 → 可点击 → 加载中 → 完成
 
 import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement } from 'lit/decorators.js';
 import { store } from '../state/store.js';
-
-const PHASE_LABELS: Record<string, string> = {
-  upload: '上传中...',
-  parse: '解析中...',
-  convert: 'AI 转换中...',
-  done: '完成',
-};
+import '../components/ui/icon.js';
 
 @customElement('app-convert-btn')
 export class AppConvertBtn extends LitElement {
-  @state() private _hasFile = false;
-  @state() private _loading = false;
-  @state() private _phase = '';
-  @state() private _percent = 0;
-
   static styles = css`
-    :host {
-      display: block;
-      text-align: center;
-      margin-bottom: 24px;
-    }
+    :host { display: block; margin-bottom: var(--space-2); }
 
-    .btn-wrap {
-      display: inline-flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
-
-    /* 圆形进度环 */
-    .progress-ring {
-      display: none;
-      position: relative;
-      width: 140px;
-      height: 140px;
-    }
-
-    .progress-ring.visible {
+    .wrap {
       display: flex;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-    }
-
-    .ring-bg {
-      fill: none;
-      stroke: rgba(255, 255, 255, 0.1);
-    }
-
-    .ring-fg {
-      fill: none;
-      stroke: url(#ringGradient);
-      stroke-linecap: round;
-      transform: rotate(-90deg);
-      transform-origin: center;
-      transition: stroke-dashoffset 0.5s ease;
-    }
-
-    .ring-text {
-      position: absolute;
-      text-align: center;
-    }
-
-    .ring-percent {
-      font-size: 1.8rem;
-      font-weight: 700;
-    }
-
-    .ring-label {
-      font-size: 0.78rem;
-      color: var(--color-text-muted);
-      margin-top: 2px;
-    }
-
-    /* 按钮 */
-    .convert-btn {
-      background: linear-gradient(135deg, var(--color-secondary) 0%, var(--color-accent) 100%);
-      color: white;
+      gap: var(--space-2);
+      padding: 10px 24px;
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--forest-deep);
+      background: linear-gradient(135deg, var(--accent-green) 0%, var(--forest-light) 100%);
       border: none;
-      padding: 18px 48px;
-      font-size: 1.2rem;
-      font-weight: 600;
-      border-radius: 12px;
+      border-radius: 999px;
       cursor: pointer;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 20px rgba(17, 153, 142, 0.4);
-      font-family: inherit;
+      letter-spacing: 0.02em;
+      transition: all 0.4s var(--ease);
+      box-shadow: 0 4px 16px rgba(74,222,128,0.2);
+      white-space: nowrap;
+      user-select: none;
     }
 
-    .convert-btn:hover:not(:disabled) {
+    .btn:hover {
       transform: translateY(-2px);
-      box-shadow: 0 6px 25px rgba(17, 153, 142, 0.5);
+      box-shadow: 0 8px 28px rgba(74,222,128,0.35);
     }
 
-    .convert-btn:disabled {
-      opacity: 0.6;
+    .btn:disabled {
+      opacity: 0.4;
       cursor: not-allowed;
+      transform: none;
     }
 
-    .convert-btn.hidden {
-      display: none;
+    .progress {
+      position: relative;
+      overflow: hidden;
+    }
+    .progress::after {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      background: rgba(0,0,0,0.15);
+      width: var(--progress, 0%);
+      transition: width 0.3s var(--ease);
+    }
+    .btn-label { position: relative; z-index: 1; }
+
+    /* ===== 响应式 ===== */
+    @media (max-width: 479px) {
+      .wrap { justify-content: stretch; }
+      .btn { width: 100%; justify-content: center; padding: 10px 16px; font-size: var(--text-xs); }
     }
   `;
 
@@ -113,12 +74,7 @@ export class AppConvertBtn extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._unsub = store.subscribe((s) => {
-      this._hasFile = !!s.file;
-      this._loading = s.loading;
-      this._phase = s.progress.phase;
-      this._percent = s.progress.percent;
-    });
+    this._unsub = store.subscribe(() => this.requestUpdate());
   }
 
   disconnectedCallback() {
@@ -127,43 +83,24 @@ export class AppConvertBtn extends LitElement {
   }
 
   render() {
-    const radius = 58;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (this._percent / 100) * circumference;
+    const { loading, progress } = store.state;
+    const pct = progress?.percent || 0;
+
+    if (loading) {
+      return html`
+        <div class="wrap">
+          <button class="btn progress" disabled style="--progress:${pct}%">
+            <span class="btn-label">${pct}%</span>
+          </button>
+        </div>
+      `;
+    }
 
     return html`
-      <div class="btn-wrap">
-        <!-- 圆形进度环 -->
-        <div class="progress-ring ${this._loading ? 'visible' : ''}">
-          <svg width="140" height="140" viewBox="0 0 140 140">
-            <defs>
-              <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" style="stop-color:var(--color-secondary)" />
-                <stop offset="100%" style="stop-color:var(--color-accent)" />
-              </linearGradient>
-            </defs>
-            <circle class="ring-bg" cx="70" cy="70" r=${radius} stroke-width="6" />
-            <circle
-              class="ring-fg"
-              cx="70" cy="70" r=${radius}
-              stroke-width="6"
-              stroke-dasharray=${circumference}
-              stroke-dashoffset=${offset}
-            />
-          </svg>
-          <div class="ring-text">
-            <div class="ring-percent">${this._percent}%</div>
-            <div class="ring-label">${PHASE_LABELS[this._phase] ?? ''}</div>
-          </div>
-        </div>
-
-        <!-- 按钮 -->
-        <button
-          class="convert-btn ${this._loading ? 'hidden' : ''}"
-          ?disabled=${!this._hasFile}
-          @click=${this._onClick}
-        >
-          ⚡ 开始转换
+      <div class="wrap">
+        <button class="btn" @click=${this._onClick}>
+          <span>开始转换</span>
+          <ui-icon name="convert" size="14"></ui-icon>
         </button>
       </div>
     `;
@@ -174,8 +111,4 @@ export class AppConvertBtn extends LitElement {
   }
 }
 
-declare global {
-  interface HTMLElementTagNameMap {
-    'app-convert-btn': AppConvertBtn;
-  }
-}
+declare global { interface HTMLElementTagNameMap { 'app-convert-btn': AppConvertBtn; } }

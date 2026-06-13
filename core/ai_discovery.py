@@ -2,12 +2,11 @@
 AI 能力发现模块
 自动探测目标 AI 端点支持的能力，为数据转换提供决策依据
 """
-import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
 from enum import Enum
+from typing import Any
 
 logger = logging.getLogger("ai_discovery")
 
@@ -34,20 +33,20 @@ class AiCapabilities:
     """AI 能力描述"""
     provider: str
     model: str
-    supported_inputs: List[InputType] = field(default_factory=list)
+    supported_inputs: list[InputType] = field(default_factory=list)
     max_tokens: int = 4096
     supports_multimodal: bool = False
     supports_streaming: bool = False
     supports_function_calling: bool = False
     preferred_format: AiOutputFormat = AiOutputFormat.TEXT
     api_version: str = ""
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def supports_input(self, input_type: InputType) -> bool:
         """检查是否支持特定输入类型"""
         return input_type in self.supported_inputs
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
             "model": self.model,
@@ -84,7 +83,7 @@ class OpenAiCompatibleDiscovery(BaseAiDiscovery):
 
     def discover(self, endpoint: str, api_key: str, **kwargs) -> AiCapabilities:
         """通过模型列表和接口探测能力"""
-        import requests
+        import httpx
 
         headers = {"Authorization": f"Bearer {api_key}"}
         capabilities = AiCapabilities(
@@ -95,7 +94,7 @@ class OpenAiCompatibleDiscovery(BaseAiDiscovery):
 
         try:
             # 尝试获取模型列表
-            resp = requests.get(
+            resp = httpx.get(
                 f"{endpoint.rstrip('/')}/models",
                 headers=headers,
                 timeout=10
@@ -127,7 +126,7 @@ class OpenAiCompatibleDiscovery(BaseAiDiscovery):
 
         return capabilities
 
-    def _detect_provider(self, models: List[Dict]) -> str:
+    def _detect_provider(self, models: list[dict]) -> str:
         """根据模型名检测提供商"""
         model_ids = [m.get("id", "").lower() for m in models]
         for mid in model_ids:
@@ -171,9 +170,7 @@ class OpenAiCompatibleDiscovery(BaseAiDiscovery):
             capabilities.max_tokens = 8000
         elif "claude-3" in model:
             capabilities.max_tokens = 200000
-        elif "glm-4" in model:
-            capabilities.max_tokens = 128000
-        elif "qwen2.5" in model or "qwq" in model:
+        elif "glm-4" in model or "qwen2.5" in model or "qwq" in model:
             capabilities.max_tokens = 128000
         elif "deepseek" in model:
             capabilities.max_tokens = 64000
@@ -198,7 +195,7 @@ class OpenAiCompatibleDiscovery(BaseAiDiscovery):
 class PresetDiscovery(BaseAiDiscovery):
     """基于预设配置的能力发现（无需网络请求）"""
 
-    PRESETS: Dict[str, AiCapabilities] = {
+    PRESETS: dict[str, AiCapabilities] = {
         "minimax": AiCapabilities(
             provider="minimax",
             model="MiniMax-M2.5",
@@ -311,17 +308,17 @@ class AiDiscovery:
     """AI 能力发现器 - 统一管理多种发现方式"""
 
     def __init__(self):
-        self._discoveries: List[BaseAiDiscovery] = [
+        self._discoveries: list[BaseAiDiscovery] = [
             OpenAiCompatibleDiscovery(),
             PresetDiscovery(),  # 作为兜底
         ]
-        self._cache: Dict[str, AiCapabilities] = {}
+        self._cache: dict[str, AiCapabilities] = {}
 
     def discover(
         self,
         endpoint: str,
         api_key: str,
-        provider: Optional[str] = None,
+        provider: str | None = None,
         use_cache: bool = True
     ) -> AiCapabilities:
         """
@@ -378,14 +375,14 @@ class AiDiscovery:
         self._cache[cache_key] = default
         return default
 
-    def get_preset_capabilities(self, provider: str) -> Optional[AiCapabilities]:
+    def get_preset_capabilities(self, provider: str) -> AiCapabilities | None:
         """获取预设的 AI 能力配置"""
         preset = PresetDiscovery()
         if provider.lower() in preset.PRESETS:
             return preset.PRESETS[provider.lower()]
         return None
 
-    def list_supported_providers(self) -> List[str]:
+    def list_supported_providers(self) -> list[str]:
         """列出支持的 AI 提供商"""
         return list(PresetDiscovery.PRESETS.keys())
 

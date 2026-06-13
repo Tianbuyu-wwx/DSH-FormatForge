@@ -3,13 +3,11 @@ uvicorn==0.27.0
 python-multipart==0.0.6
 openai==1.12.0
 python-pptx==0.6.23
-pypdf2==3.0.1
 pdfplumber==0.11.9
 pydantic==2.6.0
 pydantic-settings>=2.1.0
 python-dotenv==1.0.0
 httpx==0.26.0
-requests>=2.31.0
 Pillow==11.3.0
 PyYAML>=6.0
 # 邮件解析

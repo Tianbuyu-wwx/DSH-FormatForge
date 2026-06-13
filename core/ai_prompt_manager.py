@@ -3,12 +3,11 @@ AI 提示词管理器
 负责构建AI转换提示词、解析AI响应、执行AI增强转换
 """
 import json
-import re
 import logging
-from typing import Dict, Any, Optional
+import re
+from typing import Any
 
 from core.models import OutputFormat
-
 
 logger = logging.getLogger("ai_prompt_manager")
 
@@ -23,7 +22,7 @@ class AIPromptManager:
     3. 执行AI增强转换
     """
 
-    def __init__(self, ai_client: Optional[Any] = None):
+    def __init__(self, ai_client: Any | None = None):
         self.ai_client = ai_client
         logger.debug("AIPromptManager 初始化完成, ai_client=%s", "可用" if ai_client else "不可用")
 
@@ -33,7 +32,7 @@ class AIPromptManager:
         file_type: str,
         base_content: str,
         output_format: OutputFormat,
-        custom_prompt: Optional[str] = None
+        custom_prompt: str | None = None
     ) -> str:
         """构建AI转换提示词"""
         format_instruction = {
@@ -75,7 +74,7 @@ class AIPromptManager:
 
         return prompt
 
-    def parse_response(self, response_text: str, output_format: OutputFormat) -> Dict[str, Any]:
+    def parse_response(self, response_text: str, output_format: OutputFormat) -> dict[str, Any]:
         """解析AI响应"""
         result = {"content": response_text, "structured_data": None}
 
@@ -99,8 +98,8 @@ class AIPromptManager:
         parsed_file: Any,
         base_content: str,
         output_format: OutputFormat,
-        custom_prompt: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+        custom_prompt: str | None = None
+    ) -> dict[str, Any] | None:
         """使用AI增强转换"""
         if not self.ai_client:
             logger.debug("AI客户端不可用，跳过增强转换")

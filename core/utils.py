@@ -99,7 +99,7 @@ def build_convert_response_data(result_data: ConvertResultData, base_url: str = 
             {"step": log.step, "level": log.level, "message": log.message}
             for log in result_data.processingLogs
         ],
-        "exportUrl": f"{base_url}/api/v1/convert/export/{result_data.resultId}?format=txt"
+        "exportUrl": f"{base_url}/api/v2/convert/export/{result_data.resultId}?format=txt"
     }
 
 

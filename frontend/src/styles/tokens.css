@@ -1,0 +1,91 @@
+/* ============================================================
+ * v4.0 Sacred Grove — 森林配色设计 Token
+ * ============================================================
+ */
+
+:root {
+  /* ---- 森林层 ---- */
+  --forest-deep:   #0a1f14;
+  --forest-mid:    #1e4d2b;
+  --forest-light:  #4ade80;
+
+  /* ---- 水体/阴影层 ---- */
+  --teal-deep:     #0f2e2e;
+  --teal-mid:      #2d6b6b;
+  --cyan-glow:     #5fb3c3;
+
+  /* ---- 光源层 ---- */
+  --light-warm:    #fff8e7;
+  --light-cool:    #e0f2f1;
+  --particle-gold: #fde68a;
+
+  /* ---- 强调色 ---- */
+  --accent-green:  #65a30d;
+
+  /* ---- 功能色 ---- */
+  --success: #7cb97c;
+  --error:   #c97c7c;
+  --info:    #7c9cc9;
+
+  /* ---- 基底（映射到森林层） ---- */
+  --bg:            var(--forest-deep);
+  --bg-elevated:   rgba(15, 46, 46, 0.45);
+  --bg-input:      rgba(0, 0, 0, 0.22);
+  --bg-hover:      rgba(255,255,255,0.04);
+
+  /* ---- 文字 ---- */
+  --text:          var(--light-cool);
+  --text-secondary:rgba(224,242,241,0.55);
+  --text-muted:    rgba(224,242,241,0.35);
+
+  /* ---- 边框 ---- */
+  --border:        rgba(95, 179, 195, 0.1);
+  --border-focus:  rgba(95, 179, 195, 0.3);
+  --border-accent: rgba(253, 230, 138, 0.3);
+
+  /* ---- 字体 ---- */
+  --font-display:  'DM Serif Display', Georgia, serif;
+  --font-body:     'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:     'JetBrains Mono', 'Cascadia Code', monospace;
+
+  /* ---- 字号 ---- */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 22px;
+
+  /* ---- 间距 ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* ---- 过渡 ---- */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration: 300ms;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(95, 179, 195, 0.25);
+  color: var(--light-warm);
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(95, 179, 195, 0.15); border-radius: 2px; }

@@ -12,12 +12,9 @@ MiniMax API 调用说明：
 - https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
 - https://platform.minimaxi.com/docs/token-plan/mcp-guide#understand-image
 """
-import os
 import base64
-import json
 import logging
 import threading
-from typing import List, Optional, Dict, Any
 from abc import ABC, abstractmethod
 
 # 尝试导入各种 SDK
@@ -33,18 +30,12 @@ try:
 except ImportError:
     ANTHROPIC_SDK_AVAILABLE = False
 
-try:
-    import requests
-    REQUESTS_AVAILABLE = True
-except ImportError:
-    REQUESTS_AVAILABLE = False
-
 
 class AIClient(ABC):
     """AI 客户端抽象基类"""
-    
+
     @abstractmethod
-    def generate_text(self, prompt: str, image_paths: List[str] = None) -> str:
+    def generate_text(self, prompt: str, image_paths: list[str] = None) -> str:
         """生成文本"""
         pass
 
@@ -63,7 +54,7 @@ class MiniMaxClient(AIClient):
     - OpenAI 兼容: https://api.minimaxi.com/v1
     - Anthropic 兼容: https://api.minimaxi.com/anthropic
     """
-    
+
     _instance = None
     _initialized = False
     _lock = threading.Lock()
@@ -118,8 +109,8 @@ class MiniMaxClient(AIClient):
                     self.logger.error("Anthropic SDK 初始化失败: %s", e)
 
             MiniMaxClient._initialized = True
-    
-    def _encode_image(self, image_path: str) -> Optional[str]:
+
+    def _encode_image(self, image_path: str) -> str | None:
         """将图片编码为 base64"""
         try:
             with open(image_path, "rb") as f:
@@ -127,8 +118,8 @@ class MiniMaxClient(AIClient):
         except Exception as e:
             self.logger.error("图片编码失败: %s", e)
             return None
-    
-    def generate_text(self, prompt: str, image_paths: List[str] = None) -> str:
+
+    def generate_text(self, prompt: str, image_paths: list[str] = None) -> str:
         """
         生成文本
         
@@ -146,7 +137,7 @@ class MiniMaxClient(AIClient):
             if not self.openai_client:
                 raise RuntimeError("OpenAI SDK 未安装。请运行: pip install openai")
             return self._generate_with_openai(prompt)
-    
+
     def _generate_with_openai(self, prompt: str) -> str:
         """
         使用 OpenAI SDK 调用 MiniMax API（纯文本模式）
@@ -154,7 +145,7 @@ class MiniMaxClient(AIClient):
         注意：OpenAI SDK 方式不支持图片输入
         """
         self.logger.info("使用 OpenAI SDK (纯文本模式)...")
-        
+
         messages = [
             {
                 "role": "system",
@@ -174,10 +165,10 @@ class MiniMaxClient(AIClient):
             max_tokens=8000,
             timeout=self.timeout
         )
-        
+
         return response.choices[0].message.content
-    
-    def _generate_with_anthropic(self, prompt: str, image_paths: List[str]) -> str:
+
+    def _generate_with_anthropic(self, prompt: str, image_paths: list[str]) -> str:
         """
         使用 Anthropic SDK 调用 MiniMax API（支持图片输入）
         
@@ -189,10 +180,10 @@ class MiniMaxClient(AIClient):
         参考：https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
         """
         self.logger.info("使用 Anthropic SDK (图片模式)，共 %d 张图片...", len(image_paths))
-        
+
         # 构建消息列表
         messages = []
-        
+
         # 第一步：添加 assistant 的 tool_use 请求
         tool_call_id = "analyze_images"
         messages.append({
@@ -206,7 +197,7 @@ class MiniMaxClient(AIClient):
                 }
             ]
         })
-        
+
         # 第二步：添加 tool_result 消息（包含图片）
         tool_result_content = []
         for img_path in image_paths[:5]:  # 最多5张图片
@@ -221,7 +212,7 @@ class MiniMaxClient(AIClient):
                         "data": base64_image
                     }
                 })
-        
+
         if tool_result_content:
             messages.append({
                 "role": "user",
@@ -233,7 +224,7 @@ class MiniMaxClient(AIClient):
                     }
                 ]
             })
-        
+
         # 第三步：添加用户提示
         messages.append({
             "role": "user",
@@ -244,7 +235,7 @@ class MiniMaxClient(AIClient):
                 }
             ]
         })
-        
+
         # 调用 Anthropic API
         self.logger.info("Anthropic SDK 请求超时设置: %d秒", self.timeout)
         response = self.anthropic_client.messages.create(
@@ -253,34 +244,32 @@ class MiniMaxClient(AIClient):
             system="你是一个数据转换助手，擅长将各种格式的数据（包括图片）转换为AI可理解的标准化格式。",
             messages=messages
         )
-        
+
         # 提取文本内容
         result_text = ""
         for block in response.content:
             if block.type == "text":
                 result_text += block.text
-        
+
         return result_text
-    
-    def _generate_with_http(self, prompt: str, image_paths: List[str] = None) -> str:
+
+    def _generate_with_http(self, prompt: str, image_paths: list[str] = None) -> str:
         """
-        使用 HTTP 请求调用 MiniMax API（备用方案）
-        
+        使用 HTTP 请求调用 MiniMax API（备用方案，使用 httpx）
+
         注意：Token Plan 的 API Key 可能不支持标准 HTTP 接口
         """
-        if not REQUESTS_AVAILABLE:
-            raise RuntimeError("requests 库未安装")
-        
+        import httpx
+
         self.logger.info("使用 HTTP 请求...")
-        
-        # Token Plan 使用 OpenAI 兼容端点
+
         url = f"{self.base_url}/chat/completions"
-        
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        
+
         messages = [
             {
                 "role": "system",
@@ -298,15 +287,12 @@ class MiniMaxClient(AIClient):
             "temperature": 0.7,
             "max_tokens": 8000
         }
-        
-        session = requests.Session()
-        session.trust_env = False
-        
-        response = session.post(url, headers=headers, json=data, timeout=120)
+
+        response = httpx.post(url, headers=headers, json=data, timeout=120)
         response.raise_for_status()
-        
+
         result = response.json()
-        
+
         if "choices" in result and len(result["choices"]) > 0:
             return result["choices"][0]["message"]["content"]
         else:
@@ -327,8 +313,8 @@ class OpenAIClient(AIClient):
 
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.logger.info("客户端初始化成功")
-    
-    def _encode_image(self, image_path: str) -> Optional[str]:
+
+    def _encode_image(self, image_path: str) -> str | None:
         """将图片编码为 base64"""
         try:
             with open(image_path, "rb") as f:
@@ -336,8 +322,8 @@ class OpenAIClient(AIClient):
         except Exception as e:
             self.logger.error("图片编码失败: %s", e)
             return None
-    
-    def generate_text(self, prompt: str, image_paths: List[str] = None) -> str:
+
+    def generate_text(self, prompt: str, image_paths: list[str] = None) -> str:
         """生成文本"""
         messages = [
             {
@@ -369,63 +355,24 @@ class OpenAIClient(AIClient):
             max_tokens=4000,
             timeout=self.timeout
         )
-        
-        return response.choices[0].message.content
 
-
-class ZhipuClient(AIClient):
-    """智谱 AI 客户端（备选方案）"""
-
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.logger = logging.getLogger("ai_client.zhipu")
-
-        try:
-            from zhipuai import ZhipuAI
-            self.client = ZhipuAI(api_key=api_key)
-            self.logger.info("客户端初始化成功")
-        except ImportError:
-            raise RuntimeError("智谱 AI SDK 未安装，请运行: pip install zhipuai")
-    
-    def generate_text(self, prompt: str, image_paths: List[str] = None) -> str:
-        """生成文本"""
-        # 智谱 AI 目前不支持图片输入
-        if image_paths:
-            self.logger.warning("暂不支持图片输入，仅使用文本")
-        
-        response = self.client.chat.completions.create(
-            model="glm-4",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是一个数据转换助手，擅长将各种格式的数据转换为AI可理解的标准化格式。"
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.7,
-            max_tokens=4000
-        )
-        
         return response.choices[0].message.content
 
 
 def create_ai_client(provider: str = "minimax", timeout: int = 120, **kwargs) -> AIClient:
     """
     创建 AI 客户端工厂函数
-    
+
     Args:
-        provider: AI 服务提供商 (minimax, openai, zhipu)
+        provider: AI 服务提供商 (minimax, openai)
         timeout: API 调用超时时间（秒）
         **kwargs: 传递给客户端的参数
-    
+
     Returns:
         AIClient: AI 客户端实例
     """
     provider = provider.lower()
-    
+
     if provider == "minimax":
         return MiniMaxClient(
             api_key=kwargs.get("api_key"),
@@ -438,7 +385,5 @@ def create_ai_client(provider: str = "minimax", timeout: int = 120, **kwargs) ->
             base_url=kwargs.get("base_url", "https://api.openai.com/v1"),
             timeout=timeout
         )
-    elif provider == "zhipu":
-        return ZhipuClient(api_key=kwargs.get("api_key"))
     else:
         raise ValueError(f"不支持的 AI 提供商: {provider}")

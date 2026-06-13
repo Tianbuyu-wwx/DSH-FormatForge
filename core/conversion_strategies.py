@@ -6,11 +6,11 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from datetime import datetime
 from typing import Any
 
-from core.ai_discovery import AiCapabilities, InputType
-from core.models import ConversionType, FileType, OutputFormat, ParsedFile, ProcessingLog
+from core.models import ConversionType, FileType, OutputFormat, ParsedFile
+from core.provider_registry import AiCapabilities, InputType
+from core.utils import create_processing_log
 
 logger = logging.getLogger("conversion_strategies")
 
@@ -49,15 +49,6 @@ class ConversionStrategy(ABC):
         """
         pass
 
-    def _create_log(self, step: str, message: str, level: str = "info") -> ProcessingLog:
-        """创建处理日志"""
-        return ProcessingLog(
-            timestamp=datetime.now(),
-            level=level,
-            message=message,
-            step=step
-        )
-
     def _format_output(self, content: str, output_format: OutputFormat) -> str:
         """根据输出格式格式化内容"""
         if output_format == OutputFormat.JSON:
@@ -91,7 +82,7 @@ class AutoDetectStrategy(ConversionStrategy):
         ai_caps: AiCapabilities | None = None,
         custom_prompt: str | None = None
     ) -> dict[str, Any]:
-        logs = [self._create_log("auto_detect", "开始自动检测内容特征")]
+        logs = [create_processing_log("auto_detect", "开始自动检测内容特征")]
         logger.info("[strategy=auto_detect] 开始自动检测: file_type=%s, output_format=%s",
                     parsed_file.fileType.value, output_format.value)
 
@@ -102,7 +93,7 @@ class AutoDetectStrategy(ConversionStrategy):
 
         logger.debug("[strategy=auto_detect] 内容特征: text=%d chars, has_tables=%s, has_images=%s",
                      total_text, has_tables, has_images)
-        logs.append(self._create_log(
+        logs.append(create_processing_log(
             "feature_analysis",
             f"分析结果: 文本量={total_text}字符, 含表格={has_tables}, 含图片={has_images}"
         ))
@@ -113,20 +104,20 @@ class AutoDetectStrategy(ConversionStrategy):
         # 根据特征和AI能力选择策略
         if has_tables and not has_images:
             logger.info("[strategy=auto_detect] 选择表格提取策略")
-            logs.append(self._create_log("strategy_select", "选择表格提取策略"))
+            logs.append(create_processing_log("strategy_select", "选择表格提取策略"))
             strategy = TableExtractionStrategy()
         elif parsed_file.fileType == FileType.IMAGE or (has_images and not ai_supports_images):
             # 如果AI不支持图片输入，需要图片描述
             logger.info("[strategy=auto_detect] 选择图片描述策略（AI不支持图片输入）")
-            logs.append(self._create_log("strategy_select", "选择图片描述策略（AI不支持图片输入）"))
+            logs.append(create_processing_log("strategy_select", "选择图片描述策略（AI不支持图片输入）"))
             strategy = ImageDescriptionStrategy()
         elif total_text > 5000:
             logger.info("[strategy=auto_detect] 选择结构化提取策略")
-            logs.append(self._create_log("strategy_select", "选择结构化提取策略"))
+            logs.append(create_processing_log("strategy_select", "选择结构化提取策略"))
             strategy = StructuredExtractionStrategy()
         else:
             logger.info("[strategy=auto_detect] 选择纯文本提取策略")
-            logs.append(self._create_log("strategy_select", "选择纯文本提取策略"))
+            logs.append(create_processing_log("strategy_select", "选择纯文本提取策略"))
             strategy = TextExtractionStrategy()
 
         result = strategy.convert(parsed_file, output_format, ai_caps, custom_prompt)
@@ -158,18 +149,19 @@ class TextExtractionStrategy(ConversionStrategy):
         ai_caps: AiCapabilities | None = None,
         custom_prompt: str | None = None
     ) -> dict[str, Any]:
-        logs = [self._create_log("text_extract", "开始提取纯文本")]
+        logs = [create_processing_log("text_extract", "开始提取纯文本")]
         logger.info("[strategy=text_extract] 开始提取纯文本: pages=%d", len(parsed_file.pages))
 
         parts = []
         for page in parsed_file.pages:
+            text = self._fix_encoding(page.rawText)
             parts.append(f"--- 第 {page.pageNumber} 页 ---")
-            parts.append(page.rawText)
+            parts.append(text)
 
         content = "\n\n".join(parts)
 
         logger.info("[strategy=text_extract] 提取完成: total_chars=%d", len(content))
-        logs.append(self._create_log("text_extract", f"提取完成，共 {len(content)} 字符"))
+        logs.append(create_processing_log("text_extract", f"提取完成，共 {len(content)} 字符"))
 
         return {
             "content": self._format_output(content, output_format),
@@ -177,6 +169,13 @@ class TextExtractionStrategy(ConversionStrategy):
             "confidence": 0.95,
             "logs": logs
         }
+
+    @staticmethod
+    def _fix_encoding(text: str) -> str:
+        """修复常见编码问题（合并自 EncodingFixStrategy）"""
+        text = text.replace('\u00ef\u00bf\u00bd', '?')
+        text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f]', '', text)
+        return text
 
 
 class StructuredExtractionStrategy(ConversionStrategy):
@@ -205,7 +204,7 @@ class StructuredExtractionStrategy(ConversionStrategy):
         ai_caps: AiCapabilities | None = None,
         custom_prompt: str | None = None
     ) -> dict[str, Any]:
-        logs = [self._create_log("structured", "开始结构化提取")]
+        logs = [create_processing_log("structured", "开始结构化提取")]
         logger.info("[strategy=structured] 开始结构化提取: pages=%d", len(parsed_file.pages))
 
         structure = {"document": {"title": parsed_file.fileName, "pages": []}}
@@ -225,7 +224,7 @@ class StructuredExtractionStrategy(ConversionStrategy):
         logger.info("[strategy=structured] 结构化完成: pages=%d, elements=%d",
                     len(parsed_file.pages),
                     sum(len(p["elements"]) for p in structure["document"]["pages"]))
-        logs.append(self._create_log("structured", f"结构化完成，共 {len(parsed_file.pages)} 页"))
+        logs.append(create_processing_log("structured", f"结构化完成，共 {len(parsed_file.pages)} 页"))
 
         content = json.dumps(structure, ensure_ascii=False, indent=2)
 
@@ -238,13 +237,13 @@ class StructuredExtractionStrategy(ConversionStrategy):
 
 
 class TableExtractionStrategy(ConversionStrategy):
-    """表格提取策略"""
+    """表格提取策略 - 增强版：合并单元格识别 + 数值格式化 + 多 Sheet 支持"""
 
     def __init__(self):
         super().__init__()
         self.strategy_id = "table_extraction"
         self.strategy_name = "表格提取"
-        self.description = "识别并提取文档中的表格数据，转换为Markdown表格或JSON"
+        self.description = "识别并提取文档中的表格数据，转换为Markdown表格或JSON，支持合并单元格检测与数值格式化"
         self.supported_types = [FileType.PDF, FileType.PPT, FileType.CSV, FileType.XLS]
 
     def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
@@ -261,51 +260,398 @@ class TableExtractionStrategy(ConversionStrategy):
         ai_caps: AiCapabilities | None = None,
         custom_prompt: str | None = None
     ) -> dict[str, Any]:
-        logs = [self._create_log("table", "开始提取表格数据")]
+        logs = [create_processing_log("table", "开始提取表格数据（增强模式）")]
         logger.info("[strategy=table] 开始提取表格数据: pages=%d", len(parsed_file.pages))
 
-        tables = []
+        # 收集所有表格元素
+        all_tables = []
         for page in parsed_file.pages:
             for elem in page.elements:
                 if elem.elementType == "table":
-                    tables.append({
+                    all_tables.append({
                         "page": page.pageNumber,
-                        "content": elem.content
+                        "content": elem.content,
+                        "metadata": elem.metadata or {},
                     })
 
-        md_tables = []
-        for idx, table in enumerate(tables, 1):
-            md_table = self._text_to_markdown_table(table["content"])
-            md_tables.append(f"### 表格 {idx} (第 {table['page']} 页)\n\n{md_table}")
+        if not all_tables:
+            return {
+                "content": "未检测到表格数据",
+                "structured_data": {"tables_found": 0, "tables": []},
+                "confidence": 0.3,
+                "logs": logs,
+            }
 
-        content = "\n\n".join(md_tables) if md_tables else "未检测到表格数据"
+        # 处理每个表格
+        structured_tables = []
+        md_output_parts = []
+        total_rows = 0
+        total_merged = 0
 
-        logger.info("[strategy=table] 提取完成: tables_found=%d, content_length=%d", len(tables), len(content))
-        logs.append(self._create_log("table", f"提取完成，共 {len(tables)} 个表格"))
+        for idx, table in enumerate(all_tables, 1):
+            sheet_name = table["metadata"].get("sheet_name", "")
+            sheet_label = f" (Sheet: {sheet_name})" if sheet_name else ""
+
+            # 解析表格为二维数组
+            rows = self._parse_table_rows(table["content"])
+
+            if not rows:
+                continue
+
+            # 检测并标记合并单元格
+            merged_info = self._detect_merged_cells(rows)
+            total_merged += merged_info["merged_count"]
+
+            # 格式化数值
+            formatted_rows = self._format_numeric_values(rows)
+
+            # 生成 Markdown 表格
+            md_table = self._generate_markdown_table(
+                formatted_rows, merged_info, title=f"表格 {idx}{sheet_label}"
+            )
+            md_output_parts.append(md_table)
+
+            # 结构化数据
+            structured_tables.append({
+                "table_index": idx,
+                "page": table["page"],
+                "sheet_name": sheet_name,
+                "rows": len(formatted_rows),
+                "cols": len(formatted_rows[0]) if formatted_rows else 0,
+                "has_header": table["metadata"].get("has_header", False),
+                "merged_cells": merged_info["merged_count"],
+                "headers": formatted_rows[0] if formatted_rows else [],
+                "data": formatted_rows,
+            })
+            total_rows += len(formatted_rows)
+
+        content = "\n\n".join(md_output_parts)
+
+        logger.info("[strategy=table] 提取完成: tables=%d, total_rows=%d, merged_cells=%d",
+                    len(structured_tables), total_rows, total_merged)
+        logs.append(create_processing_log("table",
+            f"提取完成，共 {len(structured_tables)} 个表格, "
+            f"{total_rows} 行, {total_merged} 个合并单元格"))
 
         return {
             "content": content,
-            "structured_data": {"tables_found": len(tables), "tables": tables},
-            "confidence": 0.8 if tables else 0.3,
-            "logs": logs
+            "structured_data": {
+                "tables_found": len(structured_tables),
+                "total_rows": total_rows,
+                "merged_cells": total_merged,
+                "tables": structured_tables,
+            },
+            "confidence": 0.85 if structured_tables else 0.3,
+            "logs": logs,
         }
 
-    def _text_to_markdown_table(self, text: str) -> str:
-        """尝试将文本转换为Markdown表格"""
-        lines = [l.strip() for l in text.split('\n') if l.strip()]
-        if len(lines) < 2:
-            return text
+    # ═══════════════════════════════════════════
+    # 表格行解析
+    # ═══════════════════════════════════════════
 
-        for sep in ['\t', '|', ',', '  ']:
-            rows = [l.split(sep) for l in lines]
-            if all(len(r) == len(rows[0]) for r in rows) and len(rows[0]) > 1:
-                md = ["| " + " | ".join(rows[0]) + " |"]
-                md.append("| " + " | ".join(["---"] * len(rows[0])) + " |")
-                for row in rows[1:]:
-                    md.append("| " + " | ".join(row) + " |")
-                return "\n".join(md)
+    def _parse_table_rows(self, text: str) -> list[list[str]]:
+        """解析表格文本为二维数组，自动检测分隔符"""
+        # 去掉 sheet 前缀
+        lines = text.split("\n")
+        if lines and lines[0].startswith("Sheet:"):
+            lines = lines[1:]
+        if lines and lines[0].startswith("[Sheet:"):
+            lines = lines[1:]
 
-        return text
+        # 过滤空行
+        lines = [l.strip() for l in lines if l.strip() and not l.strip().startswith("Sheet:")]
+
+        if not lines:
+            return []
+
+        # 检测分隔符
+        delimiter = self._detect_delimiter(lines)
+        rows = []
+
+        for line in lines:
+            if delimiter == "|":
+                cells = [c.strip() for c in line.split("|")]
+                # 去掉首尾空元素（| 开头或结尾产生的）
+                if cells and cells[0] == "":
+                    cells = cells[1:]
+                if cells and cells[-1] == "":
+                    cells = cells[:-1]
+            elif delimiter == "\t":
+                cells = [c.strip() for c in line.split("\t")]
+            elif delimiter == ",":
+                cells = [c.strip() for c in line.split(",")]
+            else:
+                # 多空格分隔
+                cells = [c.strip() for c in line.split("  ") if c.strip()]
+
+            if cells:
+                rows.append(cells)
+
+        # 对齐列数
+        if rows:
+            max_cols = max(len(r) for r in rows)
+            for row in rows:
+                while len(row) < max_cols:
+                    row.append("")
+
+        return rows
+
+    def _detect_delimiter(self, lines: list[str]) -> str:
+        """检测表格分隔符"""
+        if not lines:
+            return "|"
+
+        # 优先检查竖线
+        pipe_count = sum(l.count("|") for l in lines)
+        tab_count = sum(l.count("\t") for l in lines)
+        comma_count = sum(l.count(",") for l in lines)
+
+        if pipe_count > tab_count and pipe_count > comma_count:
+            return "|"
+        if tab_count > comma_count:
+            return "\t"
+        if comma_count > 0:
+            return ","
+        return "  "
+
+    # ═══════════════════════════════════════════
+    # 合并单元格检测
+    # ═══════════════════════════════════════════
+
+    def _detect_merged_cells(self, rows: list[list[str]]) -> dict[str, Any]:
+        """
+        检测合并单元格
+
+        策略：
+        1. 纵向合并：连续多行同一列出现相同值（非空），且相邻列为空或不同值
+        2. 横向合并：同一行连续多列为空，且上下列对应位置有值
+
+        Returns:
+            {"merged_count": int, "merged_cells": [{row, col, rowspan, colspan, value}]}
+        """
+        if len(rows) < 2:
+            return {"merged_count": 0, "merged_cells": []}
+
+        max_cols = max(len(r) for r in rows) if rows else 0
+        merged_cells = []
+        processed = set()
+
+        # 纵向合并检测
+        for col in range(max_cols):
+            row_idx = 0
+            while row_idx < len(rows):
+                if col >= len(rows[row_idx]):
+                    row_idx += 1
+                    continue
+                cell_value = rows[row_idx][col].strip()
+                if not cell_value:
+                    row_idx += 1
+                    continue
+
+                # 检查下方连续相同值
+                span = 1
+                for next_row in range(row_idx + 1, len(rows)):
+                    if col >= len(rows[next_row]):
+                        break
+                    if rows[next_row][col].strip() == cell_value:
+                        span += 1
+                    else:
+                        break
+
+                if span >= 2:
+                    merged_cells.append({
+                        "row": row_idx,
+                        "col": col,
+                        "rowspan": span,
+                        "colspan": 1,
+                        "value": cell_value,
+                    })
+                    # 标记已处理
+                    for r in range(row_idx, row_idx + span):
+                        processed.add((r, col))
+                    row_idx += span
+                else:
+                    row_idx += 1
+
+        # 横向合并检测（同一行连续空单元格）
+        for row_idx, row in enumerate(rows):
+            col_idx = 0
+            while col_idx < len(row):
+                if row[col_idx].strip():
+                    col_idx += 1
+                    continue
+                # 检查连续空单元格
+                span = 1
+                for next_col in range(col_idx + 1, len(row)):
+                    if not row[next_col].strip():
+                        span += 1
+                    else:
+                        break
+                if span >= 2:
+                    # 确认上下列对应位置有值（真正的合并单元格）
+                    has_value_above = (
+                        row_idx > 0
+                        and col_idx < len(rows[row_idx - 1])
+                        and rows[row_idx - 1][col_idx].strip()
+                    )
+                    if has_value_above:
+                        merged_cells.append({
+                            "row": row_idx,
+                            "col": col_idx,
+                            "rowspan": 1,
+                            "colspan": span,
+                            "value": rows[row_idx - 1][col_idx].strip(),
+                        })
+                    col_idx += span
+                else:
+                    col_idx += 1
+
+        return {
+            "merged_count": len(merged_cells),
+            "merged_cells": merged_cells,
+        }
+
+    # ═══════════════════════════════════════════
+    # 数值格式化
+    # ═══════════════════════════════════════════
+
+    def _format_numeric_values(self, rows: list[list[str]]) -> list[list[str]]:
+        """
+        格式化数值：检测数字并统一格式
+
+        规则：
+        - 整数: 添加千分位分隔符（可选）
+        - 浮点数: 保留合理精度
+        - 百分比字符串: 保持原样
+        - 日期/时间: 保持原样
+        - 纯文本: 保持原样
+        """
+        formatted = []
+        for row in rows:
+            formatted_row = []
+            for cell in row:
+                formatted_row.append(self._format_cell(cell))
+            formatted.append(formatted_row)
+        return formatted
+
+    def _format_cell(self, value: str) -> str:
+        """格式化单个单元格"""
+        stripped = value.strip()
+        if not stripped:
+            return ""
+
+        # 跳过明显非数值的内容
+        if any(c in stripped for c in ["http", "www", "@", "：", "："]):
+            return stripped
+
+        # 尝试解析为整数
+        try:
+            num = int(stripped.replace(",", "").replace(" ", ""))
+            return str(num)
+        except ValueError:
+            pass
+
+        # 尝试解析为浮点数
+        try:
+            num = float(stripped.replace(",", "").replace(" ", ""))
+            # 保留合理精度
+            if abs(num) >= 1e6 or (abs(num) < 1e-4 and num != 0):
+                return f"{num:.6g}"
+            if num == int(num):
+                return str(int(num))
+            # 最多保留 4 位小数
+            return f"{num:.4f}".rstrip("0").rstrip(".")
+        except ValueError:
+            pass
+
+        return stripped
+
+    # ═══════════════════════════════════════════
+    # Markdown 表格生成
+    # ═══════════════════════════════════════════
+
+    def _generate_markdown_table(
+        self,
+        rows: list[list[str]],
+        merged_info: dict[str, Any],
+        title: str = "",
+    ) -> str:
+        """
+        生成 Markdown 表格，支持合并单元格标记
+
+        Args:
+            rows: 二维数组
+            merged_info: 合并单元格信息
+            title: 表格标题
+
+        Returns:
+            Markdown 格式表格字符串
+        """
+        if not rows:
+            return f"*{title}* (空表格)"
+
+        parts = []
+        if title:
+            parts.append(f"### {title}\n")
+
+        max_cols = max(len(r) for r in rows)
+        # 补齐列
+        aligned_rows = [list(r) + [""] * (max_cols - len(r)) for r in rows]
+
+        # 创建合并单元格查找表
+        merged_map = {}
+        for mc in merged_info.get("merged_cells", []):
+            for r_offset in range(mc["rowspan"]):
+                for c_offset in range(mc["colspan"]):
+                    if r_offset == 0 and c_offset == 0:
+                        continue  # 保留原始单元格
+                    merged_map[(mc["row"] + r_offset, mc["col"] + c_offset)] = {
+                        "rowspan": mc["rowspan"] - r_offset,
+                        "colspan": mc["colspan"] - c_offset,
+                    }
+
+        # 转义管道符
+        def _escape(cell: str) -> str:
+            return cell.replace("|", "\\|").replace("\n", " ")
+
+        # 表头行
+        header_cells = []
+        for c, cell in enumerate(aligned_rows[0]):
+            key = (0, c)
+            if key in merged_map:
+                info = merged_map[key]
+                if info["colspan"] > 1:
+                    header_cells.append(_escape(cell))
+                    for _ in range(info["colspan"] - 1):
+                        header_cells.append("")  # 合并占位
+                else:
+                    header_cells.append(_escape(cell))
+            else:
+                header_cells.append(_escape(cell))
+        # 截断到 max_cols
+        header_cells = header_cells[:max_cols]
+        while len(header_cells) < max_cols:
+            header_cells.append("")
+        parts.append("| " + " | ".join(header_cells) + " |")
+
+        # 分隔行
+        align_parts = ["---"] * max_cols
+        parts.append("| " + " | ".join(align_parts) + " |")
+
+        # 数据行
+        for r in range(1, len(aligned_rows)):
+            row_cells = []
+            for c in range(max_cols):
+                cell = aligned_rows[r][c] if c < len(aligned_rows[r]) else ""
+                row_cells.append(_escape(cell))
+            parts.append("| " + " | ".join(row_cells) + " |")
+
+        # 合并单元格标注
+        if merged_info.get("merged_cells"):
+            merged_count = merged_info["merged_count"]
+            parts.append(f"\n> 检测到 {merged_count} 个合并单元格")
+
+        return "\n".join(parts)
 
 
 class ImageDescriptionStrategy(ConversionStrategy):
@@ -332,7 +678,7 @@ class ImageDescriptionStrategy(ConversionStrategy):
         ai_caps: AiCapabilities | None = None,
         custom_prompt: str | None = None
     ) -> dict[str, Any]:
-        logs = [self._create_log("image_desc", "开始处理图片内容")]
+        logs = [create_processing_log("image_desc", "开始处理图片内容")]
         logger.info("[strategy=image_desc] 开始处理图片内容: pages=%d", len(parsed_file.pages))
 
         # 如果AI支持图片输入，标记为可保留原图
@@ -360,7 +706,7 @@ class ImageDescriptionStrategy(ConversionStrategy):
 
         logger.info("[strategy=image_desc] 处理完成: images_found=%d, ai_supports_images=%s",
                     len(image_info), ai_supports_images)
-        logs.append(self._create_log("image_desc", f"处理完成，共 {len(image_info)} 张图片"))
+        logs.append(create_processing_log("image_desc", f"处理完成，共 {len(image_info)} 张图片"))
 
         return {
             "content": content,
@@ -398,7 +744,7 @@ class OcrStrategy(ConversionStrategy):
         ai_caps: AiCapabilities | None = None,
         custom_prompt: str | None = None
     ) -> dict[str, Any]:
-        logs = [self._create_log("ocr", "开始OCR文字识别")]
+        logs = [create_processing_log("ocr", "开始OCR文字识别")]
         logger.info("[strategy=ocr] 开始OCR文字识别: pages=%d", len(parsed_file.pages))
 
         all_text = []
@@ -410,7 +756,7 @@ class OcrStrategy(ConversionStrategy):
         content = "\n\n".join(all_text) if all_text else "未识别到文字内容"
 
         logger.info("[strategy=ocr] 识别完成: segments=%d, content_length=%d", len(all_text), len(content))
-        logs.append(self._create_log("ocr", f"识别完成，共 {len(all_text)} 段文字"))
+        logs.append(create_processing_log("ocr", f"识别完成，共 {len(all_text)} 段文字"))
 
         return {
             "content": content,
@@ -420,65 +766,6 @@ class OcrStrategy(ConversionStrategy):
         }
 
 
-class EncodingFixStrategy(ConversionStrategy):
-    """编码修复策略"""
-
-    def __init__(self):
-        super().__init__()
-        self.strategy_id = "encoding_fix"
-        self.strategy_name = "编码修复"
-        self.description = "检测并修复文本编码问题"
-        self.supported_types = [FileType.TXT, FileType.CSV, FileType.UNKNOWN]
-
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
-        for page in parsed_file.pages:
-            text = page.rawText
-            if self._has_garbled_text(text):
-                return 0.95
-        return 0.3
-
-    def convert(
-        self,
-        parsed_file: ParsedFile,
-        output_format: OutputFormat,
-        ai_caps: AiCapabilities | None = None,
-        custom_prompt: str | None = None
-    ) -> dict[str, Any]:
-        logs = [self._create_log("encoding", "开始检测编码问题")]
-        logger.info("[strategy=encoding_fix] 开始检测编码问题: pages=%d", len(parsed_file.pages))
-
-        fixed_pages = []
-        for page in parsed_file.pages:
-            fixed_text = self._fix_encoding(page.rawText)
-            fixed_pages.append(fixed_text)
-
-        content = "\n\n".join(fixed_pages)
-
-        logger.info("[strategy=encoding_fix] 编码修复完成: pages_fixed=%d, content_length=%d",
-                    len(fixed_pages), len(content))
-        logs.append(self._create_log("encoding", "编码修复完成"))
-
-        return {
-            "content": content,
-            "structured_data": {"pages_fixed": len(fixed_pages)},
-            "confidence": 0.85,
-            "logs": logs
-        }
-
-    def _has_garbled_text(self, text: str) -> bool:
-        """检测文本是否包含乱码"""
-        garbled_patterns = [
-            r'[\x00-\x08\x0b-\x0c\x0e-\x1f]',
-            r'ï¿½',
-            r'Ã[\x80-\xBF]',
-        ]
-        return any(re.search(p, text) for p in garbled_patterns)
-
-    def _fix_encoding(self, text: str) -> str:
-        """尝试修复编码"""
-        text = text.replace('ï¿½', '?')
-        text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f]', '', text)
-        return text
 
 
 class AiNativeStrategy(ConversionStrategy):
@@ -506,7 +793,7 @@ class AiNativeStrategy(ConversionStrategy):
         ai_caps: AiCapabilities | None = None,
         custom_prompt: str | None = None
     ) -> dict[str, Any]:
-        logs = [self._create_log("ai_native", "生成AI原生格式（保留媒体+文本索引）")]
+        logs = [create_processing_log("ai_native", "生成AI原生格式（保留媒体+文本索引）")]
         logger.info("[strategy=ai_native] 生成AI原生格式: file=%s, pages=%d", parsed_file.fileName, parsed_file.pageCount)
 
         # 提取文本索引
@@ -541,7 +828,7 @@ class AiNativeStrategy(ConversionStrategy):
 """
 
         logger.info("[strategy=ai_native] 索引生成完成: index_pages=%d", len(text_index))
-        logs.append(self._create_log("ai_native", f"生成索引，共 {len(text_index)} 页"))
+        logs.append(create_processing_log("ai_native", f"生成索引，共 {len(text_index)} 页"))
 
         return {
             "content": content,
@@ -573,8 +860,7 @@ class StrategyRegistry:
             TableExtractionStrategy(),
             ImageDescriptionStrategy(),
             OcrStrategy(),
-            EncodingFixStrategy(),
-            AiNativeStrategy(),  # 新增：AI原生策略
+            AiNativeStrategy(),
         ]
         for s in strategies:
             self._strategies[s.strategy_id] = s
@@ -612,7 +898,7 @@ class StrategyRegistry:
             ConversionType.TABLE: "table_extraction",
             ConversionType.IMAGE_DESC: "image_description",
             ConversionType.OCR: "ocr",
-            ConversionType.ENCODING: "encoding_fix",
+            ConversionType.ENCODING: "text_extraction",
         }
 
         if conversion_type != ConversionType.AUTO:

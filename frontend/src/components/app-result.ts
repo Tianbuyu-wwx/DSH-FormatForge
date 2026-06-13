@@ -1,331 +1,163 @@
 // ============================================================
-// <app-result> 转换结果展示组件
+// <app-result> v4.0 — 边栏内结果面板
 // ============================================================
-// 标签页切换（转换内容 / 结构化数据 / 处理日志）、
-// 平滑过渡动画、复制到剪贴板、折叠长内容
 
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { store } from '../state/store.js';
 import type { ConvertResult } from '../types/index.js';
-
-const TABS = [
-  { key: 'content', label: '转换内容' },
-  { key: 'structured', label: '结构化数据' },
-  { key: 'logs', label: '处理日志' },
-] as const;
-
-type TabKey = (typeof TABS)[number]['key'];
+import '../components/ui/icon.js';
 
 @customElement('app-result')
 export class AppResult extends LitElement {
   @state() private _result: ConvertResult | null = null;
-  @state() private _activeTab: TabKey = 'content';
-  @state() private _slideDir: 'left' | 'right' = 'right';
-  @state() private _copied = false;
-  @state() private _logsExpanded = false;
-
-  private _tabOrder: TabKey[] = ['content', 'structured', 'logs'];
+  @state() private _tab: 'content' | 'structured' | 'logs' = 'content';
 
   static styles = css`
-    :host {
-      display: none;
-      margin-top: 8px;
+    :host { display: block; margin-top: var(--space-4); }
+
+    .result-wrap {
+      padding-top: var(--space-3);
+      border-top: 1px solid var(--border);
+      animation: fadeIn 0.5s var(--ease) both;
     }
 
-    :host(.visible) {
-      display: block;
-    }
-
-    .result-wrapper {
-      animation: fadeIn 0.5s ease;
-    }
-
-    /* 头部信息 */
-    .result-header {
+    .tabs {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 10px;
-      padding: 16px 20px;
-      background: var(--color-surface);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-radius: 12px 12px 0 0;
-      border: 1px solid var(--color-border);
-      border-bottom: none;
+      gap: var(--space-1);
+      margin-bottom: var(--space-3);
     }
-
-    .result-file-info {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .result-file-icon {
-      font-size: 1.8rem;
-    }
-
-    .result-file-name {
-      font-weight: 600;
-      font-size: 1rem;
-    }
-
-    .result-meta {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .meta-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 10px;
-      border-radius: 10px;
-      font-size: 0.78rem;
-      font-weight: 500;
-    }
-
-    .badge-cache {
-      background: rgba(255, 193, 7, 0.2);
-      color: var(--color-warning);
-    }
-
-    .badge-confidence {
-      background: rgba(56, 239, 125, 0.15);
-      color: var(--color-success);
-    }
-
-    .badge-type {
-      background: rgba(116, 185, 255, 0.2);
-      color: var(--color-info);
-    }
-
-    .btn-copy {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 6px 14px;
-      border-radius: 6px;
-      border: 1px solid var(--color-border);
-      background: rgba(255, 255, 255, 0.06);
-      color: var(--color-text-secondary);
-      font-size: 0.85rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-
-    .btn-copy:hover {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: var(--color-primary);
-    }
-
-    .btn-copy.copied {
-      background: rgba(56, 239, 125, 0.15);
-      border-color: var(--color-success);
-      color: var(--color-success);
-    }
-
-    /* 标签页 */
-    .tab-bar {
-      display: flex;
-      border-bottom: 1px solid var(--color-border);
-      background: var(--color-surface);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-left: 1px solid var(--color-border);
-      border-right: 1px solid var(--color-border);
-    }
-
-    .tab-btn {
-      flex: 1;
-      padding: 12px 16px;
+    .tab {
+      padding: 4px 10px;
+      font-family: var(--font-body);
+      font-size: var(--text-xs);
+      font-weight: 400;
+      color: var(--text-muted);
       background: none;
       border: none;
       border-bottom: 2px solid transparent;
-      color: var(--color-text-muted);
-      font-size: 0.9rem;
-      font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: inherit;
-      position: relative;
+      margin-bottom: -1px;
+      transition: all var(--duration) var(--ease);
+      letter-spacing: 0.03em;
+    }
+    .tab:hover { color: var(--text-secondary); }
+    .tab.active {
+      color: var(--light-warm);
+      border-bottom-color: var(--particle-gold);
+      text-shadow: 0 0 8px rgba(253,230,138,0.25);
     }
 
-    .tab-btn:hover {
-      color: var(--color-text-secondary);
-    }
-
-    .tab-btn.active {
-      color: var(--color-primary);
-      border-bottom-color: var(--color-primary);
-    }
-
-    .tab-btn:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-
-    .tab-badge {
-      display: inline-block;
-      margin-left: 6px;
-      background: rgba(255, 255, 255, 0.1);
-      padding: 0 6px;
-      border-radius: 8px;
-      font-size: 0.72rem;
-      vertical-align: 1px;
-    }
-
-    /* 内容区 */
-    .tab-content {
-      position: relative;
-      overflow: hidden;
-      min-height: 200px;
-      max-height: 600px;
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid var(--color-border);
-      border-top: none;
-      border-radius: 0 0 12px 12px;
-    }
-
-    .tab-panel {
-      padding: 20px;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
-      font-size: 0.88rem;
-      line-height: 1.6;
-      color: var(--color-text-secondary);
-      overflow-y: auto;
-      max-height: 600px;
-      position: absolute;
-      inset: 0;
-      transition: transform 0.3s ease, opacity 0.3s ease;
-    }
-
-    .tab-panel.enter-right {
-      transform: translateX(30px);
-      opacity: 0;
-    }
-
-    .tab-panel.enter-left {
-      transform: translateX(-30px);
-      opacity: 0;
-    }
-
-    .tab-panel.active {
-      transform: translateX(0);
-      opacity: 1;
-      position: relative;
-    }
-
-    .tab-panel:not(.active) {
-      pointer-events: none;
-    }
-
-    /* 空状态 */
-    .empty-state {
+    .meta {
       display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 40px;
-      color: var(--color-text-muted);
-      text-align: center;
-      font-family: var(--font-sans);
+      flex-wrap: wrap;
+      gap: var(--space-1);
+      margin-bottom: var(--space-3);
+      padding-bottom: var(--space-2);
+      border-bottom: 1px solid var(--border);
     }
-
-    .empty-state .empty-icon {
-      font-size: 2.5rem;
-      margin-bottom: 12px;
-      opacity: 0.5;
-    }
-
-    /* 日志列表 */
-    .log-list {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      font-family: var(--font-sans);
-    }
-
-    .log-entry {
-      display: flex;
-      gap: 10px;
-      padding: 6px 10px;
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.04);
-      font-size: 0.85rem;
-    }
-
-    .log-level {
-      flex-shrink: 0;
-      font-weight: 600;
-      font-size: 0.75rem;
-      width: 50px;
-      text-align: center;
+    .meta-tag {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
       padding: 1px 6px;
+      border: 1px solid var(--border);
       border-radius: 4px;
     }
-
-    .log-level.info {
-      background: rgba(116, 185, 255, 0.2);
-      color: var(--color-info);
+    .meta-tag.accent {
+      color: var(--particle-gold);
+      border-color: var(--border-accent);
     }
 
-    .log-level.warning {
-      background: rgba(255, 193, 7, 0.2);
-      color: var(--color-warning);
+    .content-box {
+      background: rgba(0,0,0,0.2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: var(--space-3);
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      line-height: 1.7;
+      color: rgba(224,242,241,0.7);
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: auto;
+      max-height: 140px;
     }
 
-    .log-level.error {
-      background: rgba(255, 107, 107, 0.2);
-      color: var(--color-error);
-    }
-
-    .log-step {
-      flex-shrink: 0;
-      color: var(--color-text-muted);
-      font-size: 0.82rem;
-    }
-
-    .log-msg {
-      color: var(--color-text-secondary);
-    }
-
-    /* 折叠按钮 */
-    .collapse-toggle {
+    .actions {
       display: flex;
+      gap: var(--space-2);
+      margin-top: var(--space-3);
+    }
+    .btn-icon {
+      display: inline-flex;
       align-items: center;
-      justify-content: center;
-      width: 100%;
-      padding: 8px;
-      background: rgba(255, 255, 255, 0.04);
-      border: none;
-      border-top: 1px solid var(--color-border);
-      color: var(--color-text-muted);
-      font-size: 0.82rem;
+      gap: 4px;
+      padding: 4px 10px;
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      background: rgba(0,0,0,0.15);
+      border: 1px solid var(--border);
+      border-radius: 6px;
       cursor: pointer;
-      font-family: inherit;
-      transition: background 0.2s;
+      transition: all var(--duration);
+    }
+    .btn-icon:hover {
+      color: var(--text);
+      border-color: var(--border-focus);
     }
 
-    .collapse-toggle:hover {
-      background: rgba(255, 255, 255, 0.08);
+    .log-item {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      padding: 2px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .log-item:last-child { border-bottom: none; }
+
+    .empty {
+      text-align: center;
+      padding: var(--space-5);
+      color: var(--text-muted);
+      font-size: var(--text-sm);
     }
 
-    .collapse-arrow {
-      display: inline-block;
-      margin-left: 4px;
-      transition: transform 0.3s ease;
+    .empty-state {
+      text-align: center;
+      padding: var(--space-5) var(--space-3);
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      animation: fadeIn 0.4s var(--ease);
+    }
+    .empty-icon {
+      color: var(--text-muted);
+      margin-bottom: var(--space-2);
+    }
+    .empty-title {
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-1);
+    }
+    .empty-desc {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      line-height: 1.5;
     }
 
-    .collapse-arrow.expanded {
-      transform: rotate(180deg);
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* ===== 响应式 ===== */
+    @media (max-width: 479px) {
+      .content-box { padding: 10px; font-size: 11px; max-height: 200px; }
+      .meta { gap: 4px; }
+      .meta-tag { font-size: 10px; padding: 1px 4px; }
+      .actions { gap: 6px; }
+      .btn-icon { padding: 3px 8px; font-size: 11px; }
+      .tab { padding: 3px 8px; font-size: 11px; }
+      .empty-state { padding: 16px 12px; }
     }
   `;
 
@@ -333,15 +165,14 @@ export class AppResult extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    const r = store.state.result;
+    if (r) { this._result = r; this._tab = 'content'; }
     this._unsub = store.subscribe((s) => {
       if (s.result) {
         this._result = s.result;
-        this._activeTab = 'content';
-        this._slideDir = 'right';
-        this.classList.add('visible');
+        this._tab = 'content';
       } else {
         this._result = null;
-        this.classList.remove('visible');
       }
     });
   }
@@ -352,155 +183,85 @@ export class AppResult extends LitElement {
   }
 
   render() {
-    if (!this._result) return html``;
-
     const r = this._result;
-    const hasStructured = !!r.structuredData && Object.keys(r.structuredData).length > 0;
-    const hasLogs = !!r.processingLogs && r.processingLogs.length > 0;
 
     return html`
-      <div class="result-wrapper">
-        <!-- 头部 -->
-        <div class="result-header">
-          <div class="result-file-info">
-            <span class="result-file-icon">📄</span>
-            <span class="result-file-name">${r.fileName}</span>
-          </div>
-          <div class="result-meta">
-            ${r.conversionDecision?.fromCache
-              ? html`<span class="meta-badge badge-cache">⚡ 缓存</span>`
-              : ''}
-            <span class="meta-badge badge-confidence">
-              置信度 ${(r.confidence * 100).toFixed(0)}%
-            </span>
-            <span class="meta-badge badge-type">${r.fileType}</span>
-          </div>
-          <button class="btn-copy ${this._copied ? 'copied' : ''}" @click=${this._onCopy}>
-            ${this._copied ? '已复制' : '复制'}
-          </button>
+      <div class="result-wrap">
+        <div class="tabs">
+          <button class="tab ${this._tab === 'content' ? 'active' : ''}" @click=${() => this._tab = 'content'}>内容</button>
+          <button class="tab ${this._tab === 'structured' ? 'active' : ''}" @click=${() => this._tab = 'structured'}>结构化</button>
+          <button class="tab ${this._tab === 'logs' ? 'active' : ''}" @click=${() => this._tab = 'logs'}>日志</button>
         </div>
-
-        <!-- 标签页 -->
-        <div class="tab-bar">
-          ${TABS.map((tab, i) => html`
-            <button
-              class="tab-btn ${this._activeTab === tab.key ? 'active' : ''}"
-              ?disabled=${(tab.key === 'structured' && !hasStructured) || (tab.key === 'logs' && !hasLogs)}
-              @click=${() => this._switchTab(tab.key, i)}
-            >
-              ${tab.label}
-              ${tab.key === 'logs' && hasLogs
-                ? html`<span class="tab-badge">${r.processingLogs!.length}</span>`
-                : ''}
-            </button>
-          `)}
-        </div>
-
-        <!-- 内容区 -->
-        <div class="tab-content">
-          ${this._renderContentPanel(r)}
-          ${this._renderStructuredPanel(r, hasStructured)}
-          ${this._renderLogsPanel(r, hasLogs)}
-        </div>
+        ${r
+          ? html`${this._tab === 'content' ? this._renderContent(r) : ''}${this._tab === 'structured' ? this._renderStructured(r) : ''}${this._tab === 'logs' ? this._renderLogs(r) : ''}`
+          : this._renderEmpty()
+        }
       </div>
     `;
   }
 
-  private _renderContentPanel(r: ConvertResult) {
-    const active = this._activeTab === 'content';
-    const dir = this._slideDir === 'right' ? 'enter-right' : 'enter-left';
+  private _renderEmpty() {
     return html`
-      <div class="tab-panel ${active ? 'active' : dir}">
-        ${r.convertedContent || html`
-          <div class="empty-state">
-            <div class="empty-icon">📭</div>
-            <span>暂无转换内容</span>
-          </div>
-        `}
+      <div class="empty-state">
+        <div class="empty-icon"><ui-icon name="file-text" size="24"></ui-icon></div>
+        <div class="empty-title">等待转换</div>
+        <div class="empty-desc">上传文件或输入内容后，转换结果将显示在此处</div>
       </div>
     `;
   }
 
-  private _renderStructuredPanel(r: ConvertResult, has: boolean) {
-    const active = this._activeTab === 'structured';
-    const dir = this._slideDir === 'right' ? 'enter-right' : 'enter-left';
-    const json = has ? JSON.stringify(r.structuredData, null, 2) : '';
-
+  private _renderContent(r: ConvertResult) {
     return html`
-      <div class="tab-panel ${active ? 'active' : dir}">
-        ${has ? json : html`
-          <div class="empty-state">
-            <div class="empty-icon">🧩</div>
-            <span>无结构化数据</span>
-          </div>
-        `}
-      </div>
-    `;
-  }
-
-  private _renderLogsPanel(r: ConvertResult, has: boolean) {
-    const active = this._activeTab === 'logs';
-    const dir = this._slideDir === 'right' ? 'enter-right' : 'enter-left';
-    if (!has) {
-      return html`
-        <div class="tab-panel ${active ? 'active' : dir}">
-          <div class="empty-state">
-            <div class="empty-icon">📋</div>
-            <span>无处理日志</span>
-          </div>
-        </div>
-      `;
-    }
-    const logs = r.processingLogs!;
-    const limit = this._logsExpanded ? logs.length : 10;
-    return html`
-      <div class="tab-panel ${active ? 'active' : dir}">
-        <div class="log-list">
-          ${logs.slice(0, limit).map(l => html`
-            <div class="log-entry">
-              <span class="log-level ${l.level}">${l.level.toUpperCase()}</span>
-              <span class="log-step">${l.step}</span>
-              <span class="log-msg">${l.message}</span>
-            </div>
-          `)}
-        </div>
-        ${logs.length > 10 ? html`
-          <button class="collapse-toggle" @click=${this._toggleLogs}>
-            ${this._logsExpanded ? '收起' : `展开剩余 ${logs.length - 10} 条日志`}
-            <span class="collapse-arrow ${this._logsExpanded ? 'expanded' : ''}">▼</span>
-          </button>
+      <div class="meta">
+        ${r.conversionDecision ? html`
+          <span class="meta-tag">策略: ${r.conversionDecision.recommendedStrategy}</span>
+          <span class="meta-tag accent">置信度: ${(r.conversionDecision.confidence * 100).toFixed(0)}%</span>
+          ${r.conversionDecision.fromCache ? html`<span class="meta-tag accent">缓存</span>` : ''}
         ` : ''}
+        <span class="meta-tag">格式: ${r.outputFormat || r.fileType}</span>
+      </div>
+      <div class="content-box">${r.convertedContent || '无内容'}</div>
+      <div class="actions">
+        <button class="btn-icon" @click=${() => this._copy(r.convertedContent)}><ui-icon name="copy" size="12"></ui-icon> 复制</button>
+        <button class="btn-icon" @click=${() => this._download(r)}><ui-icon name="file" size="12"></ui-icon> 下载</button>
       </div>
     `;
   }
 
-  // ==================== 交互 ====================
-
-  private _switchTab(key: TabKey, idx: number) {
-    const oldIdx = this._tabOrder.indexOf(this._activeTab);
-    this._slideDir = idx > oldIdx ? 'right' : 'left';
-    this._activeTab = key;
+  private _renderStructured(r: ConvertResult) {
+    const json = r.structuredData ? JSON.stringify(r.structuredData, null, 2) : '';
+    if (!json) return html`<div class="empty">无结构化数据</div>`;
+    return html`
+      <div class="content-box">${json}</div>
+      <div class="actions">
+        <button class="btn-icon" @click=${() => this._copy(json)}><ui-icon name="copy" size="12"></ui-icon> 复制 JSON</button>
+      </div>
+    `;
   }
 
-  private async _onCopy() {
-    if (!this._result) return;
-    const text = this._result.convertedContent || '';
-    try {
-      await navigator.clipboard.writeText(text);
-      this._copied = true;
-      setTimeout(() => { this._copied = false; }, 2000);
-    } catch {
-      store.showStatus('复制失败，请手动复制', 'error');
-    }
+  private _renderLogs(r: ConvertResult) {
+    const logs = r.processingLogs || [];
+    if (!logs.length) return html`<div class="empty">无处理日志</div>`;
+    return html`
+      <div class="content-box">
+        ${logs.map(l => html`<div class="log-item">[${l.step}] ${l.message}</div>`)}
+      </div>
+    `;
   }
 
-  private _toggleLogs() {
-    this._logsExpanded = !this._logsExpanded;
+  private _copy(text: string) {
+    navigator.clipboard.writeText(text).then(() => store.showStatus('已复制', 'success'));
+  }
+
+  private _download(r: ConvertResult) {
+    const blob = new Blob([r.convertedContent || ''], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `converted.${r.outputFormat || 'txt'}`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 }
 
-declare global {
-  interface HTMLElementTagNameMap {
-    'app-result': AppResult;
-  }
-}
+declare global { interface HTMLElementTagNameMap { 'app-result': AppResult; } }

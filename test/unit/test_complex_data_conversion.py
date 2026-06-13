@@ -30,7 +30,6 @@ from core.conversion_strategies import (
     TableExtractionStrategy,
     ImageDescriptionStrategy,
     OcrStrategy,
-    EncodingFixStrategy,
     AiNativeStrategy,
     StrategyRegistry
 )
@@ -679,14 +678,14 @@ class TestStrategyScoringOnComplexData:
         )
 
     def test_garbled_text_encoding_strategy_score(self):
-        """测试乱码文本的编码策略评分"""
+        """测试乱码文本的编码策略评分（已合并到 text_extraction）"""
         parsed = self._create_parsed_fixture(FileType.TXT, "garbled.txt", [{
             "elements": [{"type": "text", "content": "Hello ï¿½ï¿½ World"}],
             "raw_text": "Hello ï¿½ï¿½ World",
             "has_image": False,
             "has_table": False
         }])
-        strategy = self.registry.get_strategy("encoding_fix")
+        strategy = self.registry.get_strategy("text_extraction")
         score = strategy.can_handle(parsed)
         assert score > 0.8
 
@@ -724,7 +723,7 @@ class TestStrategyScoringOnComplexData:
                 "elements": [{"type": "text", "content": "ï¿½"}],
                 "raw_text": "ï¿½",
                 "has_image": False, "has_table": False
-            }]), ["encoding_fix", "text_extraction"]),
+            }]), ["text_extraction"]),
             (self._create_parsed_fixture(FileType.PDF, "nested.pdf", [{
                 "elements": [{"type": "table", "content": "A\tB"}],
                 "raw_text": "A\tB",

@@ -25,10 +25,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx ruff
+          pip install pytest pytest-asyncio httpx ruff pytest-mock
 
       - name: Lint with ruff
-        run: ruff check . --ignore E999,F401 2>/dev/null || true
+        run: ruff check . --ignore E999,F401
 
       - name: Run tests
         env:
@@ -49,4 +49,24 @@ jobs:
         run: pip install ruff
 
       - name: Run ruff check
-        run: ruff check --output-format=github --ignore E999,F401 . 2>/dev/null || true
+        run: ruff check --output-format=github --ignore E999,F401 .
+
+      - name: Run ruff format check
+        run: ruff format --check .
+
+      - name: Run mypy
+        run: pip install mypy && mypy core/ api/ parsers/ --ignore-missing-imports
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+      - name: Type check
+        run: cd frontend && npx tsc --noEmit
+      - name: Build
+        run: cd frontend && npm run build
