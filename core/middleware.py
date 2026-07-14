@@ -2,6 +2,7 @@
 自定义中间件模块
 请求频率限制、请求体积限制等
 """
+
 import logging
 import time
 import uuid
@@ -24,21 +25,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     基于客户端 IP 限制请求频率，超过限制返回 429
     """
 
-    def __init__(
-        self,
-        app: ASGIApp,
-        max_requests: int = 60,
-        window_seconds: int = 60,
-        enabled: bool = True
-    ):
+    def __init__(self, app: ASGIApp, max_requests: int = 60, window_seconds: int = 60, enabled: bool = True):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.enabled = enabled
         # IP -> [(timestamp, count)]
         self._requests: dict[str, list] = defaultdict(list)
-        logger.info("RateLimitMiddleware 初始化: max=%d/%ds, enabled=%s",
-                     max_requests, window_seconds, enabled)
+        logger.info("RateLimitMiddleware 初始化: max=%d/%ds, enabled=%s", max_requests, window_seconds, enabled)
 
     async def dispatch(self, request: Request, call_next):
         if not self.enabled:
@@ -54,8 +48,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "code": ResponseCode.SERVICE_UNAVAILABLE,
                     "msg": f"请求频率超限，请稍后重试（限制: {self.max_requests}/{self.window_seconds}秒）",
                     "data": None,
-                    "requestId": ""
-                }
+                    "requestId": "",
+                },
             )
 
         response = await call_next(request)
@@ -77,10 +71,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         window_start = now - self.window_seconds
 
         # 清理过期记录
-        self._requests[client_ip] = [
-            t for t in self._requests[client_ip]
-            if t > window_start
-        ]
+        self._requests[client_ip] = [t for t in self._requests[client_ip] if t > window_start]
 
         # 检查是否超限
         if len(self._requests[client_ip]) >= self.max_requests:
@@ -105,16 +96,15 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         content_length = request.headers.get("Content-Length")
         if content_length and int(content_length) > self.max_body_size:
-            logger.warning("请求体积超限: Content-Length=%s, max=%d",
-                           content_length, self.max_body_size)
+            logger.warning("请求体积超限: Content-Length=%s, max=%d", content_length, self.max_body_size)
             return JSONResponse(
                 status_code=413,
                 content={
                     "code": ResponseCode.PARAM_ERROR,
                     "msg": f"请求体积超过限制，最大支持 {self.max_body_size // 1024 // 1024}MB",
                     "data": None,
-                    "requestId": ""
-                }
+                    "requestId": "",
+                },
             )
         return await call_next(request)
 

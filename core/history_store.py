@@ -2,11 +2,11 @@
 转换历史持久化存储
 基于 SQLite 的轻量级历史记录管理
 """
+
 import json
 import logging
 import sqlite3
 import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -96,7 +96,7 @@ class HistoryStore:
                         result_data.get("strategy", ""),
                         1 if result_data.get("decision", {}).get("fromCache") else 0,
                         now,
-                    )
+                    ),
                 )
                 history_id = cursor.lastrowid
 
@@ -104,8 +104,7 @@ class HistoryStore:
                 logs = result_data.get("processingLogs") or []
                 conn.executemany(
                     "INSERT INTO history_logs (history_id, step, level, message) VALUES (?, ?, ?, ?)",
-                    [(history_id, l.get("step", ""), l.get("level", "info"), l.get("message", ""))
-                     for l in logs]
+                    [(history_id, l.get("step", ""), l.get("level", "info"), l.get("message", "")) for l in logs],
                 )
 
                 conn.commit()
@@ -114,8 +113,7 @@ class HistoryStore:
             finally:
                 conn.close()
 
-    def list(self, limit: int = 50, offset: int = 0,
-             file_type: str | None = None) -> list[dict[str, Any]]:
+    def list(self, limit: int = 50, offset: int = 0, file_type: str | None = None) -> list[dict[str, Any]]:
         """获取历史记录列表"""
         conn = self._get_conn()
         try:
@@ -145,17 +143,14 @@ class HistoryStore:
         """获取单条历史记录详情"""
         conn = self._get_conn()
         try:
-            row = conn.execute(
-                "SELECT * FROM history WHERE result_id = ?", (result_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM history WHERE result_id = ?", (result_id,)).fetchone()
             if not row:
                 return None
 
             record = dict(row)
             # 获取关联日志
             log_rows = conn.execute(
-                "SELECT step, level, message FROM history_logs WHERE history_id = ? ORDER BY id",
-                (record["id"],)
+                "SELECT step, level, message FROM history_logs WHERE history_id = ? ORDER BY id", (record["id"],)
             ).fetchall()
             record["processingLogs"] = [dict(lr) for lr in log_rows]
 
@@ -202,9 +197,7 @@ class HistoryStore:
         conn = self._get_conn()
         try:
             if file_type:
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM history WHERE file_type = ?", (file_type,)
-                ).fetchone()
+                row = conn.execute("SELECT COUNT(*) FROM history WHERE file_type = ?", (file_type,)).fetchone()
             else:
                 row = conn.execute("SELECT COUNT(*) FROM history").fetchone()
             return row[0] if row else 0
@@ -219,9 +212,7 @@ class HistoryStore:
             by_type = conn.execute(
                 "SELECT file_type, COUNT(*) as cnt FROM history GROUP BY file_type ORDER BY cnt DESC"
             ).fetchall()
-            avg_conf = conn.execute(
-                "SELECT AVG(confidence) FROM history WHERE confidence > 0"
-            ).fetchone()[0]
+            avg_conf = conn.execute("SELECT AVG(confidence) FROM history WHERE confidence > 0").fetchone()[0]
 
             return {
                 "total": total,

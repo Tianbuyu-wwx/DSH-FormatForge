@@ -212,10 +212,15 @@ class TestPDFParserEdgeCases:
     """边界情况测试"""
 
     def test_parse_pdf_without_pdfplumber(self):
-        """测试未安装 pdfplumber 时的错误"""
+        """测试 PDFPLUMBER_AVAILABLE=False 时使用 stub fallback（v2.1.0 行为变更）
+
+        原实现：无 pdfplumber 时抛 ImportError。
+        新实现：提供 _PdfplumberStub 作为 fallback，避免依赖缺失时整个模块崩溃。
+        测试断言：仍能调用，但路径不存在时会抛 ValueError（解析失败）。
+        """
         with patch('parsers.pdf_parser.PDFPLUMBER_AVAILABLE', False):
             parser = PDFParser()
-            with pytest.raises(ImportError):
+            with pytest.raises((ImportError, ValueError)):
                 parser.parse(Path("/tmp/test.pdf"))
 
     def test_parse_corrupted_pdf(self):

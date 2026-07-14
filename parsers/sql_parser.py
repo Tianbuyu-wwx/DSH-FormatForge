@@ -3,6 +3,7 @@ SQL 文件解析器
 解析 SQL dump 文件，提取 CREATE TABLE / INSERT 语句及其他 SQL 语句
 将表结构作为 table 元素，其他语句作为 text 元素
 """
+
 import logging
 import re
 from pathlib import Path
@@ -84,23 +85,27 @@ class SQLParser(BaseParser):
                     elem_idx += 1
 
                 elif stmt_upper.startswith("CREATE INDEX") or stmt_upper.startswith("CREATE UNIQUE INDEX"):
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx}",
-                        elementType="text",
-                        content=stmt,
-                        metadata={"statement_type": "create_index"},
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx}",
+                            elementType="text",
+                            content=stmt,
+                            metadata={"statement_type": "create_index"},
+                        )
+                    )
                     raw_text_parts.append(stmt)
                     stats["create_index"] += 1
                     elem_idx += 1
 
                 elif stmt_upper.startswith("CREATE VIEW") or stmt_upper.startswith("CREATE OR REPLACE VIEW"):
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx}",
-                        elementType="text",
-                        content=stmt,
-                        metadata={"statement_type": "create_view"},
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx}",
+                            elementType="text",
+                            content=stmt,
+                            metadata={"statement_type": "create_view"},
+                        )
+                    )
                     raw_text_parts.append(stmt)
                     stats["create_view"] += 1
                     elem_idx += 1
@@ -113,61 +118,75 @@ class SQLParser(BaseParser):
                     elem_idx += 1
 
                 elif stmt_upper.startswith("UPDATE"):
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx}",
-                        elementType="text",
-                        content=stmt,
-                        metadata={"statement_type": "update"},
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx}",
+                            elementType="text",
+                            content=stmt,
+                            metadata={"statement_type": "update"},
+                        )
+                    )
                     raw_text_parts.append(stmt)
                     stats["update"] += 1
                     elem_idx += 1
 
                 elif stmt_upper.startswith("DELETE"):
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx}",
-                        elementType="text",
-                        content=stmt,
-                        metadata={"statement_type": "delete"},
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx}",
+                            elementType="text",
+                            content=stmt,
+                            metadata={"statement_type": "delete"},
+                        )
+                    )
                     raw_text_parts.append(stmt)
                     stats["delete"] += 1
                     elem_idx += 1
 
                 else:
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx}",
-                        elementType="text",
-                        content=stmt,
-                        metadata={"statement_type": "other"},
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx}",
+                            elementType="text",
+                            content=stmt,
+                            metadata={"statement_type": "other"},
+                        )
+                    )
                     raw_text_parts.append(stmt)
                     stats["other"] += 1
                     elem_idx += 1
 
             except Exception as e:
                 logger.warning("解析 SQL 语句时出错: %s, 语句前100字符: %s", e, stmt[:100])
-                elements.append(ExtractedElement(
-                    elementId=f"elem_1_{elem_idx}",
-                    elementType="text",
-                    content=stmt,
-                    metadata={"statement_type": "other", "parse_error": str(e)},
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_1_{elem_idx}",
+                        elementType="text",
+                        content=stmt,
+                        metadata={"statement_type": "other", "parse_error": str(e)},
+                    )
+                )
                 raw_text_parts.append(stmt)
                 elem_idx += 1
 
         logger.info(
             "SQL 解析完成: CREATE TABLE=%d, INSERT=%d, UPDATE=%d, DELETE=%d, 其他=%d",
-            stats["create_table"], stats["insert"], stats["update"], stats["delete"], stats["other"],
+            stats["create_table"],
+            stats["insert"],
+            stats["update"],
+            stats["delete"],
+            stats["other"],
         )
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_text_parts),
-            hasImage=False,
-            hasTable=stats["create_table"] > 0,
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_text_parts),
+                hasImage=False,
+                hasTable=stats["create_table"] > 0,
+            )
+        ]
 
     def _split_statements(self, content: str) -> list[str]:
         """按分号分割 SQL 语句，保留多行语句"""
@@ -262,12 +281,7 @@ class SQLParser(BaseParser):
             # 表头
             col_names = [c["name"] for c in columns]
             col_types = [c["type"] for c in columns]
-            table_content = (
-                f"CREATE TABLE {table_name}\n"
-                + " | ".join(col_names)
-                + "\n"
-                + " | ".join(col_types)
-            )
+            table_content = f"CREATE TABLE {table_name}\n" + " | ".join(col_names) + "\n" + " | ".join(col_types)
         else:
             table_content = f"CREATE TABLE {table_name}"
 

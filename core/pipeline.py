@@ -4,6 +4,7 @@
 将原先 God Class DataConverter 拆解为独立的 Pipeline 步骤。
 PipelineContext 携带所有状态在步骤间流转，每个步骤职责单一、可独立测试。
 """
+
 import asyncio
 import logging
 import threading
@@ -55,7 +56,7 @@ class PipelineContext:
         self.result_id: str = ""
         self.logs: list[ProcessingLog] = []
         self.input_data: InputData | None = None
-        self.detected: Any = None
+        self.detected: Any | None = None
         self.ai_caps: AiCapabilities | None = None
         self.parsed_file: ParsedFile | None = None
         self.decision: ConversionDecision | None = None
@@ -116,7 +117,9 @@ class ConversionPipeline:
 
         logger.info(
             "ConversionPipeline 初始化: cache_size=%d, cache_ttl=%d, max_concurrent_ai=%d",
-            max_cache_size, cache_ttl, max_concurrent_ai,
+            max_cache_size,
+            cache_ttl,
+            max_concurrent_ai,
         )
 
     def initialize(self):
@@ -164,10 +167,16 @@ class ConversionPipeline:
     ) -> dict[str, Any] | None:
         try:
             cached = self._content_cache.get(
-                input_data.data, conversion_type.value, output_format.value, custom_prompt,
+                input_data.data,
+                conversion_type.value,
+                output_format.value,
+                custom_prompt,
             )
             if cached:
                 logger.info("内容哈希缓存命中")
+                # v2.1.0: JSON 缓存命中时 result 是 dict，需重建为 ConvertResultData
+                if isinstance(cached, dict):
+                    cached = ConvertResultData(**cached)
                 return {
                     "result": cached,
                     "decision": {"from_cache": True},
@@ -187,7 +196,10 @@ class ConversionPipeline:
     ):
         try:
             self._content_cache.set(
-                input_data.data, conversion_type.value, output_format.value, result_data,
+                input_data.data,
+                conversion_type.value,
+                output_format.value,
+                result_data,
             )
         except Exception as e:
             logger.debug("内容缓存写入失败（可忽略）: %s", e)
@@ -261,6 +273,7 @@ class ConversionPipeline:
 
     def _build_error_response(self, ctx: PipelineContext) -> dict[str, Any]:
         from core.utils import create_processing_log
+
         error_msg = ctx.error or "未知错误"
         if ctx.logs:
             ctx.logs.append(create_processing_log("error", error_msg, "error"))

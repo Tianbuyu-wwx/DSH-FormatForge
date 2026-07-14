@@ -3,6 +3,7 @@ PPTX 文件解析器
 支持解析 PowerPoint 幻灯片 (.pptx)
 提取文本、表格、图片占位符、备注等信息
 """
+
 import logging
 from pathlib import Path
 
@@ -15,6 +16,7 @@ logger = logging.getLogger("parsers.pptx")
 try:
     from pptx import Presentation
     from pptx.util import Inches, Pt
+
     PPTX_AVAILABLE = True
 except ImportError:
     PPTX_AVAILABLE = False
@@ -65,15 +67,17 @@ class PPTXParser(BaseParser):
 
         # 提取标题
         title = ""
-        slide_title = getattr(slide.shapes, 'title', None)
-        if slide_title and hasattr(slide_title, 'text') and slide_title.text.strip():
+        slide_title = getattr(slide.shapes, "title", None)
+        if slide_title and hasattr(slide_title, "text") and slide_title.text.strip():
             title = slide_title.text.strip()
-            elements.append(ExtractedElement(
-                elementId=f"elem_{slide_number}_{elem_idx}",
-                elementType="title",
-                content=title,
-                metadata={"is_title": True}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_{slide_number}_{elem_idx}",
+                    elementType="title",
+                    content=title,
+                    metadata={"is_title": True},
+                )
+            )
             raw_text_parts.append(title)
             elem_idx += 1
 
@@ -88,33 +92,34 @@ class PPTXParser(BaseParser):
                 has_table = True
                 table_text = self._extract_table(shape.table)
                 if table_text:
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_{slide_number}_{elem_idx}",
-                        elementType="table",
-                        content=table_text,
-                        metadata={
-                            "rows": len(shape.table.rows),
-                            "cols": len(shape.table.columns)
-                        }
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_{slide_number}_{elem_idx}",
+                            elementType="table",
+                            content=table_text,
+                            metadata={"rows": len(shape.table.rows), "cols": len(shape.table.columns)},
+                        )
+                    )
                     raw_text_parts.append(f"[表格]\n{table_text}")
                     elem_idx += 1
                 continue
 
             # 处理图片
-            if shape.shape_type is not None and hasattr(shape.shape_type, 'name'):
-                if 'PICTURE' in shape.shape_type.name:
+            if shape.shape_type is not None and hasattr(shape.shape_type, "name"):
+                if "PICTURE" in shape.shape_type.name:
                     has_image = True
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_{slide_number}_{elem_idx}",
-                        elementType="image",
-                        content=f"[图片] {shape.name}",
-                        metadata={
-                            "shape_name": shape.name,
-                            "width": shape.width.inches if hasattr(shape, 'width') else None,
-                            "height": shape.height.inches if hasattr(shape, 'height') else None
-                        }
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_{slide_number}_{elem_idx}",
+                            elementType="image",
+                            content=f"[图片] {shape.name}",
+                            metadata={
+                                "shape_name": shape.name,
+                                "width": shape.width.inches if hasattr(shape, "width") else None,
+                                "height": shape.height.inches if hasattr(shape, "height") else None,
+                            },
+                        )
+                    )
                     raw_text_parts.append(f"[图片] {shape.name}")
                     elem_idx += 1
                     continue
@@ -123,11 +128,9 @@ class PPTXParser(BaseParser):
             if hasattr(shape, "text") and shape.text.strip():
                 text = shape.text.strip()
                 elem_type = self._detect_element_type(text)
-                elements.append(ExtractedElement(
-                    elementId=f"elem_{slide_number}_{elem_idx}",
-                    elementType=elem_type,
-                    content=text
-                ))
+                elements.append(
+                    ExtractedElement(elementId=f"elem_{slide_number}_{elem_idx}", elementType=elem_type, content=text)
+                )
                 raw_text_parts.append(text)
                 elem_idx += 1
 
@@ -137,12 +140,14 @@ class PPTXParser(BaseParser):
             notes_text_frame = slide.notes_slide.notes_text_frame
             if notes_text_frame and notes_text_frame.text.strip():
                 notes_text = notes_text_frame.text.strip()
-                elements.append(ExtractedElement(
-                    elementId=f"elem_{slide_number}_{elem_idx}",
-                    elementType="note",
-                    content=notes_text,
-                    metadata={"is_note": True}
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_{slide_number}_{elem_idx}",
+                        elementType="note",
+                        content=notes_text,
+                        metadata={"is_note": True},
+                    )
+                )
                 raw_text_parts.append(f"[备注] {notes_text}")
                 elem_idx += 1
 
@@ -151,7 +156,7 @@ class PPTXParser(BaseParser):
             elements=elements,
             rawText="\n".join(raw_text_parts),
             hasImage=has_image,
-            hasTable=has_table
+            hasTable=has_table,
         )
 
     def _extract_table(self, table) -> str:
@@ -169,11 +174,11 @@ class PPTXParser(BaseParser):
             return "empty"
 
         # 检测标题
-        if len(text) < 100 and (text.endswith('：') or text.endswith(':')):
+        if len(text) < 100 and (text.endswith("：") or text.endswith(":")):
             return "heading"
 
         # 检测列表
-        if text.startswith(('•', '-', '*', '1.', '2.', '（', '(')):
+        if text.startswith(("•", "-", "*", "1.", "2.", "（", "(")):
             return "list"
 
         return "text"

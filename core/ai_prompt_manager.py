@@ -2,6 +2,7 @@
 AI 提示词管理器
 负责构建AI转换提示词、解析AI响应、执行AI增强转换
 """
+
 import json
 import logging
 import re
@@ -32,14 +33,14 @@ class AIPromptManager:
         file_type: str,
         base_content: str,
         output_format: OutputFormat,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
     ) -> str:
         """构建AI转换提示词"""
         format_instruction = {
             OutputFormat.JSON: "输出有效的JSON格式",
             OutputFormat.MARKDOWN: "输出Markdown格式",
             OutputFormat.TEXT: "输出纯文本格式",
-            OutputFormat.HTML: "输出HTML格式"
+            OutputFormat.HTML: "输出HTML格式",
         }.get(output_format, "输出结构化文本")
 
         prompt = f"""你是一个数据转换专家。请将以下从 {file_type} 文件中提取的内容转换为AI可理解和处理的标准格式。
@@ -80,11 +81,8 @@ class AIPromptManager:
 
         if output_format == OutputFormat.JSON:
             try:
-                json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
-                if json_match:
-                    json_str = json_match.group(1)
-                else:
-                    json_str = response_text.strip()
+                json_match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
+                json_str = json_match.group(1) if json_match else response_text.strip()
 
                 parsed = json.loads(json_str)
                 result["structured_data"] = parsed
@@ -94,11 +92,7 @@ class AIPromptManager:
         return result
 
     def enhance_convert(
-        self,
-        parsed_file: Any,
-        base_content: str,
-        output_format: OutputFormat,
-        custom_prompt: str | None = None
+        self, parsed_file: Any, base_content: str, output_format: OutputFormat, custom_prompt: str | None = None
     ) -> dict[str, Any] | None:
         """使用AI增强转换"""
         if not self.ai_client:
@@ -110,7 +104,7 @@ class AIPromptManager:
             file_type=parsed_file.fileType.value,
             base_content=base_content,
             output_format=output_format,
-            custom_prompt=custom_prompt
+            custom_prompt=custom_prompt,
         )
 
         logger.info("调用AI增强转换: file=%s, prompt_length=%d", parsed_file.fileName, len(prompt))

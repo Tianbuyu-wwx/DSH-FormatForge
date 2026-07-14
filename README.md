@@ -2,11 +2,13 @@
 
 > 自动将各种格式数据转换为 AI 可识别的标准化数据
 
+[![Version](https://img.shields.io/badge/version-2.1.0-blue)](__version__.py)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green)](https://fastapi.tiangolo.com)
-[![Frontend](https://img.shields.io/badge/frontend-Lit%20%2B%20Vite%20%2B%20TS-orange)]()
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.109%2B-green)](https://fastapi.tiangolo.com)
+[![Frontend](https://img.shields.io/badge/frontend-Lit%203%20%2B%20Vite%206%20%2B%20TS%205-orange)](frontend/package.json)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-585%20passed-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-635%20passed-brightgreen)](test/)
+[![Status](https://img.shields.io/badge/status-stable-success)](CHANGELOG.md)
 
 ## 目录
 
@@ -19,6 +21,7 @@
 - [项目结构](#项目结构)
 - [测试](#测试)
 - [更新日志](#更新日志)
+- [安全](#安全-v210)
 - [许可证](#许可证)
 
 ---
@@ -400,7 +403,66 @@ pytest test/integration/test_api.py -v
 - **测试数据**：`test/fixtures/` 提供各类编码、格式的测试文件
 - **CI**：GitHub Actions 自动运行 Python 3.10/3.11/3.12 矩阵测试 + ruff 格式检查 + mypy 类型检查 + 前端构建验证
 
+## 安全 (v2.1.0)
+
+v2.1.0 起所有写接口（POST/PUT/DELETE）默认需要 API_KEY 认证。
+
+### 开发模式（API_KEY 为空）
+
+所有接口无需认证，适合本地开发。
+
+```bash
+# 默认就是 dev 模式：直接启动
+python main.py
+```
+
+### 生产模式（启用 API_KEY）
+
+```bash
+# 设置一个强密钥（建议 32+ 字符随机字符串）
+export API_KEY="your-super-secret-key-at-least-32-chars"
+
+# 写接口必须传 Bearer Token
+curl -X POST http://localhost:8000/api/v2/convert/text \
+  -H "Authorization: Bearer your-super-secret-key-at-least-32-chars" \
+  -F "text=hello" -F "file_name=test.txt"
+
+# GET 接口不需要认证
+curl http://localhost:8000/api/v2/health
+```
+
+**安全特性（v2.1.0）**：
+- ✅ SSRF 防护：阻断内网 IP 段、IPv6 loopback、整数/十六进制 IP 绕过、`file://` 协议
+- ✅ CORS 修复：`ALLOWED_ORIGINS=*` 不再崩溃；自动适配 `allow_credentials`
+- ✅ API_KEY：HMAC-SHA256 时序安全比对，仅写接口强制
+- ✅ 路径遍历：NUL/UNC/NTFS 流/8.3 短文件名全部拦截
+- ✅ 错误响应不泄漏堆栈：生产模式只返回通用错误
+- ✅ 磁盘缓存 JSON 序列化（取代 pickle 反序列化任意代码漏洞）
+
+更多安全细节与开发路线参见 [`E:\My Wiki\10-projects\data-format-translator\research\data-format-translator-v5-调研与规划.md`](https://github.com/Tianbuyu/data-format-translator/blob/main/research/)
+
 ## 更新日志
+
+### v2.1.0 DFT 1.5（2026-07-13）— 安全硬化 + 依赖补齐
+
+**P0 安全修复**
+- **SSRF 加固**（`core/security.py`）：用 `ipaddress` 模块替换字符串前缀比对；拦截整数 IP（`2130706433`）、十六进制（`0x7f000001`）、单字节 IP（`127.1`）、IPv6 loopback、`file:///etc/passwd`、`gopher://` 等绕过方式
+- **CORS 修复**：`ALLOWED_ORIGINS=*` 不再触发 `JSONDecodeError`；`["*"]` 自动 `allow_credentials=False`（避免浏览器拒绝）
+- **API_KEY 认证**：写接口（POST/PUT/DELETE）要求 `Authorization: Bearer <key>`，GET 公开；用 `hmac.compare_digest` 防时序攻击；空 key 时为 dev 模式
+- **路径遍历加固**：NUL 字节、UNC 路径、NTFS 备用数据流（`file.txt:hidden`）、Windows 8.3 短文件名（`PROGRA~1`）全部拦截
+- **错误响应不泄漏堆栈**：生产模式只返回 `"服务器内部错误"`，堆栈只写日志
+- **MIME 空值拦截**：`validate_mime_type(None)` 改为 False
+
+**P0 测试修复**
+- **PDF mock 路径**：新增 `_PdfplumberStub` 模块级占位符，让 `patch('parsers.pdf_parser.pdfplumber.open')` 命中（`TestPDFParserMock` 7 个测试从全失败 → 全通过）
+- **依赖补齐**：`pdfplumber` 提升到必需依赖；OCR/Archive/Richtext 拆 optional groups (`[ocr]`/`[archive]`/`[richtext]`/`[all]`)
+
+**P0 重构**
+- **磁盘缓存 pickle → JSON**（`core/content_cache.py`）：消除反序列化任意代码漏洞，向后兼容旧 `.pkl` 文件
+- **版本号统一**：`__version__.py` 作为唯一真源；`main.py` / `api/v2.py` / `pyproject.toml` 全部引用 `2.1.0`
+- **build-backend 修复**：`setuptools.backends._legacy:_Backend` → `setuptools.build_meta`
+
+**测试基线**: `635 passed, 5 skipped, 0 failed`（较 v1.4 的 `17 failed, 618 passed` 提升）
 
 ### v4.0 Sacred Grove (2026-06-14) — 视觉完全重构 + 去 AI 味
 

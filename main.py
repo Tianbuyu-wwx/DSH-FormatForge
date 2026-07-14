@@ -2,38 +2,35 @@
 AI 数据转换器服务
 自动将各种格式数据转换为AI可识别的标准化数据
 """
-import os
-import sys
+
+import logging
 import socket
 import subprocess
-import webbrowser
+import sys
 import threading
 import time
-import logging
+import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 import uvicorn
-
-from core.config import settings
-from core.models import ResponseCode, ResponseMsg
-from core.utils import generate_request_id
-from core.middleware import RateLimitMiddleware, RequestSizeLimitMiddleware, TraceIDMiddleware
-from core.metrics import MetricsCollector, MetricsMiddleware, get_metrics_collector
-
-from api.v1 import router as v1_router
-from api.v2 import router as v2_router
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 # 导出关键组件以支持测试和外部导入
-from core.di import data_converter, file_parser
-from __version__ import __version__, __version_name__
+from core.di import data_converter, file_parser  # noqa: F401
+from __version__ import __version__
+from api.v1 import router as v1_router
+from api.v2 import router as v2_router
+from core.config import settings
 
 # ==================== 日志配置 ====================
-
 from core.logging_config import setup_logging
+from core.metrics import MetricsMiddleware, get_metrics_collector
+from core.middleware import RateLimitMiddleware, RequestSizeLimitMiddleware, TraceIDMiddleware
+from core.models import ResponseCode
+from core.utils import generate_request_id
 
 setup_logging(level=getattr(settings, "LOG_LEVEL", "INFO"), json_format=not settings.DEBUG)
 
@@ -42,11 +39,7 @@ logger.info("日志系统初始化完成，敏感信息过滤已启用")
 
 # ==================== 创建 FastAPI 应用 ====================
 
-app = FastAPI(
-    title="AI 数据转换器",
-    description="自动将各种格式数据转换为AI可识别的标准化数据",
-    version=__version__
-)
+app = FastAPI(title="AI 数据转换器", description="自动将各种格式数据转换为AI可识别的标准化数据", version=__version__)
 
 
 # ==================== API_KEY 认证依赖 ====================
@@ -76,17 +69,11 @@ app.add_middleware(
 
 # 请求频率限制中间件
 app.add_middleware(
-    RateLimitMiddleware,
-    max_requests=settings.RATE_LIMIT_MAX,
-    window_seconds=60,
-    enabled=settings.RATE_LIMIT_ENABLED
+    RateLimitMiddleware, max_requests=settings.RATE_LIMIT_MAX, window_seconds=60, enabled=settings.RATE_LIMIT_ENABLED
 )
 
 # 请求体积限制中间件
-app.add_middleware(
-    RequestSizeLimitMiddleware,
-    max_body_size=settings.MAX_REQUEST_SIZE
-)
+app.add_middleware(RequestSizeLimitMiddleware, max_body_size=settings.MAX_REQUEST_SIZE)
 
 # Trace ID 中间件（放在最后，最先执行）
 app.add_middleware(TraceIDMiddleware)
@@ -94,6 +81,7 @@ app.add_middleware(TraceIDMiddleware)
 # 指标收集中间件（最外层，捕获完整请求耗时）
 metrics_collector = get_metrics_collector()
 app.add_middleware(MetricsMiddleware, collector=metrics_collector)
+
 
 # API v1 废弃提示中间件
 @app.middleware("http")
@@ -105,22 +93,18 @@ async def api_v1_deprecation_middleware(request: Request, call_next):
         response.headers["Link"] = '</api/v2>; rel="successor-version"'
     return response
 
+
 # ==================== 全局异常处理器 ====================
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """全局异常处理器 - 统一错误响应格式（生产环境不泄漏堆栈）"""
-    logger.error("未捕获的异常: %s, path=%s, method=%s",
-                 exc, request.url.path, request.method, exc_info=True)
-    msg = "服务器内部错误: %s" % str(exc) if settings.DEBUG else "服务器内部错误"
+    logger.error("未捕获的异常: %s, path=%s, method=%s", exc, request.url.path, request.method, exc_info=True)
+    msg = f"服务器内部错误: {str(exc)}" if settings.DEBUG else "服务器内部错误"
     return JSONResponse(
         status_code=500,
-        content={
-            "code": ResponseCode.SERVER_ERROR,
-            "msg": msg,
-            "data": None,
-            "requestId": generate_request_id()
-        }
+        content={"code": ResponseCode.SERVER_ERROR, "msg": msg, "data": None, "requestId": generate_request_id()},
     )
 
 
@@ -130,12 +114,7 @@ async def value_error_handler(request: Request, exc: ValueError):
     logger.warning("参数验证错误: %s, path=%s", exc, request.url.path)
     return JSONResponse(
         status_code=400,
-        content={
-            "code": ResponseCode.PARAM_ERROR,
-            "msg": str(exc),
-            "data": None,
-            "requestId": generate_request_id()
-        }
+        content={"code": ResponseCode.PARAM_ERROR, "msg": str(exc), "data": None, "requestId": generate_request_id()},
     )
 
 
@@ -145,13 +124,9 @@ async def file_not_found_handler(request: Request, exc: FileNotFoundError):
     logger.warning("文件未找到: %s, path=%s", exc, request.url.path)
     return JSONResponse(
         status_code=404,
-        content={
-            "code": ResponseCode.NOT_FOUND,
-            "msg": str(exc),
-            "data": None,
-            "requestId": generate_request_id()
-        }
+        content={"code": ResponseCode.NOT_FOUND, "msg": str(exc), "data": None, "requestId": generate_request_id()},
     )
+
 
 # ==================== 注册路由 ====================
 
@@ -167,6 +142,7 @@ app.include_router(v2_router)
 
 # ==================== 基础路由 ====================
 
+
 @app.get("/")
 async def root():
     """根路径 - 返回服务信息和 API 文档链接"""
@@ -176,7 +152,7 @@ async def root():
         "description": "自动将各种格式数据转换为AI可识别的标准化数据",
         "docs": "/docs",
         "health": "/health",
-        "status": "running"
+        "status": "running",
     }
 
 
@@ -184,14 +160,11 @@ async def root():
 async def health_check():
     """健康检查"""
     from core.utils import create_response
+
     return create_response(
         code=ResponseCode.SUCCESS,
         msg="服务运行正常",
-        data={
-            "status": "healthy",
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "version": __version__
-        }
+        data={"status": "healthy", "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"), "version": __version__},
     )
 
 
@@ -200,11 +173,12 @@ async def debug_config():
     """调试配置接口 - 仅 DEBUG 模式下可用"""
     if not settings.DEBUG:
         from fastapi.responses import JSONResponse
+
         return JSONResponse(
-            status_code=403,
-            content={"code": 403, "msg": "调试接口仅在 DEBUG 模式下可用", "data": None}
+            status_code=403, content={"code": 403, "msg": "调试接口仅在 DEBUG 模式下可用", "data": None}
         )
     from core.utils import create_response
+
     return create_response(
         code=ResponseCode.SUCCESS,
         msg="调试配置信息",
@@ -219,12 +193,13 @@ async def debug_config():
             "rate_limit_max": settings.RATE_LIMIT_MAX,
             "rate_limit_enabled": settings.RATE_LIMIT_ENABLED,
             "ai_timeout": settings.AI_TIMEOUT,
-            "file_type_validation": settings.FILE_TYPE_VALIDATION
-        }
+            "file_type_validation": settings.FILE_TYPE_VALIDATION,
+        },
     )
 
 
 # ==================== 启动服务 ====================
+
 
 def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
     """检测指定端口是否被占用"""
@@ -248,7 +223,7 @@ def start_frontend_dev():
             cwd=str(frontend_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            shell=(sys.platform == "win32")
+            shell=(sys.platform == "win32"),
         )
         return proc
     except Exception as e:
@@ -294,16 +269,7 @@ if __name__ == "__main__":
     logger.info("=" * 60)
 
     # 在新线程中延迟打开浏览器
-    browser_thread = threading.Thread(
-        target=open_browser_delayed,
-        args=(target_url,),
-        daemon=True
-    )
+    browser_thread = threading.Thread(target=open_browser_delayed, args=(target_url,), daemon=True)
     browser_thread.start()
 
-    uvicorn.run(
-        "main:app",
-        host=settings.APP_HOST,
-        port=settings.APP_PORT,
-        reload=settings.DEBUG
-    )
+    uvicorn.run("main:app", host=settings.APP_HOST, port=settings.APP_PORT, reload=settings.DEBUG)

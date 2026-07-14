@@ -1,26 +1,26 @@
 """API v2 路由 - 新架构接口"""
+
 import io
 import json
 import logging
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
+from __version__ import __version__
+from core.auth import verify_api_key
 from core.config import settings
-from core.di import batch_converter, data_converter, file_parser
+from core.di import data_converter, file_parser
 from core.history_store import get_history_store
+from core.metrics import get_metrics_collector
 from core.models import ConversionType, OutputFormat, ResponseCode, ResponseMsg
 from core.output_templates import apply_template, get_template_list
 from core.quality_report import QualityReport
-from core.metrics import get_metrics_collector
 from core.security import validate_file_extension, validate_url_domain
 from core.stream_handler import streaming_convert
+from core.utils import build_convert_response_data, create_response, save_upload_file
 from core.webhook_manager import get_webhook_manager
-from core.utils import build_convert_response_data, create_response, generate_request_id, save_upload_file
-from __version__ import __version__, __version_name__
-from core.auth import verify_api_key
 
 logger = logging.getLogger("api.v2")
 
@@ -37,23 +37,19 @@ async def convert_data(
     conversion_type: ConversionType = Form(default=ConversionType.AUTO),
     output_format: OutputFormat = Form(default=OutputFormat.JSON),
     custom_prompt: str | None = Form(default=None, description="自定义转换指令"),
-    use_ai_enhance: bool = Form(default=True)
+    use_ai_enhance: bool = Form(default=True),
 ):
     """
     数据转换接口（新架构）
     """
     try:
         # URL 域名白名单验证
-        if settings.URL_DOMAIN_VALIDATION and source_type == "url":
-            if not validate_url_domain(source):
-                return create_response(
-                    code=ResponseCode.PARAM_ERROR,
-                    msg="不允许访问的 URL 域名"
-                )
+        if settings.URL_DOMAIN_VALIDATION and source_type == "url" and not validate_url_domain(source):
+            return create_response(code=ResponseCode.PARAM_ERROR, msg="不允许访问的 URL 域名")
 
         # 根据source_type构建输入源
         if source_type == "raw":
-            input_source = source.encode('utf-8') if isinstance(source, str) else source
+            input_source = source.encode("utf-8") if isinstance(source, str) else source
         elif source_type == "auto":
             if source.startswith(("http://", "https://")):
                 if settings.URL_DOMAIN_VALIDATION and not validate_url_domain(source):
@@ -62,7 +58,7 @@ async def convert_data(
             elif Path(source).exists():
                 input_source = source
             else:
-                input_source = source.encode('utf-8')
+                input_source = source.encode("utf-8")
         else:
             input_source = source
 
@@ -74,37 +70,28 @@ async def convert_data(
             conversion_type=conversion_type,
             output_format=output_format,
             custom_prompt=custom_prompt,
-            use_ai_enhance=use_ai_enhance
+            use_ai_enhance=use_ai_enhance,
         )
 
         result_data = result.get("result")
         if not result_data:
-            return create_response(
-                code=ResponseCode.SERVER_ERROR,
-                msg=ResponseMsg.CONVERT_FAILED
-            )
+            return create_response(code=ResponseCode.SERVER_ERROR, msg=ResponseMsg.CONVERT_FAILED)
 
         response_data = build_convert_response_data(result_data)
         response_data["decision"] = result.get("decision")
         response_data["aiCapabilities"] = result.get("ai_capabilities")
         response_data["recommendation"] = result.get("recommendation")
 
-        return create_response(
-            code=ResponseCode.SUCCESS,
-            msg=ResponseMsg.CONVERT_SUCCESS,
-            data=response_data
-        )
+        return create_response(code=ResponseCode.SUCCESS, msg=ResponseMsg.CONVERT_SUCCESS, data=response_data)
 
     except ValueError as e:
         logger.warning("参数验证失败: %s", e)
         return create_response(code=ResponseCode.PARAM_ERROR, msg=str(e))
     except Exception as e:
         import traceback
+
         logger.error("转换失败: %s\n%s", e, traceback.format_exc())
-        return create_response(
-            code=ResponseCode.SERVER_ERROR,
-            msg=f"转换失败: {str(e)}"
-        )
+        return create_response(code=ResponseCode.SERVER_ERROR, msg=f"转换失败: {str(e)}")
 
 
 @router.post("/convert/upload", dependencies=[Depends(verify_api_key)])
@@ -116,19 +103,15 @@ async def convert_upload(
     conversion_type: ConversionType = Form(default=ConversionType.AUTO),
     output_format: OutputFormat = Form(default=OutputFormat.JSON),
     custom_prompt: str | None = Form(default=None),
-    use_ai_enhance: bool = Form(default=True)
+    use_ai_enhance: bool = Form(default=True),
 ):
     """
     上传文件并转换（新架构）
     """
     try:
         # 文件类型白名单验证
-        if settings.FILE_TYPE_VALIDATION and file.filename:
-            if not validate_file_extension(file.filename):
-                return create_response(
-                    code=ResponseCode.PARAM_ERROR,
-                    msg=f"不支持的文件类型: {Path(file.filename).suffix}"
-                )
+        if settings.FILE_TYPE_VALIDATION and file.filename and not validate_file_extension(file.filename):
+            return create_response(code=ResponseCode.PARAM_ERROR, msg=f"不支持的文件类型: {Path(file.filename).suffix}")
 
         file_path = await save_upload_file(settings.UPLOAD_DIR, file, settings.MAX_FILE_SIZE)
 
@@ -140,15 +123,12 @@ async def convert_upload(
             conversion_type=conversion_type,
             output_format=output_format,
             custom_prompt=custom_prompt,
-            use_ai_enhance=use_ai_enhance
+            use_ai_enhance=use_ai_enhance,
         )
 
         result_data = result.get("result")
         if not result_data:
-            return create_response(
-                code=ResponseCode.SERVER_ERROR,
-                msg=ResponseMsg.CONVERT_FAILED
-            )
+            return create_response(code=ResponseCode.SERVER_ERROR, msg=ResponseMsg.CONVERT_FAILED)
 
         response_data = build_convert_response_data(result_data)
         response_data["decision"] = result.get("decision")
@@ -161,22 +141,16 @@ async def convert_upload(
         except Exception as e:
             logger.warning("保存历史记录失败: %s", e)
 
-        return create_response(
-            code=ResponseCode.SUCCESS,
-            msg=ResponseMsg.CONVERT_SUCCESS,
-            data=response_data
-        )
+        return create_response(code=ResponseCode.SUCCESS, msg=ResponseMsg.CONVERT_SUCCESS, data=response_data)
 
     except ValueError as e:
         logger.warning("文件上传验证失败: %s", e)
         return create_response(code=ResponseCode.PARAM_ERROR, msg=str(e))
     except Exception as e:
         import traceback
+
         logger.error("处理失败: %s\n%s", e, traceback.format_exc())
-        return create_response(
-            code=ResponseCode.SERVER_ERROR,
-            msg=f"处理失败: {str(e)}"
-        )
+        return create_response(code=ResponseCode.SERVER_ERROR, msg=f"处理失败: {str(e)}")
 
 
 @router.post("/convert/url", dependencies=[Depends(verify_api_key)])
@@ -234,7 +208,7 @@ async def convert_text(
         import tempfile
 
         # 保存文本为临时文件
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tmp:
             tmp.write(text)
             tmp_path = Path(tmp.name)
 
@@ -265,6 +239,7 @@ async def convert_text(
 
 # ==================== 历史记录 API ====================
 
+
 @router.get("/history")
 async def get_history(
     limit: int = Query(default=50, ge=1, le=200),
@@ -279,7 +254,7 @@ async def get_history(
         return create_response(
             code=ResponseCode.SUCCESS,
             msg="查询成功",
-            data={"items": records, "total": total, "limit": limit, "offset": offset}
+            data={"items": records, "total": total, "limit": limit, "offset": offset},
         )
     except Exception as e:
         logger.error("获取历史记录失败: %s", e)
@@ -340,6 +315,7 @@ async def get_history_stats():
 
 # ==================== 导出 API ====================
 
+
 @router.get("/export/{result_id}")
 async def export_result(result_id: str, format: str = Query(default="markdown")):
     """
@@ -397,7 +373,7 @@ async def export_result(result_id: str, format: str = Query(default="markdown"))
         return StreamingResponse(
             io.BytesIO(content.encode("utf-8")),
             media_type=content_type,
-            headers={"Content-Disposition": f'attachment; filename="{file_name}{ext}"'}
+            headers={"Content-Disposition": f'attachment; filename="{file_name}{ext}"'},
         )
     except Exception as e:
         logger.error("导出失败: %s", e)
@@ -405,6 +381,7 @@ async def export_result(result_id: str, format: str = Query(default="markdown"))
 
 
 # ==================== SSE 流式转换 API ====================
+
 
 @router.post("/convert/stream", dependencies=[Depends(verify_api_key)])
 async def convert_stream(
@@ -416,12 +393,8 @@ async def convert_stream(
     """
     流式转换接口 - 通过 SSE 实时推送转换进度
     """
-    if settings.FILE_TYPE_VALIDATION and file.filename:
-        if not validate_file_extension(file.filename):
-            return create_response(
-                code=ResponseCode.PARAM_ERROR,
-                msg=f"不支持的文件类型: {Path(file.filename).suffix}"
-            )
+    if settings.FILE_TYPE_VALIDATION and file.filename and not validate_file_extension(file.filename):
+        return create_response(code=ResponseCode.PARAM_ERROR, msg=f"不支持的文件类型: {Path(file.filename).suffix}")
 
     file_path = await save_upload_file(settings.UPLOAD_DIR, file, settings.MAX_FILE_SIZE)
 
@@ -442,6 +415,7 @@ async def convert_stream(
 
 
 # ==================== 输出模板 API ====================
+
 
 @router.get("/templates")
 async def list_templates():
@@ -470,12 +444,8 @@ async def convert_with_template(
     使用输出模板进行转换
     """
     try:
-        if settings.FILE_TYPE_VALIDATION and file.filename:
-            if not validate_file_extension(file.filename):
-                return create_response(
-                    code=ResponseCode.PARAM_ERROR,
-                    msg=f"不支持的文件类型: {Path(file.filename).suffix}"
-                )
+        if settings.FILE_TYPE_VALIDATION and file.filename and not validate_file_extension(file.filename):
+            return create_response(code=ResponseCode.PARAM_ERROR, msg=f"不支持的文件类型: {Path(file.filename).suffix}")
 
         file_path = await save_upload_file(settings.UPLOAD_DIR, file, settings.MAX_FILE_SIZE)
 
@@ -488,10 +458,7 @@ async def convert_with_template(
 
         result_data = result.get("result")
         if not result_data:
-            return create_response(
-                code=ResponseCode.SERVER_ERROR,
-                msg=ResponseMsg.CONVERT_FAILED
-            )
+            return create_response(code=ResponseCode.SERVER_ERROR, msg=ResponseMsg.CONVERT_FAILED)
 
         content = result_data.convertedContent or ""
         structured_data = result_data.structuredData
@@ -513,11 +480,13 @@ async def convert_with_template(
         return create_response(code=ResponseCode.PARAM_ERROR, msg=str(e))
     except Exception as e:
         import traceback
+
         logger.error("模板转换失败: %s\n%s", e, traceback.format_exc())
         return create_response(code=ResponseCode.SERVER_ERROR, msg=f"模板转换失败: {str(e)}")
 
 
 # ==================== 质量报告 API ====================
+
 
 @router.get("/quality/{result_id}")
 async def get_quality_report(result_id: str):
@@ -543,28 +512,37 @@ async def get_quality_report(result_id: str):
 async def analyze_quality(file: UploadFile = File(...)):
     """分析上传文件的质量并返回质量报告"""
     try:
-        if settings.FILE_TYPE_VALIDATION and file.filename:
-            if not validate_file_extension(file.filename):
-                return create_response(
-                    code=ResponseCode.PARAM_ERROR,
-                    msg=f"不支持的文件类型: {Path(file.filename).suffix}"
-                )
+        if settings.FILE_TYPE_VALIDATION and file.filename and not validate_file_extension(file.filename):
+            return create_response(code=ResponseCode.PARAM_ERROR, msg=f"不支持的文件类型: {Path(file.filename).suffix}")
 
         file_path = await save_upload_file(settings.UPLOAD_DIR, file, settings.MAX_FILE_SIZE)
 
         # 确定文件类型
         ext = file_path.suffix.lower()
         ext_type_map = {
-            '.pdf': 'pdf', '.doc': 'doc', '.docx': 'doc',
-            '.ppt': 'ppt', '.pptx': 'ppt',
-            '.xls': 'xls', '.xlsx': 'xls',
-            '.txt': 'txt', '.csv': 'csv', '.tsv': 'csv',
-            '.jpg': 'image', '.jpeg': 'image', '.png': 'image',
-            '.gif': 'image', '.bmp': 'image', '.webp': 'image',
-            '.md': 'txt', '.json': 'txt', '.xml': 'txt',
-            '.html': 'txt', '.htm': 'txt',
+            ".pdf": "pdf",
+            ".doc": "doc",
+            ".docx": "doc",
+            ".ppt": "ppt",
+            ".pptx": "ppt",
+            ".xls": "xls",
+            ".xlsx": "xls",
+            ".txt": "txt",
+            ".csv": "csv",
+            ".tsv": "csv",
+            ".jpg": "image",
+            ".jpeg": "image",
+            ".png": "image",
+            ".gif": "image",
+            ".bmp": "image",
+            ".webp": "image",
+            ".md": "txt",
+            ".json": "txt",
+            ".xml": "txt",
+            ".html": "txt",
+            ".htm": "txt",
         }
-        file_type = ext_type_map.get(ext, 'unknown')
+        file_type = ext_type_map.get(ext, "unknown")
 
         # 解析文件
         parsed = file_parser.parse_file(file_path, file_type)
@@ -580,11 +558,13 @@ async def analyze_quality(file: UploadFile = File(...)):
         return create_response(code=ResponseCode.PARAM_ERROR, msg=str(e))
     except Exception as e:
         import traceback
+
         logger.error("质量分析失败: %s\n%s", e, traceback.format_exc())
         return create_response(code=ResponseCode.SERVER_ERROR, msg=f"质量分析失败: {str(e)}")
 
 
 # ==================== 监控与健康检查 API ====================
+
 
 @router.get("/metrics", response_class=PlainTextResponse)
 async def get_metrics():
@@ -597,6 +577,7 @@ async def get_metrics():
 async def health_v2():
     """健康检查 (v2)"""
     import time as _time
+
     return {
         "status": "ok",
         "version": __version__,
@@ -611,6 +592,7 @@ from pydantic import BaseModel
 
 class WebhookRegisterRequest(BaseModel):
     """Webhook 注册请求"""
+
     task_id: str
     callback_url: str
     secret: str = ""

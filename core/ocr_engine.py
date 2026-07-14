@@ -4,6 +4,7 @@ OCR 引擎模块
 集成多模态 AI 进行图片文字识别
 支持多引擎切换：Tesseract / PaddleOCR / EasyOCR / AI
 """
+
 import logging
 import tempfile
 from abc import ABC, abstractmethod
@@ -16,24 +17,29 @@ logger = logging.getLogger("ocr_engine")
 # 可选依赖
 try:
     import pdfplumber as _pdfplumber_module
+
     pdfplumber = _pdfplumber_module
     PDFPLUMBER_AVAILABLE = True
 except ImportError:
     PDFPLUMBER_AVAILABLE = False
     import contextlib
+
     @contextlib.contextmanager
     def _pdfplumber_open_stub(*args, **kwargs):
         yield type("_PdfPage", (), {"pages": [], "__len__": lambda s: 0})()
+
     pdfplumber = type("_PdfplumberStub", (), {"open": staticmethod(_pdfplumber_open_stub)})  # type: ignore
 
 try:
     from PIL import Image
+
     IMAGE_AVAILABLE = True
 except ImportError:
     IMAGE_AVAILABLE = False
 
 try:
     import pytesseract
+
     TESSERACT_AVAILABLE = True
 except ImportError:
     pytesseract = None
@@ -41,12 +47,14 @@ except ImportError:
 
 try:
     from paddleocr import PaddleOCR
+
     PADDLEOCR_AVAILABLE = True
 except ImportError:
     PADDLEOCR_AVAILABLE = False
 
 try:
     import easyocr
+
     EASYOCR_AVAILABLE = True
 except ImportError:
     EASYOCR_AVAILABLE = False
@@ -55,6 +63,7 @@ except ImportError:
 @dataclass
 class OcrResult:
     """OCR 识别结果"""
+
     page_number: int
     text: str
     confidence: float
@@ -80,7 +89,7 @@ class BaseOcrBackend(ABC):
 class TesseractBackend(BaseOcrBackend):
     """Tesseract OCR 后端"""
 
-    def __init__(self, lang: str = 'chi_sim+eng'):
+    def __init__(self, lang: str = "chi_sim+eng"):
         self.lang = lang
 
     @property
@@ -101,7 +110,7 @@ class TesseractBackend(BaseOcrBackend):
 class PaddleOcrBackend(BaseOcrBackend):
     """PaddleOCR 后端"""
 
-    def __init__(self, use_angle_cls: bool = True, lang: str = 'ch'):
+    def __init__(self, use_angle_cls: bool = True, lang: str = "ch"):
         self.use_angle_cls = use_angle_cls
         self.lang = lang
         self._ocr = None
@@ -112,11 +121,7 @@ class PaddleOcrBackend(BaseOcrBackend):
 
     def _get_ocr(self):
         if self._ocr is None:
-            self._ocr = PaddleOCR(
-                use_angle_cls=self.use_angle_cls,
-                lang=self.lang,
-                show_log=False
-            )
+            self._ocr = PaddleOCR(use_angle_cls=self.use_angle_cls, lang=self.lang, show_log=False)
         return self._ocr
 
     def recognize(self, image_path: Path) -> tuple[str, float]:
@@ -146,8 +151,8 @@ class PaddleOcrBackend(BaseOcrBackend):
 class EasyOcrBackend(BaseOcrBackend):
     """EasyOCR 后端"""
 
-    def __init__(self, lang_list: list[str] = None):
-        self.lang_list = lang_list or ['ch_sim', 'en']
+    def __init__(self, lang_list: list[str] | None = None):
+        self.lang_list = lang_list or ["ch_sim", "en"]
         self._reader = None
 
     @property
@@ -169,7 +174,7 @@ class EasyOcrBackend(BaseOcrBackend):
 
             lines = []
             total_conf = 0.0
-            for bbox, text, conf in result:
+            for _bbox, text, conf in result:
                 lines.append(text)
                 total_conf += conf
 
@@ -229,7 +234,7 @@ class OcrPostProcessor:
         if not text:
             return text
 
-        lines = text.split('\n')
+        lines = text.split("\n")
         processed = []
 
         i = 0
@@ -258,30 +263,28 @@ class OcrPostProcessor:
             # 检测段落（当前行不以标点结尾，下一行不是空行且不以大写/数字开头）
             para_lines = [line]
             i += 1
-            while (i < len(lines) and
-                   lines[i].strip() and
-                   not OcrPostProcessor._is_new_paragraph(lines[i].strip())):
+            while i < len(lines) and lines[i].strip() and not OcrPostProcessor._is_new_paragraph(lines[i].strip()):
                 para_lines.append(lines[i].strip())
                 i += 1
 
             if len(para_lines) > 1:
-                processed.append(' '.join(para_lines))
+                processed.append(" ".join(para_lines))
             else:
                 processed.append(para_lines[0])
 
-        return '\n\n'.join(processed)
+        return "\n\n".join(processed)
 
     @staticmethod
     def _is_table_line(line: str) -> bool:
         """判断是否为表格行"""
         # 包含多个制表符或多个连续空格
-        if '\t' in line:
-            return line.count('\t') >= 1
+        if "\t" in line:
+            return line.count("\t") >= 1
         # 或包含竖线分隔符
-        if '|' in line and line.count('|') >= 2:
+        if "|" in line and line.count("|") >= 2:
             return True
         # 或包含多个连续空格（至少3个空格分隔）
-        parts = [p for p in line.split('  ') if p.strip()]
+        parts = [p for p in line.split("  ") if p.strip()]
         return len(parts) >= 2 and len(parts) <= 10
 
     @staticmethod
@@ -292,23 +295,23 @@ class OcrPostProcessor:
         # 尝试用制表符或竖线分割
         rows = []
         for line in lines:
-            if '|' in line:
-                cells = [c.strip() for c in line.split('|') if c.strip()]
-            elif '\t' in line:
-                cells = [c.strip() for c in line.split('\t')]
+            if "|" in line:
+                cells = [c.strip() for c in line.split("|") if c.strip()]
+            elif "\t" in line:
+                cells = [c.strip() for c in line.split("\t")]
             else:
-                cells = [c.strip() for c in line.split('  ') if c.strip()]
-            rows.append(' | '.join(cells))
-        return '\n'.join(rows)
+                cells = [c.strip() for c in line.split("  ") if c.strip()]
+            rows.append(" | ".join(cells))
+        return "\n".join(rows)
 
     @staticmethod
     def _is_list_item(line: str) -> bool:
         """判断是否为列表项"""
         return bool(
-            line.startswith(('•', '-', '*', '·')) or
-            line.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.', '8.', '9.', '0.')) or
-            line.startswith(('(1)', '(2)', '(3)', '①', '②', '③')) or
-            line.startswith(('一、', '二、', '三、', '四、', '五、'))
+            line.startswith(("•", "-", "*", "·"))
+            or line.startswith(("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.", "0."))
+            or line.startswith(("(1)", "(2)", "(3)", "①", "②", "③"))
+            or line.startswith(("一、", "二、", "三、", "四、", "五、"))
         )
 
     @staticmethod
@@ -317,7 +320,7 @@ class OcrPostProcessor:
         if not line:
             return True
         # 以标题特征开头
-        if line.startswith(('#', '##', '###')):
+        if line.startswith(("#", "##", "###")):
             return True
         # 以列表特征开头
         if OcrPostProcessor._is_list_item(line):
@@ -326,9 +329,7 @@ class OcrPostProcessor:
         if line[0].isdigit() or line[0].isupper():
             return True
         # 以中文数字开头
-        if line[0] in '一二三四五六七八九十':
-            return True
-        return False
+        return line[0] in "一二三四五六七八九十"
 
 
 class OcrEngine:
@@ -374,8 +375,9 @@ class OcrEngine:
         """获取所有可用的后端名称"""
         return list(self._backends.keys())
 
-    def extract_text_from_pdf(self, pdf_path: Path, use_ai_for_images: bool = False,
-                               backend: str = None, apply_postprocess: bool = True) -> list[OcrResult]:
+    def extract_text_from_pdf(
+        self, pdf_path: Path, use_ai_for_images: bool = False, backend: str | None = None, apply_postprocess: bool = True
+    ) -> list[OcrResult]:
         """
         从 PDF 中提取文字，包括图片中的文字
 
@@ -399,19 +401,12 @@ class OcrEngine:
                 text = page.extract_text() or ""
 
                 if text.strip():
-                    results.append(OcrResult(
-                        page_number=page_idx,
-                        text=text.strip(),
-                        confidence=0.95,
-                        method="pdfplumber"
-                    ))
+                    results.append(
+                        OcrResult(page_number=page_idx, text=text.strip(), confidence=0.95, method="pdfplumber")
+                    )
                 else:
                     self.logger.info("第 %d 页无文字层，尝试 OCR", page_idx)
-                    ocr_text = self._ocr_page_images(
-                        page, page_idx,
-                        use_ai=use_ai_for_images,
-                        backend=ocr_backend
-                    )
+                    ocr_text = self._ocr_page_images(page, page_idx, use_ai=use_ai_for_images, backend=ocr_backend)
                     if apply_postprocess and ocr_text:
                         ocr_text = OcrPostProcessor.process(ocr_text)
 
@@ -419,25 +414,22 @@ class OcrEngine:
                     if use_ai_for_images and self.ai_client:
                         method = "ai"
 
-                    results.append(OcrResult(
-                        page_number=page_idx,
-                        text=ocr_text,
-                        confidence=0.7 if ocr_text else 0.0,
-                        method=method
-                    ))
+                    results.append(
+                        OcrResult(
+                            page_number=page_idx, text=ocr_text, confidence=0.7 if ocr_text else 0.0, method=method
+                        )
+                    )
 
         return results
 
-    def _ocr_page_images(self, page, page_number: int,
-                         use_ai: bool = False,
-                         backend: BaseOcrBackend = None) -> str:
+    def _ocr_page_images(self, page, page_number: int, use_ai: bool = False, backend: BaseOcrBackend = None) -> str:
         """对页面的图片进行 OCR"""
         texts = []
 
         try:
             page_image = page.to_image(resolution=200)
 
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 temp_path = Path(tmp.name)
             page_image.save(str(temp_path), format="PNG")
 
@@ -459,9 +451,9 @@ class OcrEngine:
 
         return "\n".join(texts)
 
-    def extract_text_from_image(self, image_path: Path, use_ai: bool = False,
-                                 backend: str = None,
-                                 apply_postprocess: bool = True) -> OcrResult:
+    def extract_text_from_image(
+        self, image_path: Path, use_ai: bool = False, backend: str | None = None, apply_postprocess: bool = True
+    ) -> OcrResult:
         """
         从图片中提取文字
 
@@ -486,13 +478,7 @@ class OcrEngine:
             ocr_backend = self._backends[self.default_backend]
 
         if not ocr_backend:
-            return OcrResult(
-                page_number=1,
-                text="",
-                confidence=0.0,
-                method="none",
-                image_path=str(image_path)
-            )
+            return OcrResult(page_number=1, text="", confidence=0.0, method="none", image_path=str(image_path))
 
         text, confidence = ocr_backend.recognize(image_path)
 
@@ -500,23 +486,18 @@ class OcrEngine:
             text = OcrPostProcessor.process(text)
 
         return OcrResult(
-            page_number=1,
-            text=text,
-            confidence=confidence,
-            method=ocr_backend.name,
-            image_path=str(image_path)
+            page_number=1, text=text, confidence=confidence, method=ocr_backend.name, image_path=str(image_path)
         )
 
-    def batch_ocr(self, image_paths: list[Path], use_ai: bool = False,
-                  backend: str = None, apply_postprocess: bool = True) -> list[OcrResult]:
+    def batch_ocr(
+        self, image_paths: list[Path], use_ai: bool = False, backend: str | None = None, apply_postprocess: bool = True
+    ) -> list[OcrResult]:
         """批量 OCR 识别"""
         results = []
         for idx, path in enumerate(image_paths, 1):
             self.logger.info("OCR 处理: %s (%d/%d)", path.name, idx, len(image_paths))
             result = self.extract_text_from_image(
-                path, use_ai=use_ai,
-                backend=backend,
-                apply_postprocess=apply_postprocess
+                path, use_ai=use_ai, backend=backend, apply_postprocess=apply_postprocess
             )
             result.page_number = idx
             results.append(result)
@@ -536,5 +517,5 @@ class OcrEngine:
             "ai_client": self.ai_client is not None,
             "available_backends": self.get_available_backends(),
             "default_backend": self.default_backend,
-            "available": self.is_available()
+            "available": self.is_available(),
         }

@@ -2,6 +2,7 @@
 输出模板引擎
 提供面向常见 AI 消费场景的预定义输出模板
 """
+
 import re
 from typing import Any
 
@@ -35,14 +36,16 @@ def _to_rag_chunks(content: str, structured_data: dict | None = None, file_name:
         cleaned = chunk.strip()
         if not cleaned:
             continue
-        result.append({
-            "chunk_id": i,
-            "text": cleaned,
-            "metadata": {
-                "source": file_name,
-                "chunk_index": i,
-            },
-        })
+        result.append(
+            {
+                "chunk_id": i,
+                "text": cleaned,
+                "metadata": {
+                    "source": file_name,
+                    "chunk_index": i,
+                },
+            }
+        )
     return {"chunks": result, "total_chunks": len(result)}
 
 
@@ -54,17 +57,19 @@ def _to_vector_db(content: str, structured_data: dict | None = None, file_name: 
         cleaned = chunk.strip()
         if not cleaned:
             continue
-        result.append({
-            "id": f"{file_name or 'doc'}_chunk_{i}",
-            "text": cleaned,
-            "metadata": {
-                "source": file_name,
-                "chunk_index": i,
-                "chunk_length": len(cleaned),
-                "timestamp": None,
-                "doc_type": "text",
-            },
-        })
+        result.append(
+            {
+                "id": f"{file_name or 'doc'}_chunk_{i}",
+                "text": cleaned,
+                "metadata": {
+                    "source": file_name,
+                    "chunk_index": i,
+                    "chunk_length": len(cleaned),
+                    "timestamp": None,
+                    "doc_type": "text",
+                },
+            }
+        )
     return {"vectors": result, "total_vectors": len(result)}
 
 

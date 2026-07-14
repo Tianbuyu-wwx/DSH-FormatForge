@@ -2,6 +2,7 @@
 安全模块
 文件类型白名单、URL域名白名单、敏感信息脱敏等
 """
+
 import logging
 import re
 from pathlib import Path
@@ -18,9 +19,9 @@ _ALLOWED_BASE: set[str] = set(EXTENSION_MAP.keys())
 
 # 额外允许但不在检测映射中的扩展名（出于安全验证的兼容性）
 _ADDITIONAL_EXTENSIONS: set[str] = {
-    ".doc",    # 旧版 Word
-    ".xls",    # 旧版 Excel
-    ".log",    # 日志文件
+    ".doc",  # 旧版 Word
+    ".xls",  # 旧版 Excel
+    ".log",  # 日志文件
 }
 
 ALLOWED_EXTENSIONS: set[str] = _ALLOWED_BASE | _ADDITIONAL_EXTENSIONS
@@ -86,7 +87,9 @@ ALLOWED_URL_SCHEMES: set[str] = {"http", "https"}
 
 # 明确禁止的域名（防止 SSRF 攻击）
 BLOCKED_DOMAINS: set[str] = {
-    "localhost", "127.0.0.1", "0.0.0.0",
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
     "169.254.169.254",  # AWS/阿里云元数据
     "metadata.google.internal",
     "100.100.100.200",  # 阿里云元数据
@@ -101,8 +104,8 @@ def _resolve_and_check_ip(hostname: str) -> bool:
     Returns:
         True 如果安全（非内网），False 如果应阻止
     """
-    import socket
     import ipaddress
+    import socket
 
     # 先尝试直接用 ipaddress 解析 hostname（处理标准 IPv4/IPv6 字面量）
     try:
@@ -140,7 +143,7 @@ def _resolve_and_check_ip(hostname: str) -> bool:
         # DNS 解析失败 — 允许（后续请求时会失败）
         return True
 
-    for family, _, _, _, sockaddr in addrinfo:
+    for _family, _, _, _, sockaddr in addrinfo:
         ip_str = sockaddr[0]  # type: ignore
         try:
             addr = ipaddress.ip_address(ip_str)
@@ -266,10 +269,7 @@ def validate_url_domain(url: str) -> bool:
 
     # 4. 如果设置了域名白名单且非空，检查是否在白名单中
     if ALLOWED_DOMAINS:
-        is_allowed = any(
-            hostname == domain or hostname.endswith("." + domain)
-            for domain in ALLOWED_DOMAINS
-        )
+        is_allowed = any(hostname == domain or hostname.endswith("." + domain) for domain in ALLOWED_DOMAINS)
         if not is_allowed:
             logger.warning("URL 域名不在白名单中: %s", url)
             return False
@@ -287,9 +287,9 @@ SENSITIVE_PATTERNS: list[str] = [
     r'(password["\']?\s*[:=]\s*["\']?)([^"\'\s,;}]+)',
     r'(auth["\']?\s*[:=]\s*["\']?)([^"\'\s,;}]+)',
     r'(authorization["\']?\s*[:=]\s*["\']?)([^"\'\s,;}]+)',
-    r'(Bearer\s+)([A-Za-z0-9\-._~+/]{8,})',
-    r'(sk-[A-Za-z0-9]{20,})',
-    r'(sk-cp-[A-Za-z0-9]{20,})',
+    r"(Bearer\s+)([A-Za-z0-9\-._~+/]{8,})",
+    r"(sk-[A-Za-z0-9]{20,})",
+    r"(sk-cp-[A-Za-z0-9]{20,})",
 ]
 
 
@@ -307,10 +307,9 @@ def mask_sensitive_info(text: str) -> str:
     for pattern in SENSITIVE_PATTERNS:
         result = re.sub(
             pattern,
-            lambda m: m.group(1) + "***" + m.group(2)[-4:] if len(m.groups()) >= 2 and len(m.group(2)) > 4
-            else "***",
+            lambda m: m.group(1) + "***" + m.group(2)[-4:] if len(m.groups()) >= 2 and len(m.group(2)) > 4 else "***",
             result,
-            flags=re.IGNORECASE
+            flags=re.IGNORECASE,
         )
     return result
 
@@ -322,14 +321,12 @@ class SensitiveDataFilter(logging.Filter):
         if isinstance(record.msg, str):
             record.msg = mask_sensitive_info(record.msg)
         if record.args:
-            record.args = tuple(
-                mask_sensitive_info(str(arg)) if isinstance(arg, str) else arg
-                for arg in record.args
-            )
+            record.args = tuple(mask_sensitive_info(str(arg)) if isinstance(arg, str) else arg for arg in record.args)
         return True
 
 
 # ==================== 路径遍历防护 ====================
+
 
 def validate_path_safety(file_path: str, base_dir: Path) -> bool:
     """
@@ -352,6 +349,7 @@ def validate_path_safety(file_path: str, base_dir: Path) -> bool:
         bool: 是否安全
     """
     import os
+
     try:
         # 1. 字符串层防御：拒绝 NUL/控制字符 + UNC 路径 + 备用数据流
         if "\x00" in file_path:
@@ -407,10 +405,7 @@ def validate_path_safety(file_path: str, base_dir: Path) -> bool:
             is_safe = False
 
         if not is_safe:
-            logger.warning(
-                "路径遍历攻击检测: %s 不在基准目录 %s 下",
-                resolved, base_resolved
-            )
+            logger.warning("路径遍历攻击检测: %s 不在基准目录 %s 下", resolved, base_resolved)
         return is_safe
     except Exception as e:
         logger.warning("路径验证异常: %s, error=%s", file_path, e)

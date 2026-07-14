@@ -2,6 +2,8 @@
 解析质量报告系统
 对解析/转换后的内容进行多维度质量评分
 """
+
+import contextlib
 import json
 import logging
 import re
@@ -59,20 +61,18 @@ class QualityReport:
             return 0.0
 
         # 检查替换字符 (U+FFFD)
-        replacement_count = content.count('\ufffd')
+        replacement_count = content.count("\ufffd")
 
         # 检查常见乱码模式
         mojibake_patterns = [
-            r'[\xc0-\xff][\x80-\xbf]',  # 常见 UTF-8 序列被错误解释
-            r'Ã[©®\x81-\xbf]',            # 常见 Latin-1 被当作 UTF-8 解释
-            r'â[\x80-\xbf]',               # 另一组常见乱码
+            r"[\xc0-\xff][\x80-\xbf]",  # 常见 UTF-8 序列被错误解释
+            r"Ã[©®\x81-\xbf]",  # 常见 Latin-1 被当作 UTF-8 解释
+            r"â[\x80-\xbf]",  # 另一组常见乱码
         ]
         mojibake_count = 0
         for pattern in mojibake_patterns:
-            try:
+            with contextlib.suppress(Exception):
                 mojibake_count += len(re.findall(pattern, content))
-            except Exception:
-                pass
 
         total_garbled = replacement_count + mojibake_count
         content_len = max(len(content), 1)
@@ -109,7 +109,7 @@ class QualityReport:
         checks = 0
 
         # 检查 Markdown 标题
-        headings = len(re.findall(r'^#{1,6}\s', content, re.MULTILINE))
+        headings = len(re.findall(r"^#{1,6}\s", content, re.MULTILINE))
         has_headings = headings > 0
         checks += 1
         if has_headings:
@@ -118,22 +118,22 @@ class QualityReport:
                 self.suggestions.append("标题层级较少，建议检查是否所有标题都被正确提取")
 
         # 检查列表
-        list_items = len(re.findall(r'^[\s]*[-*+]\s', content, re.MULTILINE))
-        ordered_items = len(re.findall(r'^[\s]*\d+[.)]\s', content, re.MULTILINE))
+        list_items = len(re.findall(r"^[\s]*[-*+]\s", content, re.MULTILINE))
+        ordered_items = len(re.findall(r"^[\s]*\d+[.)]\s", content, re.MULTILINE))
         has_lists = list_items > 0 or ordered_items > 0
         checks += 1
         if has_lists:
             score += 25
 
         # 检查表格
-        tables = len(re.findall(r'\|.*\|.*\|', content))
+        tables = len(re.findall(r"\|.*\|.*\|", content))
         has_tables = tables > 0
         checks += 1
         if has_tables:
             score += 25
 
         # 检查段落分隔
-        paragraphs = len(re.findall(r'\n\n+', content))
+        paragraphs = len(re.findall(r"\n\n+", content))
         has_paragraphs = paragraphs > 0
         checks += 1
         if has_paragraphs:
@@ -152,7 +152,7 @@ class QualityReport:
         """评估表格准确度 (0-100)"""
         if not structured_data:
             # 没有结构化数据，检查内容中是否有表格
-            table_lines = [l for l in content.split('\n') if '|' in l and l.strip().startswith('|')]
+            table_lines = [l for l in content.split("\n") if "|" in l and l.strip().startswith("|")]
             if not table_lines:
                 return 100.0  # 无表格，视为满分
             score = 50.0  # 有表格标记但无结构化数据
@@ -191,7 +191,7 @@ class QualityReport:
 
             # 检查空单元格比例
             total_cells = sum(col_counts)
-            empty_cells = sum(1 for row in data for cell in row if not cell or str(cell).strip() == '')
+            empty_cells = sum(1 for row in data for cell in row if not cell or str(cell).strip() == "")
             if total_cells > 0:
                 empty_ratio = empty_cells / total_cells
                 if empty_ratio > 0.5:
@@ -221,12 +221,12 @@ class QualityReport:
 
         # 检查是否以不完整的内容结尾
         abrupt_ending_patterns = [
-            (r'\.\.\.$', 10, "内容以省略号结尾，可能被截断"),
-            (r'[，,、;；:：]$', 5, "内容以标点符号结尾，可能不完整"),
-            (r'\b(and|or|the|a|an|在|和|或者|的|一个)\s*$', 5, "内容以连接词结尾，可能被截断"),
-            (r'[({[（【]\s*$', 10, "内容以未闭合的括号结尾"),
-            (r'```\s*$', 8, "内容以未闭合的代码块结尾"),
-            (r'<[^>]*$', 8, "内容以未闭合的 HTML 标签结尾"),
+            (r"\.\.\.$", 10, "内容以省略号结尾，可能被截断"),
+            (r"[，,、;；:：]$", 5, "内容以标点符号结尾，可能不完整"),
+            (r"\b(and|or|the|a|an|在|和|或者|的|一个)\s*$", 5, "内容以连接词结尾，可能被截断"),
+            (r"[({[（【]\s*$", 10, "内容以未闭合的括号结尾"),
+            (r"```\s*$", 8, "内容以未闭合的代码块结尾"),
+            (r"<[^>]*$", 8, "内容以未闭合的 HTML 标签结尾"),
         ]
 
         for pattern, deduction, warning in abrupt_ending_patterns:
@@ -242,8 +242,8 @@ class QualityReport:
 
         # 检查是否有明显的截断标记
         truncation_markers = [
-            r'\b(truncated|cut off|\.\.\.\s*more|continued\.\.\.)\b',
-            r'(内容已截断|以下内容省略|余下部分省略)',
+            r"\b(truncated|cut off|\.\.\.\s*more|continued\.\.\.)\b",
+            r"(内容已截断|以下内容省略|余下部分省略)",
         ]
         for marker in truncation_markers:
             if re.search(marker, content, re.IGNORECASE):
@@ -255,8 +255,13 @@ class QualityReport:
 
     # ==================== 构建方法 ====================
 
-    def analyze(self, content: str, file_size: int = 0, file_type: str = "unknown",
-                structured_data: dict[str, Any] | None = None):
+    def analyze(
+        self,
+        content: str,
+        file_size: int = 0,
+        file_type: str = "unknown",
+        structured_data: dict[str, Any] | None = None,
+    ):
         """执行完整质量分析"""
         self.scores = {}
         self.warnings = []
@@ -277,22 +282,22 @@ class QualityReport:
 
         # 提取所有文本内容
         content_parts = []
-        if hasattr(parsed_file, 'pages') and parsed_file.pages:
+        if hasattr(parsed_file, "pages") and parsed_file.pages:
             for page in parsed_file.pages:
-                raw_text = getattr(page, 'rawText', '') or ''
+                raw_text = getattr(page, "rawText", "") or ""
                 content_parts.append(raw_text)
-        content = '\n'.join(content_parts)
+        content = "\n".join(content_parts)
 
         # 确定文件大小和类型
-        actual_file_size = file_size if file_size > 0 else getattr(parsed_file, 'fileSize', 0)
-        actual_file_type = getattr(parsed_file, 'fileType', None)
-        if hasattr(actual_file_type, 'value'):
+        actual_file_size = file_size if file_size > 0 else getattr(parsed_file, "fileSize", 0)
+        actual_file_type = getattr(parsed_file, "fileType", None)
+        if hasattr(actual_file_type, "value"):
             actual_file_type = actual_file_type.value
         elif actual_file_type is None:
-            actual_file_type = 'unknown'
+            actual_file_type = "unknown"
 
         # 提取结构化数据
-        structured_data = getattr(parsed_file, 'structure', None)
+        structured_data = getattr(parsed_file, "structure", None)
         if structured_data is None:
             structured_data = {}
 

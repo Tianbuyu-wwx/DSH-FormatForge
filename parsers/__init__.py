@@ -7,6 +7,7 @@ v2.3 - 统一 Parser 接口：
   - name/description 用于 UI 展示和调试
   - supported_formats 返回 FileType 枚举值
 """
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -61,6 +62,7 @@ class BaseParser(ABC):
         子类可覆盖以提供更高效的内存解析。
         """
         import tempfile
+
         suffix = Path(file_name).suffix if file_name else ""
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(data)

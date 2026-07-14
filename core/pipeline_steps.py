@@ -4,12 +4,12 @@ Pipeline 步骤实现
 将原 DataConverter.convert_with_ai_target() 中的 9 个步骤拆分为独立的 Step 类。
 每个 Step 职责单一、可独立测试。
 """
-import asyncio
+
+import contextlib
 import logging
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from core.conversion_strategies import strategy_registry
@@ -22,8 +22,8 @@ from core.models import (
     FileType,
     ParsedFile,
 )
-from core.webhook_manager import get_webhook_manager
 from core.utils import create_processing_log, format_output, generate_result_id
+from core.webhook_manager import get_webhook_manager
 
 logger = logging.getLogger(__name__)
 
@@ -32,18 +32,36 @@ logger = logging.getLogger(__name__)
 # 工具函数（模块级私有）
 # ═══════════════════════════════════════════════════════════
 
+
 def _map_format_to_file_type(fmt: Any) -> str:
     mapping = {
-        DataFormat.PDF: "pdf", DataFormat.DOCX: "doc", DataFormat.PPTX: "ppt",
-        DataFormat.XLSX: "xls", DataFormat.CSV: "csv", DataFormat.TXT: "txt",
-        DataFormat.JSON: "txt", DataFormat.YAML: "txt", DataFormat.XML: "txt",
-        DataFormat.HTML: "txt", DataFormat.TOML: "txt",
-        DataFormat.ODT: "doc", DataFormat.ODS: "xls", DataFormat.ODP: "ppt",
-        DataFormat.EML: "txt", DataFormat.MSG: "txt", DataFormat.EPUB: "txt",
-        DataFormat.SVG: "image", DataFormat.PNG: "image", DataFormat.JPEG: "image",
-        DataFormat.GIF: "image", DataFormat.WEBP: "image", DataFormat.BMP: "image",
+        DataFormat.PDF: "pdf",
+        DataFormat.DOCX: "doc",
+        DataFormat.PPTX: "ppt",
+        DataFormat.XLSX: "xls",
+        DataFormat.CSV: "csv",
+        DataFormat.TXT: "txt",
+        DataFormat.JSON: "txt",
+        DataFormat.YAML: "txt",
+        DataFormat.XML: "txt",
+        DataFormat.HTML: "txt",
+        DataFormat.TOML: "txt",
+        DataFormat.ODT: "doc",
+        DataFormat.ODS: "xls",
+        DataFormat.ODP: "ppt",
+        DataFormat.EML: "txt",
+        DataFormat.MSG: "txt",
+        DataFormat.EPUB: "txt",
+        DataFormat.SVG: "image",
+        DataFormat.PNG: "image",
+        DataFormat.JPEG: "image",
+        DataFormat.GIF: "image",
+        DataFormat.WEBP: "image",
+        DataFormat.BMP: "image",
         DataFormat.TIFF: "image",
-        DataFormat.ZIP: "unknown", DataFormat.SEVEN_Z: "unknown", DataFormat.RAR: "unknown",
+        DataFormat.ZIP: "unknown",
+        DataFormat.SEVEN_Z: "unknown",
+        DataFormat.RAR: "unknown",
     }
     return mapping.get(fmt, "unknown")
 
@@ -57,7 +75,7 @@ def _extract_summary(parsed_file: ParsedFile) -> str:
 def _build_raw_content(input_data: InputData, detected: Any) -> str:
     return f"""# 原始数据
 
-- 文件名: {input_data.filename or 'unknown'}
+- 文件名: {input_data.filename or "unknown"}
 - 格式: {detected.format.value}
 - MIME类型: {detected.mime_type}
 - 大小: {input_data.size} 字节
@@ -71,16 +89,22 @@ def _build_raw_content(input_data: InputData, detected: Any) -> str:
 # Pipeline 步骤
 # ═══════════════════════════════════════════════════════════
 
+
 class InitStep:
     """步骤 0: 初始化 —— 生成 result_id 和起始日志"""
 
     def process(self, ctx):
         ctx.result_id = generate_result_id()
-        ctx.logs.append(create_processing_log("init",
-            f"开始转换: 类型={ctx.conversion_type.value}, 输出={ctx.output_format.value}"))
-        logger.info("[result_id=%s] 开始转换: source_type=%s, conversion_type=%s, output_format=%s",
-                    ctx.result_id, type(ctx.source).__name__,
-                    ctx.conversion_type.value, ctx.output_format.value)
+        ctx.logs.append(
+            create_processing_log("init", f"开始转换: 类型={ctx.conversion_type.value}, 输出={ctx.output_format.value}")
+        )
+        logger.info(
+            "[result_id=%s] 开始转换: source_type=%s, conversion_type=%s, output_format=%s",
+            ctx.result_id,
+            type(ctx.source).__name__,
+            ctx.conversion_type.value,
+            ctx.output_format.value,
+        )
 
 
 class InputStep:
@@ -93,11 +117,18 @@ class InputStep:
         ctx.logs.append(create_processing_log("input", "读取输入源..."))
         try:
             ctx.input_data = self._manager.read(ctx.source)
-            logger.info("[result_id=%s] 输入读取成功: source_type=%s, size=%d bytes, filename=%s",
-                        ctx.result_id, ctx.input_data.source_type,
-                        ctx.input_data.size, ctx.input_data.filename)
-            ctx.logs.append(create_processing_log("input",
-                f"输入源类型: {ctx.input_data.source_type}, 大小: {ctx.input_data.size} 字节"))
+            logger.info(
+                "[result_id=%s] 输入读取成功: source_type=%s, size=%d bytes, filename=%s",
+                ctx.result_id,
+                ctx.input_data.source_type,
+                ctx.input_data.size,
+                ctx.input_data.filename,
+            )
+            ctx.logs.append(
+                create_processing_log(
+                    "input", f"输入源类型: {ctx.input_data.source_type}, 大小: {ctx.input_data.size} 字节"
+                )
+            )
         except Exception as e:
             logger.error("[result_id=%s] 输入读取失败: %s", ctx.result_id, e, exc_info=True)
             ctx.logs.append(create_processing_log("input", f"读取失败: {e}", "error"))
@@ -112,7 +143,10 @@ class CacheCheckStep:
 
     def process(self, ctx):
         cached = self._pipeline._try_get_cached(
-            ctx.input_data, ctx.conversion_type, ctx.output_format, ctx.custom_prompt,
+            ctx.input_data,
+            ctx.conversion_type,
+            ctx.output_format,
+            ctx.custom_prompt,
         )
         if cached:
             logger.info("[result_id=%s] 内容缓存命中，跳过转换", ctx.result_id)
@@ -130,12 +164,20 @@ class DetectStep:
     def process(self, ctx):
         ctx.logs.append(create_processing_log("detect", "检测输入格式..."))
         ctx.detected = self._detector.detect(ctx.input_data.data, ctx.input_data.filename)
-        logger.info("[result_id=%s] 格式检测完成: format=%s, mime=%s, confidence=%.2f",
-                    ctx.result_id, ctx.detected.format.value, ctx.detected.mime_type,
-                    ctx.detected.confidence)
-        ctx.logs.append(create_processing_log("detect",
-            f"检测到格式: {ctx.detected.format.value}, MIME: {ctx.detected.mime_type}, "
-            f"置信度: {ctx.detected.confidence:.2f}"))
+        logger.info(
+            "[result_id=%s] 格式检测完成: format=%s, mime=%s, confidence=%.2f",
+            ctx.result_id,
+            ctx.detected.format.value,
+            ctx.detected.mime_type,
+            ctx.detected.confidence,
+        )
+        ctx.logs.append(
+            create_processing_log(
+                "detect",
+                f"检测到格式: {ctx.detected.format.value}, MIME: {ctx.detected.mime_type}, "
+                f"置信度: {ctx.detected.confidence:.2f}",
+            )
+        )
 
 
 class DiscoverStep:
@@ -148,19 +190,34 @@ class DiscoverStep:
         if not ctx.target_ai_endpoint or not ctx.target_ai_key:
             return
         ctx.logs.append(create_processing_log("ai_discover", "发现目标AI能力..."))
-        logger.info("[result_id=%s] 开始发现AI能力: endpoint=%s, provider=%s",
-                    ctx.result_id, ctx.target_ai_endpoint, ctx.target_ai_provider)
+        logger.info(
+            "[result_id=%s] 开始发现AI能力: endpoint=%s, provider=%s",
+            ctx.result_id,
+            ctx.target_ai_endpoint,
+            ctx.target_ai_provider,
+        )
         try:
             ctx.ai_caps = self._discovery.discover(
-                ctx.target_ai_endpoint, ctx.target_ai_key, ctx.target_ai_provider,
+                ctx.target_ai_endpoint,
+                ctx.target_ai_key,
+                ctx.target_ai_provider,
             )
-            logger.info("[result_id=%s] AI能力发现成功: provider=%s, model=%s, supports=%s, max_tokens=%d",
-                        ctx.result_id, ctx.ai_caps.provider, ctx.ai_caps.model,
-                        [i.value for i in ctx.ai_caps.supported_inputs], ctx.ai_caps.max_tokens)
-            ctx.logs.append(create_processing_log("ai_discover",
-                f"AI能力: {ctx.ai_caps.provider}/{ctx.ai_caps.model}, "
-                f"支持输入: {[i.value for i in ctx.ai_caps.supported_inputs]}, "
-                f"最大token: {ctx.ai_caps.max_tokens}"))
+            logger.info(
+                "[result_id=%s] AI能力发现成功: provider=%s, model=%s, supports=%s, max_tokens=%d",
+                ctx.result_id,
+                ctx.ai_caps.provider,
+                ctx.ai_caps.model,
+                [i.value for i in ctx.ai_caps.supported_inputs],
+                ctx.ai_caps.max_tokens,
+            )
+            ctx.logs.append(
+                create_processing_log(
+                    "ai_discover",
+                    f"AI能力: {ctx.ai_caps.provider}/{ctx.ai_caps.model}, "
+                    f"支持输入: {[i.value for i in ctx.ai_caps.supported_inputs]}, "
+                    f"最大token: {ctx.ai_caps.max_tokens}",
+                )
+            )
         except Exception as e:
             logger.warning("[result_id=%s] AI能力发现失败: %s", ctx.result_id, e, exc_info=True)
             ctx.logs.append(create_processing_log("ai_discover", f"能力发现失败: {e}", "warning"))
@@ -176,8 +233,12 @@ class ParseStep:
         if ctx.input_data.source_type not in ("file", "url", "stream"):
             return
         ctx.logs.append(create_processing_log("parse", "解析文件内容..."))
-        logger.info("[result_id=%s] 开始解析文件: source_type=%s, detected_format=%s",
-                    ctx.result_id, ctx.input_data.source_type, ctx.detected.format.value)
+        logger.info(
+            "[result_id=%s] 开始解析文件: source_type=%s, detected_format=%s",
+            ctx.result_id,
+            ctx.input_data.source_type,
+            ctx.detected.format.value,
+        )
         try:
             from core.config import UPLOAD_DIR
             from core.file_parser import FileParser
@@ -186,15 +247,23 @@ class ParseStep:
             logger.debug("[result_id=%s] 临时文件已保存: %s", ctx.result_id, temp_path)
             try:
                 file_type = _map_format_to_file_type(ctx.detected.format)
-                logger.debug("[result_id=%s] 映射文件类型: %s -> %s",
-                             ctx.result_id, ctx.detected.format.value, file_type)
+                logger.debug(
+                    "[result_id=%s] 映射文件类型: %s -> %s", ctx.result_id, ctx.detected.format.value, file_type
+                )
                 file_parser = FileParser(UPLOAD_DIR)
                 ctx.parsed_file = file_parser.parse_file(temp_path, file_type)
-                logger.info("[result_id=%s] 文件解析完成: pages=%d, file_type=%s, parse_id=%s",
-                            ctx.result_id, ctx.parsed_file.pageCount,
-                            ctx.parsed_file.fileType.value, ctx.parsed_file.parseId)
-                ctx.logs.append(create_processing_log("parse",
-                    f"解析完成: {ctx.parsed_file.pageCount} 页, 类型: {ctx.parsed_file.fileType.value}"))
+                logger.info(
+                    "[result_id=%s] 文件解析完成: pages=%d, file_type=%s, parse_id=%s",
+                    ctx.result_id,
+                    ctx.parsed_file.pageCount,
+                    ctx.parsed_file.fileType.value,
+                    ctx.parsed_file.parseId,
+                )
+                ctx.logs.append(
+                    create_processing_log(
+                        "parse", f"解析完成: {ctx.parsed_file.pageCount} 页, 类型: {ctx.parsed_file.fileType.value}"
+                    )
+                )
             finally:
                 temp_path.unlink(missing_ok=True)
                 logger.debug("[result_id=%s] 临时文件已清理", ctx.result_id)
@@ -224,8 +293,9 @@ class OcrStep:
             ocr_engine = OcrEngine()
             if not ocr_engine.is_available():
                 logger.info("[result_id=%s] 无可用 OCR 后端，跳过 OCR", ctx.result_id)
-                ctx.logs.append(create_processing_log("ocr",
-                    "无可用 OCR 后端（Tesseract/PaddleOCR/EasyOCR 均未安装），跳过"))
+                ctx.logs.append(
+                    create_processing_log("ocr", "无可用 OCR 后端（Tesseract/PaddleOCR/EasyOCR 均未安装），跳过")
+                )
                 return
 
             available = ocr_engine.get_available_backends()
@@ -235,43 +305,50 @@ class OcrStep:
             # 从 input_data 获取文件路径进行 OCR
             temp_path = ctx.input_data.save_to_temp()
             try:
-                ocr_result = ocr_engine.extract_text_from_image(
-                    temp_path, use_ai=False, apply_postprocess=True
-                )
+                ocr_result = ocr_engine.extract_text_from_image(temp_path, use_ai=False, apply_postprocess=True)
             finally:
                 temp_path.unlink(missing_ok=True)
 
             if ocr_result and ocr_result.text.strip():
                 ocr_text = ocr_result.text
-                logger.info("[result_id=%s] OCR 识别成功: chars=%d, confidence=%.2f, method=%s",
-                            ctx.result_id, len(ocr_text), ocr_result.confidence, ocr_result.method)
-                ctx.logs.append(create_processing_log("ocr",
-                    f"OCR 识别成功: {len(ocr_text)} 字符, "
-                    f"置信度={ocr_result.confidence:.2f}, 引擎={ocr_result.method}"))
+                logger.info(
+                    "[result_id=%s] OCR 识别成功: chars=%d, confidence=%.2f, method=%s",
+                    ctx.result_id,
+                    len(ocr_text),
+                    ocr_result.confidence,
+                    ocr_result.method,
+                )
+                ctx.logs.append(
+                    create_processing_log(
+                        "ocr",
+                        f"OCR 识别成功: {len(ocr_text)} 字符, "
+                        f"置信度={ocr_result.confidence:.2f}, 引擎={ocr_result.method}",
+                    )
+                )
 
                 # 将 OCR 文字追加到 parsed_file 的页面中
                 for page in ctx.parsed_file.pages:
-                    if not any(e.elementType == "text" and e.metadata and e.metadata.get("ocr")
-                               for e in page.elements):
-                        page.elements.append(ExtractedElement(
-                            elementId=f"ocr_{len(page.elements)}",
-                            elementType="text",
-                            content=ocr_text,
-                            metadata={
-                                "ocr": True,
-                                "confidence": ocr_result.confidence,
-                                "method": ocr_result.method,
-                                "chars": len(ocr_text),
-                            }
-                        ))
+                    if not any(e.elementType == "text" and e.metadata and e.metadata.get("ocr") for e in page.elements):
+                        page.elements.append(
+                            ExtractedElement(
+                                elementId=f"ocr_{len(page.elements)}",
+                                elementType="text",
+                                content=ocr_text,
+                                metadata={
+                                    "ocr": True,
+                                    "confidence": ocr_result.confidence,
+                                    "method": ocr_result.method,
+                                    "chars": len(ocr_text),
+                                },
+                            )
+                        )
                     if not page.rawText.strip():
                         page.rawText = ocr_text
                     elif ocr_text not in page.rawText:
                         page.rawText = page.rawText + "\n\n[OCR 识别结果]\n" + ocr_text
             else:
                 logger.info("[result_id=%s] OCR 未识别到文字", ctx.result_id)
-                ctx.logs.append(create_processing_log("ocr",
-                    "OCR 未识别到文字内容（图片可能为纯图形）"))
+                ctx.logs.append(create_processing_log("ocr", "OCR 未识别到文字内容（图片可能为纯图形）"))
 
         except Exception as e:
             logger.warning("[result_id=%s] OCR 处理失败: %s", ctx.result_id, e, exc_info=True)
@@ -286,14 +363,22 @@ class DecisionStep:
 
     def process(self, ctx):
         ctx.decision = self._engine.make_decision(ctx.detected, ctx.ai_caps, ctx.parsed_file)
-        logger.info("[result_id=%s] 转换决策: conversion_needed=%s, target_format=%s, "
-                    "preserve_original=%s, strategies=%s",
-                    ctx.result_id, ctx.decision.conversion_needed, ctx.decision.target_format,
-                    ctx.decision.preserve_original, ctx.decision.strategies)
-        ctx.logs.append(create_processing_log("decision",
-            f"转换决策: 需要转换={ctx.decision.conversion_needed}, "
-            f"目标格式={ctx.decision.target_format}, "
-            f"保留原文件={ctx.decision.preserve_original}"))
+        logger.info(
+            "[result_id=%s] 转换决策: conversion_needed=%s, target_format=%s, preserve_original=%s, strategies=%s",
+            ctx.result_id,
+            ctx.decision.conversion_needed,
+            ctx.decision.target_format,
+            ctx.decision.preserve_original,
+            ctx.decision.strategies,
+        )
+        ctx.logs.append(
+            create_processing_log(
+                "decision",
+                f"转换决策: 需要转换={ctx.decision.conversion_needed}, "
+                f"目标格式={ctx.decision.target_format}, "
+                f"保留原文件={ctx.decision.preserve_original}",
+            )
+        )
 
 
 class ConvertStep:
@@ -305,10 +390,16 @@ class ConvertStep:
             logger.info("[result_id=%s] 开始执行转换策略...", ctx.result_id)
             try:
                 strategy = strategy_registry.select_best_strategy(
-                    ctx.parsed_file, ctx.conversion_type, ctx.ai_caps,
+                    ctx.parsed_file,
+                    ctx.conversion_type,
+                    ctx.ai_caps,
                 )
-                logger.info("[result_id=%s] 选择策略: strategy_id=%s, strategy_name=%s",
-                            ctx.result_id, strategy.strategy_id, strategy.strategy_name)
+                logger.info(
+                    "[result_id=%s] 选择策略: strategy_id=%s, strategy_name=%s",
+                    ctx.result_id,
+                    strategy.strategy_id,
+                    strategy.strategy_name,
+                )
                 ctx.logs.append(create_processing_log("convert", f"选择策略: {strategy.strategy_name}"))
 
                 result = strategy.convert(ctx.parsed_file, ctx.output_format, ctx.ai_caps, ctx.custom_prompt)
@@ -316,8 +407,12 @@ class ConvertStep:
                 ctx.content = result.get("content", "")
                 ctx.structured_data = result.get("structured_data")
                 ctx.confidence = result.get("confidence", 0.0)
-                logger.info("[result_id=%s] 策略转换完成: content_length=%d, confidence=%.2f",
-                            ctx.result_id, len(ctx.content), ctx.confidence)
+                logger.info(
+                    "[result_id=%s] 策略转换完成: content_length=%d, confidence=%.2f",
+                    ctx.result_id,
+                    len(ctx.content),
+                    ctx.confidence,
+                )
                 ctx.logs.append(create_processing_log("convert", f"转换完成，置信度: {ctx.confidence:.2f}"))
             except Exception as e:
                 logger.error("[result_id=%s] 转换失败: %s", ctx.result_id, e, exc_info=True)
@@ -350,8 +445,7 @@ class EnhanceStep:
             return
 
         ctx.logs.append(create_processing_log("ai_enhance", "尝试AI增强转换..."))
-        logger.info("[result_id=%s] 开始AI增强转换: current_confidence=%.2f",
-                    ctx.result_id, ctx.confidence)
+        logger.info("[result_id=%s] 开始AI增强转换: current_confidence=%.2f", ctx.result_id, ctx.confidence)
         try:
             ai_result = self._pipeline.prompt_manager.enhance_convert(
                 parsed_file=ctx.parsed_file,
@@ -364,8 +458,12 @@ class EnhanceStep:
                 if ai_result.get("structured_data"):
                     ctx.structured_data = ai_result["structured_data"]
                 ctx.confidence = min(ctx.confidence + 0.1, 1.0)
-                logger.info("[result_id=%s] AI增强完成: new_confidence=%.2f, content_length=%d",
-                            ctx.result_id, ctx.confidence, len(ctx.content))
+                logger.info(
+                    "[result_id=%s] AI增强完成: new_confidence=%.2f, content_length=%d",
+                    ctx.result_id,
+                    ctx.confidence,
+                    len(ctx.content),
+                )
                 ctx.logs.append(create_processing_log("ai_enhance", "AI增强完成"))
             else:
                 logger.warning("[result_id=%s] AI增强未返回结果", ctx.result_id)
@@ -378,11 +476,9 @@ class FormatStep:
     """步骤 9: 格式化输出 —— 按指定格式格式化内容"""
 
     def process(self, ctx):
-        ctx.logs.append(create_processing_log("format",
-            f"格式化输出为 {ctx.output_format.value}..."))
+        ctx.logs.append(create_processing_log("format", f"格式化输出为 {ctx.output_format.value}..."))
         ctx.formatted_content = format_output(ctx.content, ctx.output_format, ctx.structured_data)
-        logger.debug("[result_id=%s] 格式化输出完成: output_length=%d",
-                     ctx.result_id, len(ctx.formatted_content))
+        logger.debug("[result_id=%s] 格式化输出完成: output_length=%d", ctx.result_id, len(ctx.formatted_content))
 
 
 class BuildResultStep:
@@ -393,8 +489,13 @@ class BuildResultStep:
 
     def process(self, ctx):
         processing_time = int(time.time() - ctx.start_time)
-        logger.info("[result_id=%s] 转换完成: processing_time=%ds, final_confidence=%.2f, logs_count=%d",
-                    ctx.result_id, processing_time, ctx.confidence, len(ctx.logs))
+        logger.info(
+            "[result_id=%s] 转换完成: processing_time=%ds, final_confidence=%.2f, logs_count=%d",
+            ctx.result_id,
+            processing_time,
+            ctx.confidence,
+            len(ctx.logs),
+        )
         ctx.logs.append(create_processing_log("complete", f"转换完成，耗时 {processing_time} 秒"))
 
         recommendation = self._pipeline.decision_engine.build_recommendation(ctx.decision, ctx.ai_caps)
@@ -446,12 +547,19 @@ class BuildResultStep:
             if status and status.get("status") == "pending":
                 webhook_url = status.get("callback_url", "")
                 logger.info("[result_id=%s] 触发 Webhook 回调: %s", task_id, webhook_url)
-                # 在后台线程中异步投递，不阻塞主流程
-                threading.Thread(
-                    target=self._run_webhook_delivery,
-                    args=(task_id, result),
-                    daemon=True,
-                ).start()
+                # v2.1.0: 在共享 asyncio 事件循环中投递（避免每任务 new event_loop）
+                # 若当前在线程中（如同步 Pipeline 调用），退化到后台线程
+                try:
+                    _loop = _asyncio.get_running_loop()
+                    _loop.create_task(manager.deliver(task_id, result))
+                    logger.debug("[result_id=%s] Webhook 已提交到事件循环", task_id)
+                except RuntimeError:
+                    # 没有运行中的事件循环（如同步入口）→ 后台线程投递
+                    threading.Thread(
+                        target=self._run_webhook_delivery,
+                        args=(task_id, result),
+                        daemon=True,
+                    ).start()
         except Exception:
             logger.debug("[result_id=%s] Webhook 检测跳过: 未注册或查询失败", task_id)
 
@@ -459,6 +567,7 @@ class BuildResultStep:
     def _run_webhook_delivery(task_id: str, result: dict[str, Any]) -> None:
         """在线程中运行 webhook 投递"""
         import asyncio as _asyncio
+
         try:
             loop = _asyncio.new_event_loop()
             _asyncio.set_event_loop(loop)
@@ -467,7 +576,5 @@ class BuildResultStep:
         except Exception as e:
             logger.error("[result_id=%s] Webhook 投递线程异常: %s", task_id, e)
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 loop.close()
-            except Exception:
-                pass

@@ -217,6 +217,9 @@ export class AppRoot extends LitElement {
     this.addEventListener('convert-url', this._onConvertUrlBound);
     this.addEventListener('convert-text', this._onConvertTextBound);
     this._unsubStore = store.subscribe(() => this.requestUpdate());
+    // v2.1.0: 监听语言切换事件，触发全组件 re-render
+    this._onLangChange = () => this.requestUpdate();
+    window.addEventListener('langchange', this._onLangChange);
   }
 
   disconnectedCallback() {
@@ -225,7 +228,13 @@ export class AppRoot extends LitElement {
     this.removeEventListener('convert-url', this._onConvertUrlBound);
     this.removeEventListener('convert-text', this._onConvertTextBound);
     this._unsubStore?.();
+    // v2.1.0: 清理 langchange 监听
+    if (this._onLangChange) {
+      window.removeEventListener('langchange', this._onLangChange);
+    }
   }
+
+  private _onLangChange?: () => void;
 
   render() {
     return html`

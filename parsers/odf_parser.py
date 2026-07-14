@@ -3,12 +3,11 @@ ODF 格式解析器
 支持解析开放文档格式：.odt（文档）、.ods（表格）、.odp（演示文稿）
 纯 Python 标准库实现（zipfile + xml.etree.ElementTree），零外部依赖
 """
+
 import logging
 import xml.etree.ElementTree as ET
 import zipfile
-from io import BytesIO
 from pathlib import Path
-from typing import Optional
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -109,13 +108,15 @@ class ODFParser(BaseParser):
         self._process_text_body(office_text, elements, raw_lines, elem_idx)
 
         logger.info("ODT 解析完成: %d 个元素", len(elements))
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_lines),
-            hasImage=any(e.elementType == "image" for e in elements),
-            hasTable=any(e.elementType == "table" for e in elements),
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_lines),
+                hasImage=any(e.elementType == "image" for e in elements),
+                hasTable=any(e.elementType == "table" for e in elements),
+            )
+        ]
 
     def _process_text_body(self, parent: ET.Element, elements: list, raw_lines: list, elem_idx: list):
         """递归处理文本 body 中的子元素"""
@@ -127,12 +128,14 @@ class ODFParser(BaseParser):
                 level_str = child.get(_ns("text:outline-level")) or "1"
                 level = int(level_str)
                 text = self._get_text(child)
-                elements.append(ExtractedElement(
-                    elementId=f"elem_1_{elem_idx[0]}",
-                    elementType="heading",
-                    content=text,
-                    metadata={"level": level}
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_1_{elem_idx[0]}",
+                        elementType="heading",
+                        content=text,
+                        metadata={"level": level},
+                    )
+                )
                 raw_lines.append(text)
                 elem_idx[0] += 1
 
@@ -140,12 +143,11 @@ class ODFParser(BaseParser):
             elif tag == _ns("text:p"):
                 text = self._get_text(child)
                 if text.strip():
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx[0]}",
-                        elementType="text",
-                        content=text,
-                        metadata={}
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx[0]}", elementType="text", content=text, metadata={}
+                        )
+                    )
                     raw_lines.append(text)
                     elem_idx[0] += 1
 
@@ -157,15 +159,17 @@ class ODFParser(BaseParser):
                     if item_text.strip():
                         items.append(item_text)
                 if items:
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx[0]}",
-                        elementType="list",
-                        content="\n".join(items),
-                        metadata={
-                            "ordered": False,
-                            "items": [{"text": t} for t in items],
-                        }
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx[0]}",
+                            elementType="list",
+                            content="\n".join(items),
+                            metadata={
+                                "ordered": False,
+                                "items": [{"text": t} for t in items],
+                            },
+                        )
+                    )
                     raw_lines.extend(items)
                     elem_idx[0] += 1
 
@@ -179,12 +183,14 @@ class ODFParser(BaseParser):
                 image_node = child.find(_ns("draw:image"))
                 if image_node is not None:
                     image_href = image_node.get(_ns("xlink:href"))
-                elements.append(ExtractedElement(
-                    elementId=f"elem_1_{elem_idx[0]}",
-                    elementType="image",
-                    content="[图片]",
-                    metadata={"url": image_href or "[embedded]"}
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_1_{elem_idx[0]}",
+                        elementType="image",
+                        content="[图片]",
+                        metadata={"url": image_href or "[embedded]"},
+                    )
+                )
                 raw_lines.append(f"[图片] {image_href or ''}")
                 elem_idx[0] += 1
 
@@ -212,12 +218,14 @@ class ODFParser(BaseParser):
             elem_idx = [0]
 
             # 表头：工作表名称
-            elements.append(ExtractedElement(
-                elementId=f"elem_{page_num}_{elem_idx[0]}",
-                elementType="heading",
-                content=f"工作表: {sheet_name}",
-                metadata={"level": 1, "sheet_name": sheet_name}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_{page_num}_{elem_idx[0]}",
+                    elementType="heading",
+                    content=f"工作表: {sheet_name}",
+                    metadata={"level": 1, "sheet_name": sheet_name},
+                )
+            )
             raw_lines.append(f"[{sheet_name}]")
             elem_idx[0] += 1
 
@@ -232,31 +240,37 @@ class ODFParser(BaseParser):
                         cells.append(cell_text)
 
                 if any(c for c in cells):
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_{page_num}_{elem_idx[0]}",
-                        elementType="table_row",
-                        content=" | ".join(cells),
-                        metadata={"cells": cells, "col_count": len(cells), "sheet": sheet_name}
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_{page_num}_{elem_idx[0]}",
+                            elementType="table_row",
+                            content=" | ".join(cells),
+                            metadata={"cells": cells, "col_count": len(cells), "sheet": sheet_name},
+                        )
+                    )
                     raw_lines.append(" | ".join(cells))
                     elem_idx[0] += 1
 
-            pages.append(PageContent(
-                pageNumber=page_num,
-                elements=elements,
-                rawText="\n".join(raw_lines),
-                hasImage=False,
-                hasTable=True,
-            ))
+            pages.append(
+                PageContent(
+                    pageNumber=page_num,
+                    elements=elements,
+                    rawText="\n".join(raw_lines),
+                    hasImage=False,
+                    hasTable=True,
+                )
+            )
 
         if not pages:
-            pages.append(PageContent(
-                pageNumber=1,
-                elements=[],
-                rawText="",
-                hasImage=False,
-                hasTable=False,
-            ))
+            pages.append(
+                PageContent(
+                    pageNumber=1,
+                    elements=[],
+                    rawText="",
+                    hasImage=False,
+                    hasTable=False,
+                )
+            )
 
         logger.info("ODS 解析完成: %d 个工作表", len(pages))
         return pages
@@ -281,12 +295,14 @@ class ODFParser(BaseParser):
             elem_idx = [0]
 
             # 幻灯片标题
-            elements.append(ExtractedElement(
-                elementId=f"elem_{page_num}_{elem_idx[0]}",
-                elementType="heading",
-                content=page_name,
-                metadata={"level": 1}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_{page_num}_{elem_idx[0]}",
+                    elementType="heading",
+                    content=page_name,
+                    metadata={"level": 1},
+                )
+            )
             raw_lines.append(f"--- {page_name} ---")
             elem_idx[0] += 1
 
@@ -296,12 +312,14 @@ class ODFParser(BaseParser):
                     for text_p in text_box.findall(_ns("text:p")):
                         text = self._get_text(text_p)
                         if text.strip():
-                            elements.append(ExtractedElement(
-                                elementId=f"elem_{page_num}_{elem_idx[0]}",
-                                elementType="text",
-                                content=text,
-                                metadata={}
-                            ))
+                            elements.append(
+                                ExtractedElement(
+                                    elementId=f"elem_{page_num}_{elem_idx[0]}",
+                                    elementType="text",
+                                    content=text,
+                                    metadata={},
+                                )
+                            )
                             raw_lines.append(text)
                             elem_idx[0] += 1
 
@@ -310,31 +328,37 @@ class ODFParser(BaseParser):
                 image_node = frame.find(_ns("draw:image"))
                 if image_node is not None:
                     image_href = image_node.get(_ns("xlink:href"))
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_{page_num}_{elem_idx[0]}",
-                        elementType="image",
-                        content="[图片]",
-                        metadata={"url": image_href or "[embedded]"}
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_{page_num}_{elem_idx[0]}",
+                            elementType="image",
+                            content="[图片]",
+                            metadata={"url": image_href or "[embedded]"},
+                        )
+                    )
                     raw_lines.append(f"[图片] {image_href or ''}")
                     elem_idx[0] += 1
 
-            pages.append(PageContent(
-                pageNumber=page_num,
-                elements=elements,
-                rawText="\n".join(raw_lines),
-                hasImage=any(e.elementType == "image" for e in elements),
-                hasTable=False,
-            ))
+            pages.append(
+                PageContent(
+                    pageNumber=page_num,
+                    elements=elements,
+                    rawText="\n".join(raw_lines),
+                    hasImage=any(e.elementType == "image" for e in elements),
+                    hasTable=False,
+                )
+            )
 
         if not pages:
-            pages.append(PageContent(
-                pageNumber=1,
-                elements=[],
-                rawText="",
-                hasImage=False,
-                hasTable=False,
-            ))
+            pages.append(
+                PageContent(
+                    pageNumber=1,
+                    elements=[],
+                    rawText="",
+                    hasImage=False,
+                    hasTable=False,
+                )
+            )
 
         logger.info("ODP 解析完成: %d 页", len(pages))
         return pages
@@ -365,18 +389,22 @@ class ODFParser(BaseParser):
                 rows.append(cells)
 
         if rows or header:
-            table_text = " | ".join(header) + "\n" + "\n".join(" | ".join(r) for r in rows) if rows else " | ".join(header)
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="table",
-                content=table_text,
-                metadata={
-                    "header": header,
-                    "rows": rows,
-                    "row_count": len(rows),
-                    "col_count": max(len(header), max((len(r) for r in rows), default=0)),
-                }
-            ))
+            table_text = (
+                " | ".join(header) + "\n" + "\n".join(" | ".join(r) for r in rows) if rows else " | ".join(header)
+            )
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="table",
+                    content=table_text,
+                    metadata={
+                        "header": header,
+                        "rows": rows,
+                        "row_count": len(rows),
+                        "col_count": max(len(header), max((len(r) for r in rows), default=0)),
+                    },
+                )
+            )
             raw_lines.append(table_text)
             elem_idx[0] += 1
 

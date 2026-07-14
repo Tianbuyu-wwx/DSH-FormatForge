@@ -76,6 +76,7 @@ interface RawConvertData {
   conversionType: string;
   outputFormat: string;
   confidence: number;
+  extractedContent?: string;  // v2.1.0: 后端 ConvertResultData.extracedContent
   convertedContent: string;
   structuredData?: Record<string, unknown> | null;
   processingLogs?: Array<{ step: string; level: string; message: string }> | null;
@@ -92,7 +93,8 @@ function mapToConvertResult(raw: RawConvertData): ConvertResult {
     fileType: raw.conversionType,
     outputFormat: raw.outputFormat,
     confidence: raw.confidence,
-    parsedContent: '',
+    // v2.1.0: 把 extractedContent（后端原始内容）映射到 parsedContent
+    parsedContent: raw.extractedContent || '',
     convertedContent: raw.convertedContent || '',
     structuredData: raw.structuredData ?? undefined,
     processingLogs: (raw.processingLogs || []).map(log => ({

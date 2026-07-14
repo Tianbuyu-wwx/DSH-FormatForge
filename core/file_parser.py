@@ -3,6 +3,7 @@
 支持解析 .ppt, .pptx, .pdf, .txt, .csv, .doc, .docx, .xls, .xlsx, 图片 等格式
 采用插件化注册表架构，易于扩展新格式
 """
+
 import logging
 import uuid
 from datetime import datetime
@@ -16,82 +17,93 @@ from parsers import ParserRegistry
 # 导入各格式解析器
 try:
     from parsers.docx_parser import DOCXParser
+
     DOCX_PARSER_AVAILABLE = True
 except ImportError:
     DOCX_PARSER_AVAILABLE = False
 
 try:
     from parsers.xlsx_parser import XLSXParser
+
     XLSX_PARSER_AVAILABLE = True
 except ImportError:
     XLSX_PARSER_AVAILABLE = False
 
 try:
     from parsers.pdf_parser import PDFParser
+
     PDF_PARSER_AVAILABLE = True
 except ImportError:
     PDF_PARSER_AVAILABLE = False
 
 try:
     from parsers.pptx_parser import PPTXParser
+
     PPTX_PARSER_AVAILABLE = True
 except ImportError:
     PPTX_PARSER_AVAILABLE = False
 
 try:
     from parsers.txt_parser import TXTParser
+
     TXT_PARSER_AVAILABLE = True
 except ImportError:
     TXT_PARSER_AVAILABLE = False
 
 try:
     from parsers.csv_parser import CSVParser
+
     CSV_PARSER_AVAILABLE = True
 except ImportError:
     CSV_PARSER_AVAILABLE = False
 
 try:
     from parsers.image_parser import ImageParser
+
     IMAGE_PARSER_AVAILABLE = True
 except ImportError:
     IMAGE_PARSER_AVAILABLE = False
 
 try:
     from parsers.data_parser import DataParser
+
     DATA_PARSER_AVAILABLE = True
 except ImportError:
     DATA_PARSER_AVAILABLE = False
 
 try:
     from parsers.html_parser import HTMLParser
+
     HTML_PARSER_AVAILABLE = True
 except ImportError:
     HTML_PARSER_AVAILABLE = False
 
 try:
     from parsers.archive_parser import ArchiveParser
+
     ARCHIVE_PARSER_AVAILABLE = True
 except ImportError:
     ARCHIVE_PARSER_AVAILABLE = False
 
 try:
     from parsers.richtext_parser import RichTextParser
+
     RICHTEXT_PARSER_AVAILABLE = True
 except ImportError:
     RICHTEXT_PARSER_AVAILABLE = False
 
+from parsers.audio_parser import AudioParser
 from parsers.email_parser import EmailParser
 from parsers.epub_parser import EPUBParser
+from parsers.latex_parser import LaTeXParser
 from parsers.markdown_parser import MarkdownParser
 from parsers.odf_parser import ODFParser
-from parsers.svg_parser import SVGParser
-from parsers.toml_parser import TOMLParser
+from parsers.sql_parser import SQLParser
 
 # v2.3 新增解析器
 from parsers.subtitle_parser import SubtitleParser
-from parsers.latex_parser import LaTeXParser
-from parsers.sql_parser import SQLParser
-from parsers.audio_parser import AudioParser
+from parsers.svg_parser import SVGParser
+from parsers.toml_parser import TOMLParser
 
 logger = logging.getLogger("file_parser")
 
@@ -247,52 +259,52 @@ class FileParser:
         # 根据扩展名补充映射
         ext = file_path.suffix.lower()
         ext_mapping = {
-            '.ppt': FileType.PPT,
-            '.pptx': FileType.PPT,
-            '.pdf': FileType.PDF,
-            '.jpg': FileType.IMAGE,
-            '.jpeg': FileType.IMAGE,
-            '.png': FileType.IMAGE,
-            '.gif': FileType.IMAGE,
-            '.bmp': FileType.IMAGE,
-            '.webp': FileType.IMAGE,
-            '.tiff': FileType.IMAGE,
-            '.tif': FileType.IMAGE,
-            '.doc': FileType.DOC,
-            '.docx': FileType.DOC,
-            '.txt': FileType.TXT,
-            '.text': FileType.TXT,
-            '.md': FileType.TXT,
-            '.log': FileType.TXT,
-            '.csv': FileType.CSV,
-            '.tsv': FileType.CSV,
-            '.tab': FileType.CSV,
-            '.xls': FileType.XLS,
-            '.xlsx': FileType.XLS,
-            '.json': FileType.TXT,
-            '.yaml': FileType.TXT,
-            '.yml': FileType.TXT,
-            '.xml': FileType.TXT,
-            '.html': FileType.TXT,
-            '.htm': FileType.TXT,
-            '.zip': FileType.UNKNOWN,
-            '.7z': FileType.UNKNOWN,
-            '.rar': FileType.UNKNOWN,
-            '.rtf': FileType.TXT,
+            ".ppt": FileType.PPT,
+            ".pptx": FileType.PPT,
+            ".pdf": FileType.PDF,
+            ".jpg": FileType.IMAGE,
+            ".jpeg": FileType.IMAGE,
+            ".png": FileType.IMAGE,
+            ".gif": FileType.IMAGE,
+            ".bmp": FileType.IMAGE,
+            ".webp": FileType.IMAGE,
+            ".tiff": FileType.IMAGE,
+            ".tif": FileType.IMAGE,
+            ".doc": FileType.DOC,
+            ".docx": FileType.DOC,
+            ".txt": FileType.TXT,
+            ".text": FileType.TXT,
+            ".md": FileType.TXT,
+            ".log": FileType.TXT,
+            ".csv": FileType.CSV,
+            ".tsv": FileType.CSV,
+            ".tab": FileType.CSV,
+            ".xls": FileType.XLS,
+            ".xlsx": FileType.XLS,
+            ".json": FileType.TXT,
+            ".yaml": FileType.TXT,
+            ".yml": FileType.TXT,
+            ".xml": FileType.TXT,
+            ".html": FileType.TXT,
+            ".htm": FileType.TXT,
+            ".zip": FileType.UNKNOWN,
+            ".7z": FileType.UNKNOWN,
+            ".rar": FileType.UNKNOWN,
+            ".rtf": FileType.TXT,
             # v2.3 新增
-            '.srt': FileType.TXT,
-            '.vtt': FileType.TXT,
-            '.tex': FileType.TXT,
-            '.latex': FileType.TXT,
-            '.ltx': FileType.TXT,
-            '.sql': FileType.TXT,
-            '.wav': FileType.UNKNOWN,
-            '.mp3': FileType.UNKNOWN,
-            '.flac': FileType.UNKNOWN,
-            '.ogg': FileType.UNKNOWN,
-            '.m4a': FileType.UNKNOWN,
-            '.aiff': FileType.UNKNOWN,
-            '.aif': FileType.UNKNOWN,
+            ".srt": FileType.TXT,
+            ".vtt": FileType.TXT,
+            ".tex": FileType.TXT,
+            ".latex": FileType.TXT,
+            ".ltx": FileType.TXT,
+            ".sql": FileType.TXT,
+            ".wav": FileType.UNKNOWN,
+            ".mp3": FileType.UNKNOWN,
+            ".flac": FileType.UNKNOWN,
+            ".ogg": FileType.UNKNOWN,
+            ".m4a": FileType.UNKNOWN,
+            ".aiff": FileType.UNKNOWN,
+            ".aif": FileType.UNKNOWN,
         }
         mapped_type = type_mapping.get(file_type, ext_mapping.get(ext, FileType.UNKNOWN))
         logger.debug("文件类型映射: ext=%s -> mapped_type=%s", ext, mapped_type.value)
@@ -301,7 +313,7 @@ class FileParser:
         content = None
         if file_path.exists():
             try:
-                with open(file_path, 'rb') as f:
+                with open(file_path, "rb") as f:
                     content = f.read(2048)
             except Exception as e:
                 logger.warning("读取文件头部失败: %s", e)
@@ -330,7 +342,7 @@ class FileParser:
             pages=pages,
             createdAt=datetime.now(),
             status=TaskStatus.COMPLETED,
-            filePath=str(file_path)
+            filePath=str(file_path),
         )
 
         # 缓存解析结果（带容量和TTL管理）
@@ -345,10 +357,7 @@ class FileParser:
 
         # 清理过期缓存
         now = time.time()
-        expired = [
-            k for k, v in self._cache_timestamps.items()
-            if now - v > self._cache_ttl
-        ]
+        expired = [k for k, v in self._cache_timestamps.items() if now - v > self._cache_ttl]
         for k in expired:
             self.parsed_cache.pop(k, None)
             self._cache_timestamps.pop(k, None)

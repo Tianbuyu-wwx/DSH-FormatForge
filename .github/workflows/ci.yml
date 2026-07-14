@@ -6,10 +6,17 @@ on:
   pull_request:
     branches: [main, master]
 
+# 防止多个 PR 同时 push 到 main 时重复跑
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
 
@@ -20,22 +27,30 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: requirements.txt
 
-      - name: Install dependencies
+      - name: Install dependencies (含可选依赖 [all])
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx ruff pytest-mock
+          pip install -e ".[all,dev]"
 
-      - name: Lint with ruff
-        run: ruff check . --ignore E999,F401
-
-      - name: Run tests
+      - name: Run pytest (默认配置：dev 模式，API_KEY 空)
         env:
           DEBUG: "true"
-        run: python -m pytest test/ -v --tb=short -q --no-header
+          ALLOWED_ORIGINS: '["http://localhost:3000"]'
+        run: python -m pytest test/ --tb=short -q --no-header
+
+      - name: Run pytest with API_KEY enabled (prod 模式回归)
+        env:
+          DEBUG: "false"
+          ALLOWED_ORIGINS: '["https://app.example.com"]'
+          API_KEY: "ci-test-secret-key-do-not-use-in-prod"
+        run: |
+          python -m pytest test/integration/test_api.py test/integration/test_webhook_api.py test/integration/test_quality_api.py --tb=short -q --no-header -k "auth or api_key or 401 or 403"
 
   lint:
+    name: Lint & Static Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,28 +60,89 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install ruff + mypy
+        run: pip install ruff mypy
 
-      - name: Run ruff check
-        run: ruff check --output-format=github --ignore E999,F401 .
+      - name: Run ruff check (阻断)
+        run: ruff check --output-format=github .
 
-      - name: Run ruff format check
-        run: ruff format --check .
+      - name: Run ruff format check (阻断)
+        run: ruff format --check --diff .
 
-      - name: Run mypy
-        run: pip install mypy && mypy core/ api/ parsers/ --ignore-missing-imports
+      - name: Run mypy (阻断：失败即 PR 红 ❌)
+        run: |
+          pip install -e ".[all,dev]"
+          mypy core/ api/ parsers/ --ignore-missing-imports \
+            || (echo "::error::mypy 失败，请修复后再提交 PR" && exit 1)
 
-  build-frontend:
+  test-frontend:
+    name: Frontend Build & Type Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         run: cd frontend && npm ci
-      - name: Type check
+      - name: Type check (阻断)
         run: cd frontend && npx tsc --noEmit
       - name: Build
         run: cd frontend && npm run build
+      - name: Test
+        run: cd frontend && npm test -- --reporter=verbose
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install bandit + safety
+        run: pip install bandit safety
+
+      - name: Run bandit (静态安全扫描)
+        run: |
+          bandit -r core/ api/ parsers/ -f github -ll \
+            || (echo "::warning::bandit 发现低/中危问题，请人工 review")
+
+      - name: Verify dependencies known to safety DB
+        continue-on-error: true
+        run: |
+          safety check --file requirements.txt --output json \
+            || echo "::warning::safety 检查未完成（需 SAFETY_API_KEY）"
+
+  smoke:
+    name: Smoke Test (FastAPI 启动)
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[all,dev]"
+      - name: Start FastAPI (background)
+        env:
+          ALLOWED_ORIGINS: '["http://localhost:3000"]'
+        run: |
+          nohup python main.py > server.log 2>&1 &
+          sleep 5
+      - name: Test endpoints
+        run: |
+          curl -sf http://127.0.0.1:8000/health | jq .data.status || exit 1
+          curl -sf http://127.0.0.1:8000/api/v2/health | jq .status || exit 1
+          curl -sf http://127.0.0.1:8000/api/v2/templates | jq .code || exit 1
+      - name: Kill server
+        if: always()
+        run: pkill -f "python main.py" || true

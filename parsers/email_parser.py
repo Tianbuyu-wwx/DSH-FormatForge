@@ -2,12 +2,13 @@
 邮件文件解析器
 支持 .eml（MIME 格式，使用 Python 标准库 email）和 .msg（Outlook 格式，使用 extract-msg）
 """
+
+import contextlib
 import email
 import logging
 import re
 from email.header import decode_header
 from pathlib import Path
-from typing import Optional
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -17,6 +18,7 @@ logger = logging.getLogger("parsers.email")
 # 可选依赖：MSG 解析
 try:
     import extract_msg
+
     MSG_AVAILABLE = True
 except ImportError:
     MSG_AVAILABLE = False
@@ -46,21 +48,21 @@ def _decode_email_header(header_value: str | None) -> str:
 def _extract_text_from_html(html: str) -> str:
     """从 HTML 中提取纯文本"""
     # 去除 script 和 style 块
-    html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
     # 将 <br> <p> <div> 等替换为换行
-    html = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
-    html = re.sub(r'</p>', '\n', html, flags=re.IGNORECASE)
-    html = re.sub(r'</div>', '\n', html, flags=re.IGNORECASE)
-    html = re.sub(r'</tr>', '\n', html, flags=re.IGNORECASE)
-    html = re.sub(r'</li>', '\n', html, flags=re.IGNORECASE)
+    html = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+    html = re.sub(r"</p>", "\n", html, flags=re.IGNORECASE)
+    html = re.sub(r"</div>", "\n", html, flags=re.IGNORECASE)
+    html = re.sub(r"</tr>", "\n", html, flags=re.IGNORECASE)
+    html = re.sub(r"</li>", "\n", html, flags=re.IGNORECASE)
     # 去掉剩余的 HTML 标签
-    text = re.sub(r'<[^>]+>', '', html)
+    text = re.sub(r"<[^>]+>", "", html)
     # 解码 HTML 实体
-    text = text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
-    text = text.replace('&nbsp;', ' ').replace('&quot;', '"')
+    text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    text = text.replace("&nbsp;", " ").replace("&quot;", '"')
     # 合并多余空行
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
@@ -120,56 +122,66 @@ class EmailParser(BaseParser):
 
         # 发件人
         if headers["from"]:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"发件人: {headers['from']}",
-                metadata={"field": "from", "value": headers["from"]}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"发件人: {headers['from']}",
+                    metadata={"field": "from", "value": headers["from"]},
+                )
+            )
             raw_lines.append(f"From: {headers['from']}")
             elem_idx[0] += 1
 
         # 收件人
         if headers["to"]:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"收件人: {headers['to']}",
-                metadata={"field": "to", "value": headers["to"]}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"收件人: {headers['to']}",
+                    metadata={"field": "to", "value": headers["to"]},
+                )
+            )
             raw_lines.append(f"To: {headers['to']}")
             elem_idx[0] += 1
 
         # 主题
         if headers["subject"]:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"主题: {headers['subject']}",
-                metadata={"field": "subject", "value": headers["subject"]}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"主题: {headers['subject']}",
+                    metadata={"field": "subject", "value": headers["subject"]},
+                )
+            )
             raw_lines.append(f"Subject: {headers['subject']}")
             elem_idx[0] += 1
 
         # 日期
         if headers["date"]:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"日期: {headers['date']}",
-                metadata={"field": "date", "value": headers["date"]}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"日期: {headers['date']}",
+                    metadata={"field": "date", "value": headers["date"]},
+                )
+            )
             raw_lines.append(f"Date: {headers['date']}")
             elem_idx[0] += 1
 
         # 抄送
         if headers["cc"]:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"抄送: {headers['cc']}",
-                metadata={"field": "cc", "value": headers["cc"]}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"抄送: {headers['cc']}",
+                    metadata={"field": "cc", "value": headers["cc"]},
+                )
+            )
             raw_lines.append(f"CC: {headers['cc']}")
             elem_idx[0] += 1
 
@@ -188,11 +200,13 @@ class EmailParser(BaseParser):
                     filename = part.get_filename()
                     if filename:
                         decoded_name = _decode_email_header(filename)
-                        attachments.append({
-                            "filename": decoded_name,
-                            "content_type": content_type,
-                            "size": len(part.get_payload(decode=True) or b""),
-                        })
+                        attachments.append(
+                            {
+                                "filename": decoded_name,
+                                "content_type": content_type,
+                                "size": len(part.get_payload(decode=True) or b""),
+                            }
+                        )
                     continue
 
                 # 正文
@@ -233,26 +247,24 @@ class EmailParser(BaseParser):
 
         if final_body:
             # 将正文按段落拆分
-            paragraphs = re.split(r'\n\s*\n', final_body)
+            paragraphs = re.split(r"\n\s*\n", final_body)
             for para in paragraphs:
                 para = para.strip()
                 if para:
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx[0]}",
-                        elementType="text",
-                        content=para,
-                        metadata={}
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx[0]}", elementType="text", content=para, metadata={}
+                        )
+                    )
                     raw_lines.append(para)
                     elem_idx[0] += 1
         else:
             # 无文本内容时添加占位
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="text",
-                content="[无正文内容]",
-                metadata={}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}", elementType="text", content="[无正文内容]", metadata={}
+                )
+            )
             raw_lines.append("[无正文内容]")
             elem_idx[0] += 1
 
@@ -261,24 +273,28 @@ class EmailParser(BaseParser):
             att_summary = f"附件 ({len(attachments)} 个): " + ", ".join(
                 f"{a['filename']} ({a['size'] // 1024}KB)" for a in attachments
             )
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="text",
-                content=att_summary,
-                metadata={"attachments": attachments}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="text",
+                    content=att_summary,
+                    metadata={"attachments": attachments},
+                )
+            )
             raw_lines.append(att_summary)
             elem_idx[0] += 1
 
         logger.info("EML 解析完成: %d 个元素, %d 个附件", len(elements), len(attachments))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_lines),
-            hasImage=False,
-            hasTable=False,
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_lines),
+                hasImage=False,
+                hasTable=False,
+            )
+        ]
 
     # ==================== MSG 解析 ====================
 
@@ -305,52 +321,62 @@ class EmailParser(BaseParser):
         cc = msg.cc or ""
 
         if sender:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"发件人: {sender}",
-                metadata={"field": "from", "value": sender}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"发件人: {sender}",
+                    metadata={"field": "from", "value": sender},
+                )
+            )
             raw_lines.append(f"From: {sender}")
             elem_idx[0] += 1
 
         if to:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"收件人: {to}",
-                metadata={"field": "to", "value": to}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"收件人: {to}",
+                    metadata={"field": "to", "value": to},
+                )
+            )
             raw_lines.append(f"To: {to}")
             elem_idx[0] += 1
 
         if subject:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"主题: {subject}",
-                metadata={"field": "subject", "value": subject}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"主题: {subject}",
+                    metadata={"field": "subject", "value": subject},
+                )
+            )
             raw_lines.append(f"Subject: {subject}")
             elem_idx[0] += 1
 
         if date:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"日期: {date}",
-                metadata={"field": "date", "value": date}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"日期: {date}",
+                    metadata={"field": "date", "value": date},
+                )
+            )
             raw_lines.append(f"Date: {date}")
             elem_idx[0] += 1
 
         if cc:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="header",
-                content=f"抄送: {cc}",
-                metadata={"field": "cc", "value": cc}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="header",
+                    content=f"抄送: {cc}",
+                    metadata={"field": "cc", "value": cc},
+                )
+            )
             raw_lines.append(f"CC: {cc}")
             elem_idx[0] += 1
 
@@ -362,25 +388,23 @@ class EmailParser(BaseParser):
                 body = _extract_text_from_html(html_body)
 
         if body.strip():
-            paragraphs = re.split(r'\n\s*\n', body.strip())
+            paragraphs = re.split(r"\n\s*\n", body.strip())
             for para in paragraphs:
                 para = para.strip()
                 if para:
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx[0]}",
-                        elementType="text",
-                        content=para,
-                        metadata={}
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx[0]}", elementType="text", content=para, metadata={}
+                        )
+                    )
                     raw_lines.append(para)
                     elem_idx[0] += 1
         else:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="text",
-                content="[无正文内容]",
-                metadata={}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}", elementType="text", content="[无正文内容]", metadata={}
+                )
+            )
             raw_lines.append("[无正文内容]")
             elem_idx[0] += 1
 
@@ -388,10 +412,12 @@ class EmailParser(BaseParser):
         attachments = []
         try:
             for att in msg.attachments:
-                attachments.append({
-                    "filename": att.longFilename or att.shortFilename or "(unnamed)",
-                    "size": att.dataSize if hasattr(att, "dataSize") else 0,
-                })
+                attachments.append(
+                    {
+                        "filename": att.longFilename or att.shortFilename or "(unnamed)",
+                        "size": att.dataSize if hasattr(att, "dataSize") else 0,
+                    }
+                )
         except Exception:
             pass
 
@@ -399,27 +425,29 @@ class EmailParser(BaseParser):
             att_summary = f"附件 ({len(attachments)} 个): " + ", ".join(
                 f"{a['filename']} ({a['size'] // 1024}KB)" for a in attachments
             )
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="text",
-                content=att_summary,
-                metadata={"attachments": attachments}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="text",
+                    content=att_summary,
+                    metadata={"attachments": attachments},
+                )
+            )
             raw_lines.append(att_summary)
             elem_idx[0] += 1
 
         # 关闭 MSG 文件
-        try:
+        with contextlib.suppress(Exception):
             msg.close()
-        except Exception:
-            pass
 
         logger.info("MSG 解析完成: %d 个元素, %d 个附件", len(elements), len(attachments))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_lines),
-            hasImage=False,
-            hasTable=False,
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_lines),
+                hasImage=False,
+                hasTable=False,
+            )
+        ]

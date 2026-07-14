@@ -3,10 +3,10 @@ LaTeX 文件解析器
 提取 LaTeX 文档中的文本内容，处理章节标题、数学公式、注释等
 使用简单的正则表达式方法，不依赖完整 LaTeX 引擎
 """
+
 import logging
 import re
 from pathlib import Path
-from typing import Any
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -57,13 +57,15 @@ class LaTeXParser(BaseParser):
 
         logger.info("LaTeX 解析完成: %d 个段落/章节", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText=raw_text,
-            hasImage=False,
-            hasTable=False,
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText=raw_text,
+                hasImage=False,
+                hasTable=False,
+            )
+        ]
 
     def _strip_comments(self, content: str) -> str:
         """去除 LaTeX 注释（以 % 开头，到行尾）"""
@@ -103,12 +105,14 @@ class LaTeXParser(BaseParser):
             if preamble:
                 clean = self._strip_latex_commands(preamble)
                 if clean:
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx}",
-                        elementType="text",
-                        content=clean,
-                        metadata={"section": "preamble"},
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx}",
+                            elementType="text",
+                            content=clean,
+                            metadata={"section": "preamble"},
+                        )
+                    )
                     elem_idx += 1
 
         # 处理章节-正文对
@@ -131,15 +135,17 @@ class LaTeXParser(BaseParser):
             level = level_map.get(cmd, 2)
 
             if title:
-                elements.append(ExtractedElement(
-                    elementId=f"elem_1_{elem_idx}",
-                    elementType="heading",
-                    content=title,
-                    metadata={
-                        "level": level,
-                        "command": f"\\{cmd}{star}",
-                    },
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_1_{elem_idx}",
+                        elementType="heading",
+                        content=title,
+                        metadata={
+                            "level": level,
+                            "command": f"\\{cmd}{star}",
+                        },
+                    )
+                )
                 elem_idx += 1
 
             # 正文内容
@@ -152,12 +158,14 @@ class LaTeXParser(BaseParser):
                         # 将 clean 文本按段落分割
                         paragraphs = [p.strip() for p in re.split(r"\n\s*\n", clean) if p.strip()]
                         for para in paragraphs:
-                            elements.append(ExtractedElement(
-                                elementId=f"elem_1_{elem_idx}",
-                                elementType="text",
-                                content=para,
-                                metadata={"section": title},
-                            ))
+                            elements.append(
+                                ExtractedElement(
+                                    elementId=f"elem_1_{elem_idx}",
+                                    elementType="text",
+                                    content=para,
+                                    metadata={"section": title},
+                                )
+                            )
                             elem_idx += 1
 
             i += 4
@@ -224,7 +232,9 @@ class LaTeXParser(BaseParser):
 
         # 去除常见自定义命令 (简单的)，将其当作文本
         text = re.sub(r"\\(newcommand|renewcommand|providecommand)\s*\{[^}]*\}\s*\{[^}]*\}", "", text)
-        text = re.sub(r"\\(usepackage|documentclass|pagestyle|setlength|renewcommand)(?:\[[^\]]*\])?\{[^}]*\}", "", text)
+        text = re.sub(
+            r"\\(usepackage|documentclass|pagestyle|setlength|renewcommand)(?:\[[^\]]*\])?\{[^}]*\}", "", text
+        )
         text = re.sub(r"\\makeatletter.*?\\makeatother", "", text, flags=re.DOTALL)
 
         # 去除图形/表格命令

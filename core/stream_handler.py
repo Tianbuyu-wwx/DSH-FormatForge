@@ -2,9 +2,11 @@
 SSE 流式处理器
 为大文件转换提供 Server-Sent Events 流式响应
 """
+
 import json
 import logging
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from core.models import ConversionType, OutputFormat
 
@@ -60,12 +62,15 @@ async def streaming_convert(
     try:
         for step_info in steps[:-1]:
             step_name = step_info["step"]
-            yield _build_sse_event(step_name, {
-                "step": step_name,
-                "status": "running",
-                "progress": step_info["progress"],
-                "message": step_info["message"],
-            })
+            yield _build_sse_event(
+                step_name,
+                {
+                    "step": step_name,
+                    "status": "running",
+                    "progress": step_info["progress"],
+                    "message": step_info["message"],
+                },
+            )
             await asyncio.sleep(0.01)
 
         # 执行实际转换
@@ -82,35 +87,44 @@ async def streaming_convert(
 
         result_data = result.get("result")
         if not result_data:
-            yield _build_sse_event("error", {
-                "step": "error",
-                "status": "failed",
-                "progress": 0,
-                "message": "转换失败：未获取到转换结果",
-            })
+            yield _build_sse_event(
+                "error",
+                {
+                    "step": "error",
+                    "status": "failed",
+                    "progress": 0,
+                    "message": "转换失败：未获取到转换结果",
+                },
+            )
             return
 
-        yield _build_sse_event("done", {
-            "step": "done",
-            "status": "completed",
-            "progress": 100,
-            "message": "转换完成",
-            "result": {
-                "resultId": result_data.resultId,
-                "fileName": result_data.fileInfo.fileName,
-                "conversionType": result_data.conversionType.value,
-                "outputFormat": result_data.outputFormat.value,
-                "confidence": result_data.confidence,
-                "convertedContent": result_data.convertedContent,
-                "structuredData": result_data.structuredData,
+        yield _build_sse_event(
+            "done",
+            {
+                "step": "done",
+                "status": "completed",
+                "progress": 100,
+                "message": "转换完成",
+                "result": {
+                    "resultId": result_data.resultId,
+                    "fileName": result_data.fileInfo.fileName,
+                    "conversionType": result_data.conversionType.value,
+                    "outputFormat": result_data.outputFormat.value,
+                    "confidence": result_data.confidence,
+                    "convertedContent": result_data.convertedContent,
+                    "structuredData": result_data.structuredData,
+                },
             },
-        })
+        )
 
     except Exception as e:
         logger.error("流式转换失败: %s", e, exc_info=True)
-        yield _build_sse_event("error", {
-            "step": "error",
-            "status": "failed",
-            "progress": 0,
-            "message": f"转换失败: {str(e)}",
-        })
+        yield _build_sse_event(
+            "error",
+            {
+                "step": "error",
+                "status": "failed",
+                "progress": 0,
+                "message": f"转换失败: {str(e)}",
+            },
+        )

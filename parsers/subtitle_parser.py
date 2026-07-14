@@ -2,10 +2,11 @@
 SRT/VTT 字幕文件解析器
 支持解析 SRT 和 WebVTT 格式的字幕文件
 """
+
+import contextlib
 import logging
 import re
 from pathlib import Path
-from typing import Any
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -76,10 +77,8 @@ class SubtitleParser(BaseParser):
 
             # 解析序号（可能非纯数字，尽力尝试）
             index = 0
-            try:
+            with contextlib.suppress(ValueError):
                 index = int(lines[0].strip())
-            except ValueError:
-                pass
 
             # 解析时间轴: 00:00:20,000 --> 00:00:24,400
             timestamp_line = ""
@@ -104,29 +103,33 @@ class SubtitleParser(BaseParser):
             # 解析时间戳
             start_time, end_time = self._parse_srt_timestamp(timestamp_line)
 
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx}",
-                elementType="text",
-                content=subtitle_text,
-                metadata={
-                    "index": index,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "raw_timestamp": timestamp_line,
-                }
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx}",
+                    elementType="text",
+                    content=subtitle_text,
+                    metadata={
+                        "index": index,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "raw_timestamp": timestamp_line,
+                    },
+                )
+            )
             raw_text_parts.append(subtitle_text)
             elem_idx += 1
 
         logger.info("SRT 解析完成: %d 条字幕", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_text_parts),
-            hasImage=False,
-            hasTable=False,
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_text_parts),
+                hasImage=False,
+                hasTable=False,
+            )
+        ]
 
     def _parse_vtt(self, content: str, filename: str) -> list[PageContent]:
         """解析 WebVTT 字幕格式"""
@@ -189,7 +192,7 @@ class SubtitleParser(BaseParser):
                 cue_id = block_lines[ts_line_idx - 1].strip()
 
             # 文本内容（时间戳之后的所有行）
-            text_lines = block_lines[ts_line_idx + 1:]
+            text_lines = block_lines[ts_line_idx + 1 :]
             # 去除空行
             text = "\n".join(ln.strip() for ln in text_lines if ln.strip())
 
@@ -201,29 +204,33 @@ class SubtitleParser(BaseParser):
 
             start_time, end_time = self._parse_vtt_timestamp(ts_line)
 
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx}",
-                elementType="text",
-                content=text,
-                metadata={
-                    "cue_id": cue_id,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "raw_timestamp": ts_line,
-                }
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx}",
+                    elementType="text",
+                    content=text,
+                    metadata={
+                        "cue_id": cue_id,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "raw_timestamp": ts_line,
+                    },
+                )
+            )
             raw_text_parts.append(text)
             elem_idx += 1
 
         logger.info("VTT 解析完成: %d 条字幕", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_text_parts),
-            hasImage=False,
-            hasTable=False,
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_text_parts),
+                hasImage=False,
+                hasTable=False,
+            )
+        ]
 
     def _parse_srt_timestamp(self, ts_line: str) -> tuple[str, str]:
         """解析 SRT 时间戳行: 00:00:20,000 --> 00:00:24,400"""

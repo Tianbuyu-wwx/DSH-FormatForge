@@ -2,6 +2,7 @@
 数据转换策略模块
 提供多种转换策略，根据AI能力自动选择最佳方案
 """
+
 import json
 import logging
 import re
@@ -41,7 +42,7 @@ class ConversionStrategy(ABC):
         parsed_file: ParsedFile,
         output_format: OutputFormat,
         ai_caps: AiCapabilities | None = None,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         """
         执行转换
@@ -70,7 +71,15 @@ class AutoDetectStrategy(ConversionStrategy):
         self.strategy_id = "auto_detect"
         self.strategy_name = "自动检测"
         self.description = "自动分析内容特征和AI能力，选择最合适的转换策略"
-        self.supported_types = [FileType.PPT, FileType.PDF, FileType.IMAGE, FileType.DOC, FileType.TXT, FileType.CSV, FileType.XLS]
+        self.supported_types = [
+            FileType.PPT,
+            FileType.PDF,
+            FileType.IMAGE,
+            FileType.DOC,
+            FileType.TXT,
+            FileType.CSV,
+            FileType.XLS,
+        ]
 
     def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
         return 0.9
@@ -80,23 +89,31 @@ class AutoDetectStrategy(ConversionStrategy):
         parsed_file: ParsedFile,
         output_format: OutputFormat,
         ai_caps: AiCapabilities | None = None,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("auto_detect", "开始自动检测内容特征")]
-        logger.info("[strategy=auto_detect] 开始自动检测: file_type=%s, output_format=%s",
-                    parsed_file.fileType.value, output_format.value)
+        logger.info(
+            "[strategy=auto_detect] 开始自动检测: file_type=%s, output_format=%s",
+            parsed_file.fileType.value,
+            output_format.value,
+        )
 
         # 分析内容特征
         has_tables = any(page.hasTable for page in parsed_file.pages)
         has_images = any(page.hasImage for page in parsed_file.pages)
         total_text = sum(len(page.rawText) for page in parsed_file.pages)
 
-        logger.debug("[strategy=auto_detect] 内容特征: text=%d chars, has_tables=%s, has_images=%s",
-                     total_text, has_tables, has_images)
-        logs.append(create_processing_log(
-            "feature_analysis",
-            f"分析结果: 文本量={total_text}字符, 含表格={has_tables}, 含图片={has_images}"
-        ))
+        logger.debug(
+            "[strategy=auto_detect] 内容特征: text=%d chars, has_tables=%s, has_images=%s",
+            total_text,
+            has_tables,
+            has_images,
+        )
+        logs.append(
+            create_processing_log(
+                "feature_analysis", f"分析结果: 文本量={total_text}字符, 含表格={has_tables}, 含图片={has_images}"
+            )
+        )
 
         # 如果提供了AI能力，考虑AI支持情况
         ai_supports_images = ai_caps and ai_caps.supports_input(InputType.IMAGE) if ai_caps else False
@@ -122,8 +139,11 @@ class AutoDetectStrategy(ConversionStrategy):
 
         result = strategy.convert(parsed_file, output_format, ai_caps, custom_prompt)
         result["logs"] = logs + result.get("logs", [])
-        logger.info("[strategy=auto_detect] 子策略执行完成: sub_strategy=%s, confidence=%.2f",
-                    strategy.strategy_id, result.get("confidence", 0))
+        logger.info(
+            "[strategy=auto_detect] 子策略执行完成: sub_strategy=%s, confidence=%.2f",
+            strategy.strategy_id,
+            result.get("confidence", 0),
+        )
         return result
 
 
@@ -147,7 +167,7 @@ class TextExtractionStrategy(ConversionStrategy):
         parsed_file: ParsedFile,
         output_format: OutputFormat,
         ai_caps: AiCapabilities | None = None,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("text_extract", "开始提取纯文本")]
         logger.info("[strategy=text_extract] 开始提取纯文本: pages=%d", len(parsed_file.pages))
@@ -167,14 +187,14 @@ class TextExtractionStrategy(ConversionStrategy):
             "content": self._format_output(content, output_format),
             "structured_data": {"pages": len(parsed_file.pages), "total_chars": len(content)},
             "confidence": 0.95,
-            "logs": logs
+            "logs": logs,
         }
 
     @staticmethod
     def _fix_encoding(text: str) -> str:
         """修复常见编码问题（合并自 EncodingFixStrategy）"""
-        text = text.replace('\u00ef\u00bf\u00bd', '?')
-        text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f]', '', text)
+        text = text.replace("\u00ef\u00bf\u00bd", "?")
+        text = re.sub(r"[\x00-\x08\x0b-\x0c\x0e-\x1f]", "", text)
         return text
 
 
@@ -202,7 +222,7 @@ class StructuredExtractionStrategy(ConversionStrategy):
         parsed_file: ParsedFile,
         output_format: OutputFormat,
         ai_caps: AiCapabilities | None = None,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("structured", "开始结构化提取")]
         logger.info("[strategy=structured] 开始结构化提取: pages=%d", len(parsed_file.pages))
@@ -210,30 +230,21 @@ class StructuredExtractionStrategy(ConversionStrategy):
         structure = {"document": {"title": parsed_file.fileName, "pages": []}}
 
         for page in parsed_file.pages:
-            page_data = {
-                "page_number": page.pageNumber,
-                "elements": []
-            }
+            page_data = {"page_number": page.pageNumber, "elements": []}
             for elem in page.elements:
-                page_data["elements"].append({
-                    "type": elem.elementType,
-                    "content": elem.content[:500]
-                })
+                page_data["elements"].append({"type": elem.elementType, "content": elem.content[:500]})
             structure["document"]["pages"].append(page_data)
 
-        logger.info("[strategy=structured] 结构化完成: pages=%d, elements=%d",
-                    len(parsed_file.pages),
-                    sum(len(p["elements"]) for p in structure["document"]["pages"]))
+        logger.info(
+            "[strategy=structured] 结构化完成: pages=%d, elements=%d",
+            len(parsed_file.pages),
+            sum(len(p["elements"]) for p in structure["document"]["pages"]),
+        )
         logs.append(create_processing_log("structured", f"结构化完成，共 {len(parsed_file.pages)} 页"))
 
         content = json.dumps(structure, ensure_ascii=False, indent=2)
 
-        return {
-            "content": content,
-            "structured_data": structure,
-            "confidence": 0.85,
-            "logs": logs
-        }
+        return {"content": content, "structured_data": structure, "confidence": 0.85, "logs": logs}
 
 
 class TableExtractionStrategy(ConversionStrategy):
@@ -258,7 +269,7 @@ class TableExtractionStrategy(ConversionStrategy):
         parsed_file: ParsedFile,
         output_format: OutputFormat,
         ai_caps: AiCapabilities | None = None,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("table", "开始提取表格数据（增强模式）")]
         logger.info("[strategy=table] 开始提取表格数据: pages=%d", len(parsed_file.pages))
@@ -268,11 +279,13 @@ class TableExtractionStrategy(ConversionStrategy):
         for page in parsed_file.pages:
             for elem in page.elements:
                 if elem.elementType == "table":
-                    all_tables.append({
-                        "page": page.pageNumber,
-                        "content": elem.content,
-                        "metadata": elem.metadata or {},
-                    })
+                    all_tables.append(
+                        {
+                            "page": page.pageNumber,
+                            "content": elem.content,
+                            "metadata": elem.metadata or {},
+                        }
+                    )
 
         if not all_tables:
             return {
@@ -306,32 +319,38 @@ class TableExtractionStrategy(ConversionStrategy):
             formatted_rows = self._format_numeric_values(rows)
 
             # 生成 Markdown 表格
-            md_table = self._generate_markdown_table(
-                formatted_rows, merged_info, title=f"表格 {idx}{sheet_label}"
-            )
+            md_table = self._generate_markdown_table(formatted_rows, merged_info, title=f"表格 {idx}{sheet_label}")
             md_output_parts.append(md_table)
 
             # 结构化数据
-            structured_tables.append({
-                "table_index": idx,
-                "page": table["page"],
-                "sheet_name": sheet_name,
-                "rows": len(formatted_rows),
-                "cols": len(formatted_rows[0]) if formatted_rows else 0,
-                "has_header": table["metadata"].get("has_header", False),
-                "merged_cells": merged_info["merged_count"],
-                "headers": formatted_rows[0] if formatted_rows else [],
-                "data": formatted_rows,
-            })
+            structured_tables.append(
+                {
+                    "table_index": idx,
+                    "page": table["page"],
+                    "sheet_name": sheet_name,
+                    "rows": len(formatted_rows),
+                    "cols": len(formatted_rows[0]) if formatted_rows else 0,
+                    "has_header": table["metadata"].get("has_header", False),
+                    "merged_cells": merged_info["merged_count"],
+                    "headers": formatted_rows[0] if formatted_rows else [],
+                    "data": formatted_rows,
+                }
+            )
             total_rows += len(formatted_rows)
 
         content = "\n\n".join(md_output_parts)
 
-        logger.info("[strategy=table] 提取完成: tables=%d, total_rows=%d, merged_cells=%d",
-                    len(structured_tables), total_rows, total_merged)
-        logs.append(create_processing_log("table",
-            f"提取完成，共 {len(structured_tables)} 个表格, "
-            f"{total_rows} 行, {total_merged} 个合并单元格"))
+        logger.info(
+            "[strategy=table] 提取完成: tables=%d, total_rows=%d, merged_cells=%d",
+            len(structured_tables),
+            total_rows,
+            total_merged,
+        )
+        logs.append(
+            create_processing_log(
+                "table", f"提取完成，共 {len(structured_tables)} 个表格, {total_rows} 行, {total_merged} 个合并单元格"
+            )
+        )
 
         return {
             "content": content,
@@ -459,13 +478,15 @@ class TableExtractionStrategy(ConversionStrategy):
                         break
 
                 if span >= 2:
-                    merged_cells.append({
-                        "row": row_idx,
-                        "col": col,
-                        "rowspan": span,
-                        "colspan": 1,
-                        "value": cell_value,
-                    })
+                    merged_cells.append(
+                        {
+                            "row": row_idx,
+                            "col": col,
+                            "rowspan": span,
+                            "colspan": 1,
+                            "value": cell_value,
+                        }
+                    )
                     # 标记已处理
                     for r in range(row_idx, row_idx + span):
                         processed.add((r, col))
@@ -490,18 +511,18 @@ class TableExtractionStrategy(ConversionStrategy):
                 if span >= 2:
                     # 确认上下列对应位置有值（真正的合并单元格）
                     has_value_above = (
-                        row_idx > 0
-                        and col_idx < len(rows[row_idx - 1])
-                        and rows[row_idx - 1][col_idx].strip()
+                        row_idx > 0 and col_idx < len(rows[row_idx - 1]) and rows[row_idx - 1][col_idx].strip()
                     )
                     if has_value_above:
-                        merged_cells.append({
-                            "row": row_idx,
-                            "col": col_idx,
-                            "rowspan": 1,
-                            "colspan": span,
-                            "value": rows[row_idx - 1][col_idx].strip(),
-                        })
+                        merged_cells.append(
+                            {
+                                "row": row_idx,
+                                "col": col_idx,
+                                "rowspan": 1,
+                                "colspan": span,
+                                "value": rows[row_idx - 1][col_idx].strip(),
+                            }
+                        )
                     col_idx += span
                 else:
                     col_idx += 1
@@ -676,7 +697,7 @@ class ImageDescriptionStrategy(ConversionStrategy):
         parsed_file: ParsedFile,
         output_format: OutputFormat,
         ai_caps: AiCapabilities | None = None,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("image_desc", "开始处理图片内容")]
         logger.info("[strategy=image_desc] 开始处理图片内容: pages=%d", len(parsed_file.pages))
@@ -688,10 +709,7 @@ class ImageDescriptionStrategy(ConversionStrategy):
         for page in parsed_file.pages:
             for elem in page.elements:
                 if elem.elementType == "image":
-                    image_info.append({
-                        "page": page.pageNumber,
-                        "description": elem.content or "图片"
-                    })
+                    image_info.append({"page": page.pageNumber, "description": elem.content or "图片"})
 
         parts = ["# 图片内容描述\n"]
         for idx, img in enumerate(image_info, 1):
@@ -704,8 +722,11 @@ class ImageDescriptionStrategy(ConversionStrategy):
 
         content = "\n".join(parts) if image_info else "未检测到图片内容"
 
-        logger.info("[strategy=image_desc] 处理完成: images_found=%d, ai_supports_images=%s",
-                    len(image_info), ai_supports_images)
+        logger.info(
+            "[strategy=image_desc] 处理完成: images_found=%d, ai_supports_images=%s",
+            len(image_info),
+            ai_supports_images,
+        )
         logs.append(create_processing_log("image_desc", f"处理完成，共 {len(image_info)} 张图片"))
 
         return {
@@ -713,10 +734,10 @@ class ImageDescriptionStrategy(ConversionStrategy):
             "structured_data": {
                 "images_found": len(image_info),
                 "images": image_info,
-                "ai_supports_images": ai_supports_images
+                "ai_supports_images": ai_supports_images,
             },
             "confidence": 0.75 if image_info else 0.3,
-            "logs": logs
+            "logs": logs,
         }
 
 
@@ -742,7 +763,7 @@ class OcrStrategy(ConversionStrategy):
         parsed_file: ParsedFile,
         output_format: OutputFormat,
         ai_caps: AiCapabilities | None = None,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("ocr", "开始OCR文字识别")]
         logger.info("[strategy=ocr] 开始OCR文字识别: pages=%d", len(parsed_file.pages))
@@ -762,10 +783,8 @@ class OcrStrategy(ConversionStrategy):
             "content": content,
             "structured_data": {"pages_processed": len(parsed_file.pages)},
             "confidence": 0.8 if all_text else 0.2,
-            "logs": logs
+            "logs": logs,
         }
-
-
 
 
 class AiNativeStrategy(ConversionStrategy):
@@ -791,10 +810,12 @@ class AiNativeStrategy(ConversionStrategy):
         parsed_file: ParsedFile,
         output_format: OutputFormat,
         ai_caps: AiCapabilities | None = None,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("ai_native", "生成AI原生格式（保留媒体+文本索引）")]
-        logger.info("[strategy=ai_native] 生成AI原生格式: file=%s, pages=%d", parsed_file.fileName, parsed_file.pageCount)
+        logger.info(
+            "[strategy=ai_native] 生成AI原生格式: file=%s, pages=%d", parsed_file.fileName, parsed_file.pageCount
+        )
 
         # 提取文本索引
         text_index = []
@@ -804,10 +825,7 @@ class AiNativeStrategy(ConversionStrategy):
                 "text_preview": page.rawText[:200] if page.rawText else "",
                 "has_image": page.hasImage,
                 "has_table": page.hasTable,
-                "elements": [
-                    {"type": e.elementType, "content": e.content[:100]}
-                    for e in page.elements[:5]
-                ]
+                "elements": [{"type": e.elementType, "content": e.content[:100]} for e in page.elements[:5]],
             }
             text_index.append(page_summary)
 
@@ -832,17 +850,14 @@ class AiNativeStrategy(ConversionStrategy):
 
         return {
             "content": content,
-            "structured_data": {
-                "type": "ai_native",
-                "pages": text_index,
-                "recommendation": "保留原始文件直接发送给AI"
-            },
+            "structured_data": {"type": "ai_native", "pages": text_index, "recommendation": "保留原始文件直接发送给AI"},
             "confidence": 0.9,
-            "logs": logs
+            "logs": logs,
         }
 
 
 # ==================== 策略注册表 ====================
+
 
 class StrategyRegistry:
     """策略注册表 - 管理所有可用策略"""
@@ -878,10 +893,7 @@ class StrategyRegistry:
         return list(self._strategies.values())
 
     def select_best_strategy(
-        self,
-        parsed_file: ParsedFile,
-        conversion_type: ConversionType,
-        ai_caps: AiCapabilities | None = None
+        self, parsed_file: ParsedFile, conversion_type: ConversionType, ai_caps: AiCapabilities | None = None
     ) -> ConversionStrategy:
         """
         选择最佳策略
@@ -889,8 +901,12 @@ class StrategyRegistry:
         2. 否则根据 can_handle 评分选择
         3. 考虑AI能力进行决策
         """
-        logger.debug("选择最佳策略: file_type=%s, conversion_type=%s, has_ai_caps=%s",
-                     parsed_file.fileType.value, conversion_type.value, bool(ai_caps))
+        logger.debug(
+            "选择最佳策略: file_type=%s, conversion_type=%s, has_ai_caps=%s",
+            parsed_file.fileType.value,
+            conversion_type.value,
+            bool(ai_caps),
+        )
 
         type_to_strategy = {
             ConversionType.TEXT: "text_extraction",
@@ -904,8 +920,7 @@ class StrategyRegistry:
         if conversion_type != ConversionType.AUTO:
             strategy_id = type_to_strategy.get(conversion_type)
             if strategy_id and strategy_id in self._strategies:
-                logger.info("按指定类型选择策略: conversion_type=%s -> strategy=%s",
-                            conversion_type.value, strategy_id)
+                logger.info("按指定类型选择策略: conversion_type=%s -> strategy=%s", conversion_type.value, strategy_id)
                 return self._strategies[strategy_id]
 
         # 自动选择：评分最高的策略

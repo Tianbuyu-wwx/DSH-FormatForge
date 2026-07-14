@@ -3,6 +3,7 @@
 支持解析 JSON、YAML、XML 等结构化数据格式
 提取键值对、层级结构和表格数据
 """
+
 import json
 import logging
 from pathlib import Path
@@ -15,6 +16,7 @@ logger = logging.getLogger("parsers.data")
 # 可选依赖
 try:
     import yaml
+
     YAML_AVAILABLE = True
 except ImportError:
     YAML_AVAILABLE = False
@@ -22,6 +24,7 @@ except ImportError:
 
 try:
     from xml.etree import ElementTree as ET
+
     XML_AVAILABLE = True
 except ImportError:
     XML_AVAILABLE = False
@@ -38,10 +41,10 @@ class DataParser(BaseParser):
     @property
     def supported_magic(self) -> list[bytes]:
         return [
-            b"{",           # JSON 对象
-            b"[",           # JSON 数组
-            b"<?xml",       # XML 声明
-            b"<!DOCTYPE",   # XML DOCTYPE
+            b"{",  # JSON 对象
+            b"[",  # JSON 数组
+            b"<?xml",  # XML 声明
+            b"<!DOCTYPE",  # XML DOCTYPE
         ]
 
     def parse(self, file_path: Path) -> list[PageContent]:
@@ -49,11 +52,11 @@ class DataParser(BaseParser):
         file_path = Path(file_path)
         ext = file_path.suffix.lower()
 
-        if ext == '.json':
+        if ext == ".json":
             return self._parse_json(file_path)
-        elif ext in ('.yaml', '.yml'):
+        elif ext in (".yaml", ".yml"):
             return self._parse_yaml(file_path)
-        elif ext == '.xml':
+        elif ext == ".xml":
             return self._parse_xml(file_path)
         else:
             # 尝试自动检测格式
@@ -64,7 +67,7 @@ class DataParser(BaseParser):
         logger.info("开始解析 JSON: %s", file_path)
 
         try:
-            with open(file_path, encoding='utf-8', errors='ignore') as f:
+            with open(file_path, encoding="utf-8", errors="ignore") as f:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             logger.error("JSON 解析失败: %s", e)
@@ -87,27 +90,32 @@ class DataParser(BaseParser):
             elements.extend(self._extract_list_elements(data, "root"))
 
         # 添加整体 JSON 元素
-        elements.insert(0, ExtractedElement(
-            elementId="elem_1_json",
-            elementType="code",
-            content=formatted,
-            metadata={
-                "format": "json",
-                "type": type(data).__name__,
-                "top_keys": list(data.keys())[:10] if isinstance(data, dict) else None,
-                "item_count": len(data) if isinstance(data, list) else None
-            }
-        ))
+        elements.insert(
+            0,
+            ExtractedElement(
+                elementId="elem_1_json",
+                elementType="code",
+                content=formatted,
+                metadata={
+                    "format": "json",
+                    "type": type(data).__name__,
+                    "top_keys": list(data.keys())[:10] if isinstance(data, dict) else None,
+                    "item_count": len(data) if isinstance(data, list) else None,
+                },
+            ),
+        )
 
         logger.info("JSON 解析完成: %d 个元素", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_lines),
-            hasImage=False,
-            hasTable=isinstance(data, list) and len(data) > 0
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_lines),
+                hasImage=False,
+                hasTable=isinstance(data, list) and len(data) > 0,
+            )
+        ]
 
     def _parse_yaml(self, file_path: Path) -> list[PageContent]:
         """解析 YAML 文件"""
@@ -117,7 +125,7 @@ class DataParser(BaseParser):
         logger.info("开始解析 YAML: %s", file_path)
 
         try:
-            with open(file_path, encoding='utf-8', errors='ignore') as f:
+            with open(file_path, encoding="utf-8", errors="ignore") as f:
                 data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             logger.error("YAML 解析失败: %s", e)
@@ -139,25 +147,27 @@ class DataParser(BaseParser):
         elif isinstance(data, list):
             elements.extend(self._extract_list_elements(data, "root"))
 
-        elements.insert(0, ExtractedElement(
-            elementId="elem_1_yaml",
-            elementType="code",
-            content=formatted,
-            metadata={
-                "format": "yaml",
-                "type": type(data).__name__ if data is not None else "null"
-            }
-        ))
+        elements.insert(
+            0,
+            ExtractedElement(
+                elementId="elem_1_yaml",
+                elementType="code",
+                content=formatted,
+                metadata={"format": "yaml", "type": type(data).__name__ if data is not None else "null"},
+            ),
+        )
 
         logger.info("YAML 解析完成: %d 个元素", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_lines),
-            hasImage=False,
-            hasTable=isinstance(data, list) and len(data) > 0
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_lines),
+                hasImage=False,
+                hasTable=isinstance(data, list) and len(data) > 0,
+            )
+        ]
 
     def _parse_xml(self, file_path: Path) -> list[PageContent]:
         """解析 XML 文件"""
@@ -177,32 +187,27 @@ class DataParser(BaseParser):
         raw_lines = []
 
         # 格式化 XML 内容
-        formatted = ET.tostring(root, encoding='unicode')
+        formatted = ET.tostring(root, encoding="unicode")
         raw_lines.append(formatted)
 
         # 提取 XML 结构
         elements.extend(self._extract_xml_elements(root))
 
-        elements.insert(0, ExtractedElement(
-            elementId="elem_1_xml",
-            elementType="code",
-            content=formatted,
-            metadata={
-                "format": "xml",
-                "root_tag": root.tag,
-                "root_attribs": dict(root.attrib)
-            }
-        ))
+        elements.insert(
+            0,
+            ExtractedElement(
+                elementId="elem_1_xml",
+                elementType="code",
+                content=formatted,
+                metadata={"format": "xml", "root_tag": root.tag, "root_attribs": dict(root.attrib)},
+            ),
+        )
 
         logger.info("XML 解析完成: %d 个元素", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_lines),
-            hasImage=False,
-            hasTable=False
-        )]
+        return [
+            PageContent(pageNumber=1, elements=elements, rawText="\n".join(raw_lines), hasImage=False, hasTable=False)
+        ]
 
     def _parse_auto(self, file_path: Path) -> list[PageContent]:
         """自动检测格式并解析"""
@@ -236,16 +241,18 @@ class DataParser(BaseParser):
                 content = f"{key}: {value}"
                 elem_type = "text"
 
-            elements.append(ExtractedElement(
-                elementId=elem_id,
-                elementType=elem_type,
-                content=content,
-                metadata={
-                    "key": key,
-                    "value_type": type(value).__name__,
-                    "value": value if not isinstance(value, (dict, list)) else None
-                }
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=elem_id,
+                    elementType=elem_type,
+                    content=content,
+                    metadata={
+                        "key": key,
+                        "value_type": type(value).__name__,
+                        "value": value if not isinstance(value, (dict, list)) else None,
+                    },
+                )
+            )
 
             # 递归提取嵌套结构
             if isinstance(value, dict):
@@ -263,19 +270,18 @@ class DataParser(BaseParser):
             if isinstance(item, dict):
                 # 将字典格式化为表格行
                 row_text = " | ".join(f"{k}={v}" for k, v in item.items())
-                elements.append(ExtractedElement(
-                    elementId=elem_id,
-                    elementType="table_row",
-                    content=row_text,
-                    metadata={"index": idx, "item": item}
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=elem_id,
+                        elementType="table_row",
+                        content=row_text,
+                        metadata={"index": idx, "item": item},
+                    )
+                )
             else:
-                elements.append(ExtractedElement(
-                    elementId=elem_id,
-                    elementType="list",
-                    content=str(item),
-                    metadata={"index": idx}
-                ))
+                elements.append(
+                    ExtractedElement(elementId=elem_id, elementType="list", content=str(item), metadata={"index": idx})
+                )
 
         return elements
 
@@ -288,25 +294,25 @@ class DataParser(BaseParser):
         if element.attrib:
             tag_info += f" attribs={dict(element.attrib)}"
 
-        elements.append(ExtractedElement(
-            elementId=f"elem_1_xml_{element.tag}_{depth}",
-            elementType="heading",
-            content=tag_info,
-            metadata={
-                "tag": element.tag,
-                "attribs": dict(element.attrib),
-                "depth": depth
-            }
-        ))
+        elements.append(
+            ExtractedElement(
+                elementId=f"elem_1_xml_{element.tag}_{depth}",
+                elementType="heading",
+                content=tag_info,
+                metadata={"tag": element.tag, "attribs": dict(element.attrib), "depth": depth},
+            )
+        )
 
         # 文本内容
         if element.text and element.text.strip():
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_xml_text_{depth}",
-                elementType="text",
-                content=element.text.strip(),
-                metadata={"depth": depth}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_xml_text_{depth}",
+                    elementType="text",
+                    content=element.text.strip(),
+                    metadata={"depth": depth},
+                )
+            )
 
         # 递归子元素
         for child in element:

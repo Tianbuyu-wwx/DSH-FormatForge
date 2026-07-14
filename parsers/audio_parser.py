@@ -3,6 +3,7 @@
 提取 WAV/MP3/FLAC/OGG/M4A/AIFF 等音频文件的元数据
 包括采样率、声道数、比特率、时长等信息
 """
+
 import logging
 import os
 import struct
@@ -29,21 +30,33 @@ class AudioParser(BaseParser):
     @property
     def supported_extensions(self) -> list[str]:
         return [
-            ".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aiff", ".aif",
-            ".WAV", ".MP3", ".FLAC", ".OGG", ".M4A", ".AIFF", ".AIF",
+            ".wav",
+            ".mp3",
+            ".flac",
+            ".ogg",
+            ".m4a",
+            ".aiff",
+            ".aif",
+            ".WAV",
+            ".MP3",
+            ".FLAC",
+            ".OGG",
+            ".M4A",
+            ".AIFF",
+            ".AIF",
         ]
 
     @property
     def supported_magic(self) -> list[bytes]:
         return [
-            b"RIFF",      # WAV
+            b"RIFF",  # WAV
             b"\xff\xfb",  # MP3 (MPEG1 Layer3)
             b"\xff\xf3",  # MP3 (MPEG2 Layer3)
             b"\xff\xf2",  # MP3 (MPEG2 Layer3)
-            b"ID3",       # MP3 with ID3v2 tag
-            b"fLaC",      # FLAC
-            b"OggS",      # OGG
-            b"FORM",      # AIFF
+            b"ID3",  # MP3 with ID3v2 tag
+            b"fLaC",  # FLAC
+            b"OggS",  # OGG
+            b"FORM",  # AIFF
         ]
 
     def parse(self, file_path: Path) -> list[PageContent]:
@@ -85,38 +98,42 @@ class AudioParser(BaseParser):
             text = self._format_metadata(metadata)
             logger.info("音频解析完成: %s", file_path.name)
 
-            return [PageContent(
-                pageNumber=1,
-                elements=[
-                    ExtractedElement(
-                        elementId="elem_1_0",
-                        elementType="text",
-                        content=text,
-                        metadata=metadata,
-                    )
-                ],
-                rawText=text,
-                hasImage=False,
-                hasTable=False,
-            )]
+            return [
+                PageContent(
+                    pageNumber=1,
+                    elements=[
+                        ExtractedElement(
+                            elementId="elem_1_0",
+                            elementType="text",
+                            content=text,
+                            metadata=metadata,
+                        )
+                    ],
+                    rawText=text,
+                    hasImage=False,
+                    hasTable=False,
+                )
+            ]
 
         except Exception as e:
             logger.error("音频解析失败: %s - %s", file_path.name, e)
             msg = f"[音频解析失败] {file_path.name}: {e}"
-            return [PageContent(
-                pageNumber=1,
-                elements=[
-                    ExtractedElement(
-                        elementId="elem_1_0",
-                        elementType="text",
-                        content=msg,
-                        metadata={"error": str(e)},
-                    )
-                ],
-                rawText=msg,
-                hasImage=False,
-                hasTable=False,
-            )]
+            return [
+                PageContent(
+                    pageNumber=1,
+                    elements=[
+                        ExtractedElement(
+                            elementId="elem_1_0",
+                            elementType="text",
+                            content=msg,
+                            metadata={"error": str(e)},
+                        )
+                    ],
+                    rawText=msg,
+                    hasImage=False,
+                    hasTable=False,
+                )
+            ]
 
     def _parse_wav(self, f, file_path: Path, metadata: dict[str, Any]) -> dict[str, Any]:
         """解析 WAV (RIFF) 文件头"""
@@ -136,17 +153,18 @@ class AudioParser(BaseParser):
 
             while pos < len(header_data) + 8:
                 # 读取 chunk 头
-                chunk_header = header_data[pos:pos + 8]
+                chunk_header = header_data[pos : pos + 8]
                 if len(chunk_header) < 8:
                     pos += 8
                     continue
                 chunk_id, chunk_size = struct.unpack("<4sI", chunk_header)
 
                 if chunk_id == b"fmt ":
-                    fmt_data = header_data[pos + 8:pos + 8 + chunk_size]
+                    fmt_data = header_data[pos + 8 : pos + 8 + chunk_size]
                     if len(fmt_data) >= 16:
-                        audio_format, num_channels, sample_rate, byte_rate, block_align, bits_per_sample = \
+                        audio_format, num_channels, sample_rate, byte_rate, block_align, bits_per_sample = (
                             struct.unpack("<HHIIHH", fmt_data[:16])
+                        )
                         metadata["audio_format"] = "PCM" if audio_format == 1 else f"压缩格式({audio_format})"
                         metadata["channels"] = num_channels
                         metadata["sample_rate"] = sample_rate
@@ -189,7 +207,7 @@ class AudioParser(BaseParser):
                 tag_header = f.read(7)
                 if len(tag_header) >= 7:
                     version_major, version_minor = struct.unpack(">BB", tag_header[:2])
-                    flags = tag_header[2]
+                    tag_header[2]
                     # 解 synchsafe 整数
                     size_bytes = tag_header[3:7]
                     tag_size = (size_bytes[0] << 21) | (size_bytes[1] << 14) | (size_bytes[2] << 7) | size_bytes[3]
@@ -206,7 +224,7 @@ class AudioParser(BaseParser):
             sync_found = False
 
             # 扫描同步字
-            scan_start = f.tell() - 4
+            f.tell() - 4
             for _ in range(4096):  # 最多扫描 4KB
                 if len(frame_header) < 4:
                     break
@@ -221,7 +239,7 @@ class AudioParser(BaseParser):
                 layer = (b2 >> 1) & 0x03
                 bitrate_index = (b3 >> 4) & 0x0F
                 sample_rate_index = (b3 >> 2) & 0x03
-                padding = (b3 >> 1) & 0x01
+                (b3 >> 1) & 0x01
 
                 # MPEG 版本
                 mpeg_versions = {0: "MPEG 2.5", 2: "MPEG 2", 3: "MPEG 1"}
@@ -235,7 +253,7 @@ class AudioParser(BaseParser):
                 sample_rates = {
                     3: {0: 44100, 1: 48000, 2: 32000},  # MPEG1
                     2: {0: 22050, 1: 24000, 2: 16000},  # MPEG2
-                    0: {0: 11025, 1: 12000, 2: 8000},   # MPEG2.5
+                    0: {0: 11025, 1: 12000, 2: 8000},  # MPEG2.5
                 }
                 sample_rate = sample_rates.get(mpeg_version, {}).get(sample_rate_index, 44100)
                 metadata["sample_rate"] = sample_rate
@@ -298,24 +316,26 @@ class AudioParser(BaseParser):
             pos = 0
             while pos + 10 <= len(data):
                 if version >= 3:
-                    frame_id = data[pos:pos + 4].decode("ascii", errors="ignore")
+                    frame_id = data[pos : pos + 4].decode("ascii", errors="ignore")
                     if frame_id[0] == "\x00":
                         break
                     if version == 4:
-                        frame_size = (data[pos + 4] << 21) | (data[pos + 5] << 14) | (data[pos + 6] << 7) | data[pos + 7]
+                        frame_size = (
+                            (data[pos + 4] << 21) | (data[pos + 5] << 14) | (data[pos + 6] << 7) | data[pos + 7]
+                        )
                     else:
-                        frame_size = struct.unpack(">I", data[pos + 4:pos + 8])[0]
-                    frame_flags = struct.unpack(">H", data[pos + 8:pos + 10])[0]
+                        frame_size = struct.unpack(">I", data[pos + 4 : pos + 8])[0]
+                    struct.unpack(">H", data[pos + 8 : pos + 10])[0]
                     header_size = 10
                 else:
-                    frame_id = data[pos:pos + 3].decode("ascii", errors="ignore")
-                    frame_size = struct.unpack(">I", b"\x00" + data[pos + 3:pos + 6])[0]
+                    frame_id = data[pos : pos + 3].decode("ascii", errors="ignore")
+                    frame_size = struct.unpack(">I", b"\x00" + data[pos + 3 : pos + 6])[0]
                     header_size = 6
 
                 if frame_size <= 0 or pos + header_size + frame_size > len(data):
                     break
 
-                frame_data = data[pos + header_size:pos + header_size + frame_size]
+                frame_data = data[pos + header_size : pos + header_size + frame_size]
                 frame_data_str = frame_data.rstrip(b"\x00").decode("utf-8", errors="ignore").strip()
 
                 if frame_id in ("TIT2", "TT2") and frame_data_str:
@@ -381,8 +401,8 @@ class AudioParser(BaseParser):
                 # 最低采样率 (20 bits), 最高采样率 (3 bits), 声道 (3 bits), 位深 (5 bits), 采样总数 (36 bits)
                 min_block = (streaminfo[0] << 8) | streaminfo[1]
                 max_block = (streaminfo[2] << 8) | streaminfo[3]
-                min_frame = (streaminfo[4] << 16) | (streaminfo[5] << 8) | streaminfo[6]
-                max_frame = (streaminfo[7] << 16) | (streaminfo[8] << 8) | streaminfo[9]
+                (streaminfo[4] << 16) | (streaminfo[5] << 8) | streaminfo[6]
+                (streaminfo[7] << 16) | (streaminfo[8] << 8) | streaminfo[9]
 
                 # sample_rate (20 bits): streaminfo[10:13] 高 20 位
                 sample_rate = (streaminfo[10] << 12) | (streaminfo[11] << 4) | ((streaminfo[12] >> 4) & 0x0F)
@@ -395,8 +415,13 @@ class AudioParser(BaseParser):
                 bits_per_sample += 1
 
                 # total_samples (36 bits): streaminfo[13:18]
-                total_samples = ((streaminfo[13] & 0x0F) << 32) | (streaminfo[14] << 24) | \
-                    (streaminfo[15] << 16) | (streaminfo[16] << 8) | streaminfo[17]
+                total_samples = (
+                    ((streaminfo[13] & 0x0F) << 32)
+                    | (streaminfo[14] << 24)
+                    | (streaminfo[15] << 16)
+                    | (streaminfo[16] << 8)
+                    | streaminfo[17]
+                )
 
                 metadata["sample_rate"] = sample_rate
                 metadata["channels"] = channels
@@ -450,7 +475,7 @@ class AudioParser(BaseParser):
             num_segments = f.read(1)
             if num_segments:
                 n = num_segments[0]
-                segments = f.read(n)
+                f.read(n)
 
                 # 识别内容类型 (vorbis / opus)
                 packet_header = f.read(8)
@@ -461,8 +486,9 @@ class AudioParser(BaseParser):
                         # Vorbis 头: packet_type(1) + "vorbis"(6) + version(4)
                         vorbis_data = f.read(20)
                         if len(vorbis_data) >= 20:
-                            version, channels, sample_rate, max_bitrate, nom_bitrate, min_bitrate = \
-                                struct.unpack("<IBIIIi", vorbis_data[:20])
+                            version, channels, sample_rate, max_bitrate, nom_bitrate, min_bitrate = struct.unpack(
+                                "<IBIIIi", vorbis_data[:20]
+                            )
                             metadata["channels"] = channels
                             metadata["sample_rate"] = sample_rate
                             metadata["nominal_bitrate"] = nom_bitrate // 1000 if nom_bitrate > 0 else 0
@@ -472,8 +498,7 @@ class AudioParser(BaseParser):
                         # Opus 头: "OpusHead" + version + channels + pre_skip + sample_rate + gain + ...
                         opus_data = f.read(11)
                         if len(opus_data) >= 11:
-                            version, channels, pre_skip, sample_rate = \
-                                struct.unpack("<BBHI", opus_data[:8])
+                            version, channels, pre_skip, sample_rate = struct.unpack("<BBHI", opus_data[:8])
                             metadata["channels"] = channels
                             metadata["sample_rate"] = 48000  # Opus 内部总是 48kHz
 
@@ -528,14 +553,14 @@ class AudioParser(BaseParser):
         try:
             pos = 0
             while pos + 8 <= len(data):
-                chunk_size = struct.unpack(">I", data[pos:pos + 4])[0]
-                chunk_type = data[pos + 4:pos + 8].decode("ascii", errors="ignore")
+                chunk_size = struct.unpack(">I", data[pos : pos + 4])[0]
+                chunk_type = data[pos + 4 : pos + 8].decode("ascii", errors="ignore")
 
                 if chunk_size < 8:
                     break
 
                 if chunk_type == "trak":
-                    trak_data = data[pos + 8:pos + chunk_size]
+                    trak_data = data[pos + 8 : pos + chunk_size]
                     # 查找 mdia -> minf -> stbl -> stsd
                     self._parse_mp4_trak(trak_data, metadata)
 
@@ -548,14 +573,14 @@ class AudioParser(BaseParser):
         try:
             pos = 0
             while pos + 8 <= len(data):
-                chunk_size = struct.unpack(">I", data[pos:pos + 4])[0]
-                chunk_type = data[pos + 4:pos + 8].decode("ascii", errors="ignore")
+                chunk_size = struct.unpack(">I", data[pos : pos + 4])[0]
+                chunk_type = data[pos + 4 : pos + 8].decode("ascii", errors="ignore")
 
                 if chunk_size < 8:
                     break
 
                 if chunk_type == "mdia":
-                    mdia_data = data[pos + 8:pos + chunk_size]
+                    mdia_data = data[pos + 8 : pos + chunk_size]
                     self._parse_mp4_mdia(mdia_data, metadata)
 
                 pos += chunk_size
@@ -567,14 +592,14 @@ class AudioParser(BaseParser):
         try:
             pos = 0
             while pos + 8 <= len(data):
-                chunk_size = struct.unpack(">I", data[pos:pos + 4])[0]
-                chunk_type = data[pos + 4:pos + 8].decode("ascii", errors="ignore")
+                chunk_size = struct.unpack(">I", data[pos : pos + 4])[0]
+                chunk_type = data[pos + 4 : pos + 8].decode("ascii", errors="ignore")
 
                 if chunk_size < 8:
                     break
 
                 if chunk_type == "mdhd":
-                    mdhd_data = data[pos + 8:pos + chunk_size]
+                    mdhd_data = data[pos + 8 : pos + chunk_size]
                     if len(mdhd_data) >= 20:
                         version = mdhd_data[0]
                         if version == 0 and len(mdhd_data) >= 20:
@@ -589,7 +614,7 @@ class AudioParser(BaseParser):
                                     metadata["bitrate"] = round(metadata["file_size"] * 8 / secs / 1000)
 
                 elif chunk_type == "minf":
-                    minf_data = data[pos + 8:pos + chunk_size]
+                    minf_data = data[pos + 8 : pos + chunk_size]
                     self._parse_mp4_minf(minf_data, metadata)
 
                 pos += chunk_size
@@ -601,14 +626,14 @@ class AudioParser(BaseParser):
         try:
             pos = 0
             while pos + 8 <= len(data):
-                chunk_size = struct.unpack(">I", data[pos:pos + 4])[0]
-                chunk_type = data[pos + 4:pos + 8].decode("ascii", errors="ignore")
+                chunk_size = struct.unpack(">I", data[pos : pos + 4])[0]
+                chunk_type = data[pos + 4 : pos + 8].decode("ascii", errors="ignore")
 
                 if chunk_size < 8:
                     break
 
                 if chunk_type == "stbl":
-                    stbl_data = data[pos + 8:pos + chunk_size]
+                    stbl_data = data[pos + 8 : pos + chunk_size]
                     self._parse_mp4_stbl(stbl_data, metadata)
 
                 pos += chunk_size
@@ -620,16 +645,16 @@ class AudioParser(BaseParser):
         try:
             pos = 0
             while pos + 8 <= len(data):
-                chunk_size = struct.unpack(">I", data[pos:pos + 4])[0]
-                chunk_type = data[pos + 4:pos + 8].decode("ascii", errors="ignore")
+                chunk_size = struct.unpack(">I", data[pos : pos + 4])[0]
+                chunk_type = data[pos + 4 : pos + 8].decode("ascii", errors="ignore")
 
                 if chunk_size < 8:
                     break
 
                 if chunk_type == "stsd":
-                    stsd_data = data[pos + 8:pos + chunk_size]
+                    stsd_data = data[pos + 8 : pos + chunk_size]
                     if len(stsd_data) >= 16:
-                        entry_count = struct.unpack(">I", stsd_data[4:8])[0]
+                        struct.unpack(">I", stsd_data[4:8])[0]
                         entry_data = stsd_data[8:]
                         if len(entry_data) >= 8:
                             entry_size = struct.unpack(">I", entry_data[:4])[0]
@@ -662,22 +687,20 @@ class AudioParser(BaseParser):
             # FORM 头
             form_id, form_size, aiff_id = struct.unpack(">4sI4s", header_data[:12])
             metadata["form_size"] = form_size
-            is_aifc = False
 
             if aiff_id == b"AIFF":
                 metadata["aiff_variant"] = "AIFF"
             elif aiff_id == b"AIFC":
                 metadata["aiff_variant"] = "AIFC (compressed)"
-                is_aifc = True
             else:
                 return metadata
 
             pos = 12
             while pos + 8 <= len(header_data):
-                chunk_id, chunk_size = struct.unpack(">4sI", header_data[pos:pos + 8])
+                chunk_id, chunk_size = struct.unpack(">4sI", header_data[pos : pos + 8])
 
                 if chunk_id == b"COMM":
-                    comm_data = header_data[pos + 8:pos + 8 + chunk_size]
+                    comm_data = header_data[pos + 8 : pos + 8 + chunk_size]
                     if len(comm_data) >= 18:
                         num_channels = struct.unpack(">H", comm_data[:2])[0]
                         num_frames = struct.unpack(">I", comm_data[2:6])[0]
@@ -687,10 +710,7 @@ class AudioParser(BaseParser):
                         if len(sample_rate_bytes) == 10:
                             exp = struct.unpack(">H", sample_rate_bytes[:2])[0]
                             mantissa = struct.unpack(">Q", sample_rate_bytes[2:10])[0]
-                            if exp == 0:
-                                sample_rate = 0
-                            else:
-                                sample_rate = (mantissa / (2 ** 63)) * (2 ** (exp - 16383))
+                            sample_rate = 0 if exp == 0 else mantissa / 2**63 * 2 ** (exp - 16383)
                             metadata["sample_rate"] = round(sample_rate)
                             metadata["bit_depth"] = sample_size
                             metadata["channels"] = num_channels
@@ -718,17 +738,17 @@ class AudioParser(BaseParser):
 
             if pos + 4 > len(data):
                 return
-            num_comments = struct.unpack("<I", data[pos:pos + 4])[0]
+            num_comments = struct.unpack("<I", data[pos : pos + 4])[0]
             pos += 4
 
             for _ in range(min(num_comments, 50)):
                 if pos + 4 > len(data):
                     break
-                comment_len = struct.unpack("<I", data[pos:pos + 4])[0]
+                comment_len = struct.unpack("<I", data[pos : pos + 4])[0]
                 pos += 4
                 if comment_len <= 0 or pos + comment_len > len(data):
                     break
-                comment_str = data[pos:pos + comment_len].decode("utf-8", errors="ignore")
+                comment_str = data[pos : pos + comment_len].decode("utf-8", errors="ignore")
                 pos += comment_len
 
                 if "=" in comment_str:

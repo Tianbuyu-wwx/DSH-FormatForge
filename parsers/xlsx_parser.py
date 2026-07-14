@@ -2,6 +2,7 @@
 XLSX/XLS 文件解析器
 支持解析 Excel 表格 (.xls, .xlsx, .xlsm)
 """
+
 import logging
 from pathlib import Path
 
@@ -15,6 +16,7 @@ try:
     import openpyxl
     from openpyxl import load_workbook
     from openpyxl.utils import get_column_letter
+
     XLSX_AVAILABLE = True
 except ImportError:
     XLSX_AVAILABLE = False
@@ -22,6 +24,7 @@ except ImportError:
 
 try:
     import xlrd
+
     XLS_AVAILABLE = True
 except ImportError:
     XLS_AVAILABLE = False
@@ -44,9 +47,9 @@ class XLSXParser(BaseParser):
         """解析 Excel 文件"""
         ext = file_path.suffix.lower()
 
-        if ext in ['.xlsx', '.xlsm', '.xlsb']:
+        if ext in [".xlsx", ".xlsm", ".xlsb"]:
             return self._parse_xlsx(file_path)
-        elif ext == '.xls':
+        elif ext == ".xls":
             return self._parse_xls(file_path)
         else:
             # 尝试用 openpyxl 打开
@@ -93,7 +96,7 @@ class XLSXParser(BaseParser):
 
             # 格式化表格文本
             table_lines = []
-            for row_idx, row_data in enumerate(sheet_data):
+            for _row_idx, row_data in enumerate(sheet_data):
                 # 补齐列数
                 while len(row_data) < max_col:
                     row_data.append("")
@@ -105,18 +108,20 @@ class XLSXParser(BaseParser):
             # 检测表头（第一行）
             header_text = table_lines[0] if table_lines else ""
 
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx}",
-                elementType="table",
-                content=f"Sheet: {sheet_name}\n{table_text}",
-                metadata={
-                    "sheet_name": sheet_name,
-                    "rows": len(sheet_data),
-                    "cols": max_col,
-                    "header": header_text,
-                    "has_header": self._detect_header(sheet_data)
-                }
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx}",
+                    elementType="table",
+                    content=f"Sheet: {sheet_name}\n{table_text}",
+                    metadata={
+                        "sheet_name": sheet_name,
+                        "rows": len(sheet_data),
+                        "cols": max_col,
+                        "header": header_text,
+                        "has_header": self._detect_header(sheet_data),
+                    },
+                )
+            )
             raw_text_parts.append(f"[Sheet: {sheet_name}]\n{table_text}")
             elem_idx += 1
 
@@ -124,13 +129,15 @@ class XLSXParser(BaseParser):
 
         logger.info("XLSX 解析完成: %d 个 Sheet", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n\n".join(raw_text_parts),
-            hasImage=False,
-            hasTable=len(elements) > 0
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n\n".join(raw_text_parts),
+                hasImage=False,
+                hasTable=len(elements) > 0,
+            )
+        ]
 
     def _parse_xls(self, file_path: Path) -> list[PageContent]:
         """解析旧版 Excel 格式 (.xls)"""
@@ -180,30 +187,34 @@ class XLSXParser(BaseParser):
             table_text = "\n".join(table_lines)
             header_text = table_lines[0] if table_lines else ""
 
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx}",
-                elementType="table",
-                content=f"Sheet: {sheet_name}\n{table_text}",
-                metadata={
-                    "sheet_name": sheet_name,
-                    "rows": len(sheet_data),
-                    "cols": sheet.ncols,
-                    "header": header_text,
-                    "has_header": self._detect_header(sheet_data)
-                }
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx}",
+                    elementType="table",
+                    content=f"Sheet: {sheet_name}\n{table_text}",
+                    metadata={
+                        "sheet_name": sheet_name,
+                        "rows": len(sheet_data),
+                        "cols": sheet.ncols,
+                        "header": header_text,
+                        "has_header": self._detect_header(sheet_data),
+                    },
+                )
+            )
             raw_text_parts.append(f"[Sheet: {sheet_name}]\n{table_text}")
             elem_idx += 1
 
         logger.info("XLS 解析完成: %d 个 Sheet", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n\n".join(raw_text_parts),
-            hasImage=False,
-            hasTable=len(elements) > 0
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n\n".join(raw_text_parts),
+                hasImage=False,
+                hasTable=len(elements) > 0,
+            )
+        ]
 
     def _detect_header(self, sheet_data: list[list[str]]) -> bool:
         """检测第一行是否为表头"""
@@ -218,30 +229,41 @@ class XLSXParser(BaseParser):
         second_types = [self._guess_type(cell) for cell in second_row]
 
         # 如果第一行全是文本，第二行有数字，可能是表头
-        if all(t == 'str' for t in first_types) and any(t in ('int', 'float') for t in second_types):
+        if all(t == "str" for t in first_types) and any(t in ("int", "float") for t in second_types):
             return True
 
         # 如果第一行有常见表头关键词
-        header_keywords = ['id', 'name', 'title', 'date', 'time', 'total', 'sum',
-                          '编号', '名称', '标题', '日期', '时间', '合计', '总计']
-        first_text = ' '.join(first_row).lower()
-        if any(kw in first_text for kw in header_keywords):
-            return True
-
-        return False
+        header_keywords = [
+            "id",
+            "name",
+            "title",
+            "date",
+            "time",
+            "total",
+            "sum",
+            "编号",
+            "名称",
+            "标题",
+            "日期",
+            "时间",
+            "合计",
+            "总计",
+        ]
+        first_text = " ".join(first_row).lower()
+        return bool(any(kw in first_text for kw in header_keywords))
 
     def _guess_type(self, value: str) -> str:
         """猜测单元格数据类型"""
         if not value:
-            return 'empty'
+            return "empty"
         try:
             int(value)
-            return 'int'
+            return "int"
         except ValueError:
             pass
         try:
             float(value)
-            return 'float'
+            return "float"
         except ValueError:
             pass
-        return 'str'
+        return "str"

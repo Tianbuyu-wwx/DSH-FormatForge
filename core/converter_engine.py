@@ -8,6 +8,7 @@
 本模块保留 DataConverter / BatchConverter 作为向后兼容的薄封装层，
 对外 API 完全不变，内部全部委托给 ConversionPipeline。
 """
+
 import logging
 from typing import Any
 
@@ -93,7 +94,9 @@ class DataConverter:
 
         try:
             strategy = strategy_registry.select_best_strategy(
-                parsed_file, conversion_type, None,
+                parsed_file,
+                conversion_type,
+                None,
             )
             logs.append(create_processing_log("convert", f"选择策略: {strategy.strategy_name}"))
 

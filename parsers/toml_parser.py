@@ -3,10 +3,10 @@ TOML 格式解析器
 使用 Python 3.11+ 标准库 tomllib 解析 TOML 配置文件
 提取键值对、表、数组为结构化元素
 """
+
 import logging
-import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import tomllib
@@ -55,13 +55,15 @@ class TOMLParser(BaseParser):
 
         logger.info("TOML 解析完成: %d 个元素", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_lines),
-            hasImage=False,
-            hasTable=False,
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_lines),
+                hasImage=False,
+                hasTable=False,
+            )
+        ]
 
     def _flatten_toml(
         self,
@@ -99,29 +101,34 @@ class TOMLParser(BaseParser):
             full_key = f"{prefix}." if prefix else ""
             for k, v in simple_pairs.items():
                 display_value = self._format_value(v)
-                elements.append(ExtractedElement(
-                    elementId=f"elem_1_{elem_idx[0]}",
-                    elementType="key_value",
-                    content=f"{k}: {display_value}",
-                    metadata={
-                        "key": f"{full_key}{k}",
-                        "value": v,
-                        "type": type(v).__name__ if not isinstance(v, (list, dict)) else
-                                ("array" if isinstance(v, list) else "table"),
-                    }
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_1_{elem_idx[0]}",
+                        elementType="key_value",
+                        content=f"{k}: {display_value}",
+                        metadata={
+                            "key": f"{full_key}{k}",
+                            "value": v,
+                            "type": type(v).__name__
+                            if not isinstance(v, (list, dict))
+                            else ("array" if isinstance(v, list) else "table"),
+                        },
+                    )
+                )
                 raw_lines.append(f"{k} = {display_value}")
                 elem_idx[0] += 1
 
         # 2. 输出表
         for table_name, table_data in tables.items():
             full_path = f"{prefix}.{table_name}" if prefix else table_name
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="section",
-                content=table_name,
-                metadata={"path": full_path, "type": "table"}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="section",
+                    content=table_name,
+                    metadata={"path": full_path, "type": "table"},
+                )
+            )
             raw_lines.append(f"\n[{full_path}]")
             elem_idx[0] += 1
 
@@ -131,12 +138,14 @@ class TOMLParser(BaseParser):
         for arr_name, arr_data in arrays_of_tables.items():
             full_path = f"{prefix}.{arr_name}" if prefix else arr_name
             for idx, item in enumerate(arr_data):
-                elements.append(ExtractedElement(
-                    elementId=f"elem_1_{elem_idx[0]}",
-                    elementType="section",
-                    content=f"{arr_name}[{idx}]",
-                    metadata={"path": f"{full_path}[{idx}]", "type": "array_of_tables", "index": idx}
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_1_{elem_idx[0]}",
+                        elementType="section",
+                        content=f"{arr_name}[{idx}]",
+                        metadata={"path": f"{full_path}[{idx}]", "type": "array_of_tables", "index": idx},
+                    )
+                )
                 raw_lines.append(f"\n[[{full_path}]]")
                 elem_idx[0] += 1
 

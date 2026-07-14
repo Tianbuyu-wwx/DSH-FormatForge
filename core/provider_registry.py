@@ -8,6 +8,7 @@
 
 提供统一的 Provider 注册、能力查询、客户端创建接口。
 """
+
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -32,9 +33,11 @@ logger = logging.getLogger("provider_registry")
 # Provider 注册信息
 # ═══════════════════════════════════════════════════════════
 
+
 @dataclass
 class ProviderInfo:
     """Provider 完整注册信息"""
+
     name: str
     capabilities: AiCapabilities
     client_class: type[AIClient] | None = None
@@ -241,24 +244,19 @@ class ProviderRegistry:
 
         if info is None:
             logger.error("未知的 AI Provider: %s", provider_name)
-            raise ValueError(
-                f"不支持的 AI 提供商: {provider_name}，支持: {self.list_providers()}"
-            )
+            raise ValueError(f"不支持的 AI 提供商: {provider_name}，支持: {self.list_providers()}")
 
         # 获取配置：kwargs > env > defaults
-        api_key = kwargs.get("api_key") or getattr(
-            settings, f"{info.env_prefix}_API_KEY", ""
-        )
+        api_key = kwargs.get("api_key") or getattr(settings, f"{info.env_prefix}_API_KEY", "")
         base_url = (
-            kwargs.get("base_url")
-            or getattr(settings, f"{info.env_prefix}_BASE_URL", "")
-            or info.default_base_url
+            kwargs.get("base_url") or getattr(settings, f"{info.env_prefix}_BASE_URL", "") or info.default_base_url
         )
 
         if not api_key:
             logger.warning(
                 "Provider %s 未配置 API Key (env: %s_API_KEY)",
-                provider_name, info.env_prefix,
+                provider_name,
+                info.env_prefix,
             )
             return None
 
@@ -267,18 +265,15 @@ class ProviderRegistry:
             return None
 
         try:
-            client = info.client_class(
-                api_key=api_key, base_url=base_url, timeout=timeout
-            )
+            client = info.client_class(api_key=api_key, base_url=base_url, timeout=timeout)
             logger.info(
                 "AI 客户端创建成功: provider=%s, base_url=%s",
-                provider_name, base_url,
+                provider_name,
+                base_url,
             )
             return client
         except Exception as e:
-            logger.error(
-                "AI 客户端创建失败: provider=%s, error=%s", provider_name, e
-            )
+            logger.error("AI 客户端创建失败: provider=%s, error=%s", provider_name, e)
             return None
 
 
@@ -293,19 +288,14 @@ provider_registry = ProviderRegistry()
 # 向后兼容的函数（替代 ai_client.create_ai_client）
 # ═══════════════════════════════════════════════════════════
 
-def create_ai_client(
-    provider: str = "minimax", timeout: int = 120, **kwargs: Any
-) -> AIClient:
+
+def create_ai_client(provider: str = "minimax", timeout: int = 120, **kwargs: Any) -> AIClient:
     """
     创建 AI 客户端工厂函数（兼容旧接口）
 
     新代码请直接使用 provider_registry.create_client()
     """
-    client = provider_registry.create_client(
-        provider=provider, timeout=timeout, **kwargs
-    )
+    client = provider_registry.create_client(provider=provider, timeout=timeout, **kwargs)
     if client is None:
-        raise ValueError(
-            f"无法创建 AI 客户端: provider={provider}，请检查 API Key 配置"
-        )
+        raise ValueError(f"无法创建 AI 客户端: provider={provider}，请检查 API Key 配置")
     return client

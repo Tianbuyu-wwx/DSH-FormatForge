@@ -10,26 +10,63 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
-    "fastapi==0.109.0",
-    "uvicorn==0.27.0",
-    "python-multipart==0.0.6",
-    "openai==1.12.0",
-    "python-pptx==0.6.23",
-    "pdfplumber==0.11.9",
-    "pydantic==2.6.0",
+    # === Web 框架 ===
+    "fastapi>=0.109.0,<1.0",
+    "uvicorn>=0.27.0,<1.0",
+    "python-multipart>=0.0.6",
+    # === 数据模型 ===
+    "pydantic>=2.6.0,<3.0",
     "pydantic-settings>=2.1.0",
-    "python-dotenv==1.0.0",
-    "httpx==0.26.0",
-    "Pillow==11.3.0",
+    # === HTTP 客户端 ===
+    "httpx>=0.26.0",
+    "python-dotenv>=1.0.0",
+    # === AI / LLM ===
+    "openai>=1.12.0",
+    # === 核心解析器（必需） ===
+    "pdfplumber>=0.11.9",
+    "Pillow>=10.0.0",
     "PyYAML>=6.0",
-    "extract-msg>=0.55.0",
+    # === 主流 Office 解析器 ===
+    "openpyxl>=3.1.0",   # XLSX/XLSM
+    "python-docx>=1.0.0", # DOCX
+    "python-pptx>=0.6.23", # PPTX
+    # === 编码检测 ===
+    "chardet>=5.0.0",
+    # === 邮件解析 ===
+    "extract-msg>=0.55.0",  # Outlook .msg
 ]
 
 [project.optional-dependencies]
+# === 开发工具 ===
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.23",
     "ruff>=0.3.0",
     "mypy>=1.0",
+]
+# === PDF/OCR 增强（pdfplumber 之外的 PDF 库与 OCR 引擎） ===
+ocr = [
+    "pdfminer.six>=20240706",  # PDF 备用解析（pdfplumber 失败时）
+    "pytesseract>=0.3.10",     # Tesseract OCR Python 绑定（系统需装 tesseract-ocr）
+    "paddleocr>=2.7.0",        # PaddleOCR 中文识别（可选，慢）
+    "easyocr>=1.7.0",          # EasyOCR（可选，慢）
+]
+# === 压缩格式扩展 ===
+archive = [
+    "py7zr>=0.21.0",  # .7z 支持
+    "rarfile>=4.1",   # .rar 支持
+]
+# === 富文本格式 ===
+richtext = [
+    "striprtf>=0.0.26",  # .rtf 解析
+]
+# === 全部可选依赖 ===
+all = [
+    "pdfminer.six>=20240706",
+    "pytesseract>=0.3.10",
+    "py7zr>=0.21.0",
+    "rarfile>=4.1",
+    "striprtf>=0.0.26",
 ]
 
 [tool.pytest.ini_options]

@@ -8,6 +8,7 @@ Webhook 回调管理器
 4. HMAC-SHA256 签名验证
 5. SQLite 持久化状态
 """
+
 import asyncio
 import hashlib
 import hmac
@@ -16,7 +17,6 @@ import logging
 import secrets
 import sqlite3
 import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -102,7 +102,7 @@ class WebhookManager:
                     """INSERT OR REPLACE INTO webhooks
                        (task_id, callback_url, secret, status, created_at, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?)""",
-                    (task_id, callback_url, webhook_secret, WebhookStatus.PENDING, now, now)
+                    (task_id, callback_url, webhook_secret, WebhookStatus.PENDING, now, now),
                 )
                 conn.commit()
                 logger.info("Webhook 已注册: task_id=%s, url=%s", task_id, callback_url)
@@ -126,9 +126,7 @@ class WebhookManager:
         """异步投递转换结果到回调 URL"""
         conn = self._get_conn()
         try:
-            row = conn.execute(
-                "SELECT * FROM webhooks WHERE task_id = ?", (task_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM webhooks WHERE task_id = ?", (task_id,)).fetchone()
 
             if not row:
                 logger.warning("Webhook 未找到: task_id=%s", task_id)
@@ -140,7 +138,7 @@ class WebhookManager:
             # 标记为投递中
             conn.execute(
                 "UPDATE webhooks SET status = ?, updated_at = ? WHERE task_id = ?",
-                (WebhookStatus.DELIVERING, datetime.now().isoformat(), task_id)
+                (WebhookStatus.DELIVERING, datetime.now().isoformat(), task_id),
             )
             conn.commit()
 
@@ -178,12 +176,14 @@ class WebhookManager:
                             """UPDATE webhooks
                                SET status = ?, retry_count = ?, delivered_at = ?, updated_at = ?
                                WHERE task_id = ?""",
-                            (WebhookStatus.DELIVERED, attempt, delivered_at, delivered_at, task_id)
+                            (WebhookStatus.DELIVERED, attempt, delivered_at, delivered_at, task_id),
                         )
                         conn.commit()
                         logger.info(
                             "Webhook 投递成功: task_id=%s, attempt=%d, status=%d",
-                            task_id, attempt, response.status_code
+                            task_id,
+                            attempt,
+                            response.status_code,
                         )
                         return {
                             "status": "delivered",
@@ -195,8 +195,7 @@ class WebhookManager:
                     # 非 2xx 响应
                     last_error = f"HTTP {response.status_code}: {response.text[:200]}"
                     logger.warning(
-                        "Webhook 投递失败: task_id=%s, attempt=%d, status=%d",
-                        task_id, attempt, response.status_code
+                        "Webhook 投递失败: task_id=%s, attempt=%d, status=%d", task_id, attempt, response.status_code
                     )
 
                 except httpx.TimeoutException:
@@ -216,7 +215,7 @@ class WebhookManager:
                 """UPDATE webhooks
                    SET status = ?, retry_count = ?, last_error = ?, updated_at = ?
                    WHERE task_id = ?""",
-                (WebhookStatus.FAILED, self.MAX_RETRIES, last_error, datetime.now().isoformat(), task_id)
+                (WebhookStatus.FAILED, self.MAX_RETRIES, last_error, datetime.now().isoformat(), task_id),
             )
             conn.commit()
             logger.error("Webhook 投递最终失败: task_id=%s, error=%s", task_id, last_error)
@@ -237,9 +236,7 @@ class WebhookManager:
         """获取 webhook 状态"""
         conn = self._get_conn()
         try:
-            row = conn.execute(
-                "SELECT * FROM webhooks WHERE task_id = ?", (task_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM webhooks WHERE task_id = ?", (task_id,)).fetchone()
             if not row:
                 return None
             return dict(row)
@@ -252,7 +249,7 @@ class WebhookManager:
         try:
             rows = conn.execute(
                 "SELECT * FROM webhooks WHERE status IN (?, ?) ORDER BY created_at",
-                (WebhookStatus.PENDING, WebhookStatus.DELIVERING)
+                (WebhookStatus.PENDING, WebhookStatus.DELIVERING),
             ).fetchall()
             return [dict(r) for r in rows]
         finally:
@@ -267,7 +264,7 @@ class WebhookManager:
             try:
                 cursor = conn.execute(
                     "UPDATE webhooks SET status = ?, updated_at = ? WHERE task_id = ? AND status = ?",
-                    (WebhookStatus.CANCELLED, datetime.now().isoformat(), task_id, WebhookStatus.PENDING)
+                    (WebhookStatus.CANCELLED, datetime.now().isoformat(), task_id, WebhookStatus.PENDING),
                 )
                 conn.commit()
                 cancelled = cursor.rowcount > 0
@@ -284,9 +281,7 @@ class WebhookManager:
         conn = self._get_conn()
         try:
             total = conn.execute("SELECT COUNT(*) FROM webhooks").fetchone()[0]
-            by_status = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM webhooks GROUP BY status"
-            ).fetchall()
+            by_status = conn.execute("SELECT status, COUNT(*) as cnt FROM webhooks GROUP BY status").fetchall()
             return {
                 "total": total,
                 "by_status": {r["status"]: r["cnt"] for r in by_status},

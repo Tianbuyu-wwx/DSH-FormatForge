@@ -2,6 +2,7 @@
 公共工具函数
 提取文件保存、响应构建等重复代码
 """
+
 import logging
 import uuid
 from datetime import datetime
@@ -43,12 +44,7 @@ def generate_parse_id() -> str:
 
 def create_response(code: int, msg: str, data: dict[str, Any] | None = None) -> BaseResponse:
     """创建统一响应"""
-    return BaseResponse(
-        code=code,
-        msg=msg,
-        data=data,
-        requestId=generate_request_id()
-    )
+    return BaseResponse(code=code, msg=msg, data=data, requestId=generate_request_id())
 
 
 async def save_upload_file(upload_dir: Path, file: UploadFile, max_size: int) -> Path:
@@ -96,10 +92,9 @@ def build_convert_response_data(result_data: ConvertResultData, base_url: str = 
         "convertedContent": result_data.convertedContent,
         "structuredData": result_data.structuredData,
         "processingLogs": [
-            {"step": log.step, "level": log.level, "message": log.message}
-            for log in result_data.processingLogs
+            {"step": log.step, "level": log.level, "message": log.message} for log in result_data.processingLogs
         ],
-        "exportUrl": f"{base_url}/api/v2/convert/export/{result_data.resultId}?format=txt"
+        "exportUrl": f"{base_url}/api/v2/convert/export/{result_data.resultId}?format=txt",
     }
 
 
@@ -111,20 +106,15 @@ def build_parse_response_data(result_data: ConvertResultData) -> dict[str, Any]:
             "fileName": result_data.fileInfo.fileName,
             "fileSize": result_data.fileInfo.fileSize,
             "pageCount": result_data.fileInfo.pageCount,
-            "fileType": result_data.fileInfo.fileType.value
+            "fileType": result_data.fileInfo.fileType.value,
         },
-        "taskStatus": TaskStatus.COMPLETED.value
+        "taskStatus": TaskStatus.COMPLETED.value,
     }
 
 
 def create_processing_log(step: str, message: str, level: str = "info") -> ProcessingLog:
     """创建处理日志"""
-    return ProcessingLog(
-        timestamp=datetime.now(),
-        level=level,
-        message=message,
-        step=step
-    )
+    return ProcessingLog(timestamp=datetime.now(), level=level, message=message, step=step)
 
 
 def format_output(content: str, output_format: Any, structured_data: dict | None = None) -> str:
@@ -134,9 +124,11 @@ def format_output(content: str, output_format: Any, structured_data: dict | None
     if output_format == OutputFormat.JSON:
         if structured_data:
             import json
+
             return json.dumps(structured_data, ensure_ascii=False, indent=2)
         try:
             import json
+
             return json.dumps({"content": content}, ensure_ascii=False, indent=2)
         except (json.JSONDecodeError, TypeError):
             return content

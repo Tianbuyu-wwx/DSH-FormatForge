@@ -2,6 +2,7 @@
 AI 能力发现模块
 自动探测目标 AI 端点支持的能力，为数据转换提供决策依据
 """
+
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ logger = logging.getLogger("ai_discovery")
 
 class InputType(str, Enum):
     """AI 支持的输入类型"""
+
     TEXT = "text"
     IMAGE = "image"
     AUDIO = "audio"
@@ -22,6 +24,7 @@ class InputType(str, Enum):
 
 class AiOutputFormat(str, Enum):
     """AI 偏好的输出格式"""
+
     JSON = "json"
     MARKDOWN = "markdown"
     TEXT = "text"
@@ -31,6 +34,7 @@ class AiOutputFormat(str, Enum):
 @dataclass
 class AiCapabilities:
     """AI 能力描述"""
+
     provider: str
     model: str
     supported_inputs: list[InputType] = field(default_factory=list)
@@ -57,7 +61,7 @@ class AiCapabilities:
             "supports_function_calling": self.supports_function_calling,
             "preferred_format": self.preferred_format.value,
             "api_version": self.api_version,
-            "extra": self.extra
+            "extra": self.extra,
         }
 
 
@@ -86,27 +90,24 @@ class OpenAiCompatibleDiscovery(BaseAiDiscovery):
         import httpx
 
         headers = {"Authorization": f"Bearer {api_key}"}
-        capabilities = AiCapabilities(
-            provider="openai_compatible",
-            model="unknown"
-        )
+        capabilities = AiCapabilities(provider="openai_compatible", model="unknown")
         logger.info("开始探测 OpenAI 兼容端点: %s", endpoint)
 
         try:
             # 尝试获取模型列表
-            resp = httpx.get(
-                f"{endpoint.rstrip('/')}/models",
-                headers=headers,
-                timeout=10
-            )
+            resp = httpx.get(f"{endpoint.rstrip('/')}/models", headers=headers, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
                 models = data.get("data", [])
                 if models:
                     capabilities.model = models[0].get("id", "unknown")
                     capabilities.provider = self._detect_provider(models)
-                    logger.info("获取模型列表成功: provider=%s, model=%s, total_models=%d",
-                                capabilities.provider, capabilities.model, len(models))
+                    logger.info(
+                        "获取模型列表成功: provider=%s, model=%s, total_models=%d",
+                        capabilities.provider,
+                        capabilities.model,
+                        len(models),
+                    )
                 else:
                     logger.warning("模型列表为空")
             else:
@@ -114,9 +115,12 @@ class OpenAiCompatibleDiscovery(BaseAiDiscovery):
 
             # 根据模型名推断能力
             capabilities = self._infer_capabilities(capabilities)
-            logger.debug("推断能力结果: max_tokens=%d, multimodal=%s, inputs=%s",
-                         capabilities.max_tokens, capabilities.supports_multimodal,
-                         [i.value for i in capabilities.supported_inputs])
+            logger.debug(
+                "推断能力结果: max_tokens=%d, multimodal=%s, inputs=%s",
+                capabilities.max_tokens,
+                capabilities.supports_multimodal,
+                [i.value for i in capabilities.supported_inputs],
+            )
 
         except Exception as e:
             logger.warning("探测 OpenAI 兼容端点失败: %s", e, exc_info=True)
@@ -179,9 +183,7 @@ class OpenAiCompatibleDiscovery(BaseAiDiscovery):
 
         # 功能支持推断
         capabilities.supports_streaming = True
-        capabilities.supports_function_calling = provider in [
-            "openai", "anthropic", "minimax", "qwen", "zhipu"
-        ]
+        capabilities.supports_function_calling = provider in ["openai", "anthropic", "minimax", "qwen", "zhipu"]
 
         # 格式偏好
         if provider in ["openai", "anthropic", "minimax"]:
@@ -205,7 +207,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_streaming=True,
             supports_function_calling=True,
             preferred_format=AiOutputFormat.MARKDOWN,
-            api_version="v1"
+            api_version="v1",
         ),
         "openai": AiCapabilities(
             provider="openai",
@@ -216,7 +218,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_streaming=True,
             supports_function_calling=True,
             preferred_format=AiOutputFormat.MARKDOWN,
-            api_version="v1"
+            api_version="v1",
         ),
         "anthropic": AiCapabilities(
             provider="anthropic",
@@ -227,7 +229,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_streaming=True,
             supports_function_calling=True,
             preferred_format=AiOutputFormat.MARKDOWN,
-            api_version="v1"
+            api_version="v1",
         ),
         "zhipu": AiCapabilities(
             provider="zhipu",
@@ -238,7 +240,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_streaming=True,
             supports_function_calling=True,
             preferred_format=AiOutputFormat.TEXT,
-            api_version="v4"
+            api_version="v4",
         ),
         "qwen": AiCapabilities(
             provider="qwen",
@@ -249,7 +251,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_streaming=True,
             supports_function_calling=True,
             preferred_format=AiOutputFormat.MARKDOWN,
-            api_version="v1"
+            api_version="v1",
         ),
         "deepseek": AiCapabilities(
             provider="deepseek",
@@ -260,7 +262,7 @@ class PresetDiscovery(BaseAiDiscovery):
             supports_streaming=True,
             supports_function_calling=True,
             preferred_format=AiOutputFormat.MARKDOWN,
-            api_version="v1"
+            api_version="v1",
         ),
     }
 
@@ -291,16 +293,13 @@ class PresetDiscovery(BaseAiDiscovery):
                 supports_streaming=preset.supports_streaming,
                 supports_function_calling=preset.supports_function_calling,
                 preferred_format=preset.preferred_format,
-                api_version=preset.api_version
+                api_version=preset.api_version,
             )
 
         # 未知 provider，返回默认配置
         logger.warning("未知 AI 提供商，使用默认配置")
         return AiCapabilities(
-            provider=provider or "unknown",
-            model="unknown",
-            supported_inputs=[InputType.TEXT],
-            max_tokens=4096
+            provider=provider or "unknown", model="unknown", supported_inputs=[InputType.TEXT], max_tokens=4096
         )
 
 
@@ -315,11 +314,7 @@ class AiDiscovery:
         self._cache: dict[str, AiCapabilities] = {}
 
     def discover(
-        self,
-        endpoint: str,
-        api_key: str,
-        provider: str | None = None,
-        use_cache: bool = True
+        self, endpoint: str, api_key: str, provider: str | None = None, use_cache: bool = True
     ) -> AiCapabilities:
         """
         发现 AI 能力
@@ -334,8 +329,7 @@ class AiDiscovery:
             AiCapabilities: AI 能力描述
         """
         cache_key = f"{provider or 'auto'}:{endpoint}"
-        logger.info("开始AI能力发现: endpoint=%s, provider=%s, use_cache=%s",
-                    endpoint, provider, use_cache)
+        logger.info("开始AI能力发现: endpoint=%s, provider=%s, use_cache=%s", endpoint, provider, use_cache)
 
         if use_cache and cache_key in self._cache:
             cached = self._cache[cache_key]
@@ -360,9 +354,10 @@ class AiDiscovery:
                     self._cache[cache_key] = caps
                     logger.info(
                         "AI 能力发现成功: provider=%s, model=%s, 支持=%s, max_tokens=%d",
-                        caps.provider, caps.model,
+                        caps.provider,
+                        caps.model,
                         [i.value for i in caps.supported_inputs],
-                        caps.max_tokens
+                        caps.max_tokens,
                     )
                     return caps
             except Exception as e:

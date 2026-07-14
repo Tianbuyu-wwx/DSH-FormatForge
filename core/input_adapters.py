@@ -2,12 +2,13 @@
 输入适配器模块
 统一处理多种输入源：文件、URL、原始数据、流式数据
 """
+
 import logging
 import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, BinaryIO, List
+from typing import Any, BinaryIO
 from urllib.parse import urlparse
 
 logger = logging.getLogger("input_adapters")
@@ -16,6 +17,7 @@ logger = logging.getLogger("input_adapters")
 @dataclass
 class InputData:
     """统一输入数据结构"""
+
     source_type: str  # "file", "url", "raw", "stream"
     data: bytes
     filename: str | None = None
@@ -66,7 +68,7 @@ class FileInputAdapter(InputAdapter):
         if not file_path.is_file():
             raise ValueError(f"路径不是文件: {file_path}")
 
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             data = f.read()
 
         # 尝试检测 mime_type
@@ -77,17 +79,14 @@ class FileInputAdapter(InputAdapter):
             data=data,
             filename=file_path.name,
             mime_type=mime_type,
-            metadata={
-                "path": str(file_path.absolute()),
-                "size": len(data),
-                "modified": file_path.stat().st_mtime
-            }
+            metadata={"path": str(file_path.absolute()), "size": len(data), "modified": file_path.stat().st_mtime},
         )
 
     def _detect_mime_type(self, file_path: Path) -> str | None:
         """检测文件 MIME 类型"""
         try:
             import mimetypes
+
             mime, _ = mimetypes.guess_type(str(file_path))
             return mime
         except Exception:
@@ -100,7 +99,7 @@ class UrlInputAdapter(InputAdapter):
     def can_handle(self, source: Any) -> bool:
         if isinstance(source, str):
             parsed = urlparse(source)
-            return parsed.scheme in ('http', 'https') and parsed.netloc
+            return parsed.scheme in ("http", "https") and parsed.netloc
         return False
 
     def read(self, source: str, timeout: int = 30, max_size: int = 100 * 1024 * 1024) -> InputData:
@@ -113,11 +112,12 @@ class UrlInputAdapter(InputAdapter):
             with httpx.Client(timeout=timeout) as client:
                 resp = client.get(url)
             resp.raise_for_status()
-            logger.debug("URL请求成功: status=%d, content_length=%s",
-                         resp.status_code, resp.headers.get('Content-Length'))
+            logger.debug(
+                "URL请求成功: status=%d, content_length=%s", resp.status_code, resp.headers.get("Content-Length")
+            )
 
             # 检查内容长度
-            content_length = resp.headers.get('Content-Length')
+            content_length = resp.headers.get("Content-Length")
             if content_length and int(content_length) > max_size:
                 logger.error("文件大小超过限制: %s > %d", content_length, max_size)
                 raise ValueError(f"文件大小超过限制: {content_length} > {max_size}")
@@ -128,10 +128,9 @@ class UrlInputAdapter(InputAdapter):
 
             # 从 URL 或响应头获取文件名
             filename = self._extract_filename(url, dict(resp.headers))
-            mime_type = resp.headers.get('Content-Type')
+            mime_type = resp.headers.get("Content-Type")
 
-            logger.info("下载完成: %s, 大小=%d 字节, filename=%s, mime=%s",
-                        url, len(data), filename, mime_type)
+            logger.info("下载完成: %s, 大小=%d 字节, filename=%s, mime=%s", url, len(data), filename, mime_type)
 
             return InputData(
                 source_type="url",
@@ -142,8 +141,8 @@ class UrlInputAdapter(InputAdapter):
                     "url": url,
                     "size": len(data),
                     "status_code": resp.status_code,
-                    "headers": dict(resp.headers)
-                }
+                    "headers": dict(resp.headers),
+                },
             )
 
         except httpx.RequestError as e:
@@ -153,9 +152,10 @@ class UrlInputAdapter(InputAdapter):
     def _extract_filename(self, url: str, headers: dict) -> str | None:
         """从 URL 或响应头提取文件名"""
         # 从 Content-Disposition 提取
-        cd = headers.get('Content-Disposition', '')
-        if 'filename=' in cd:
+        cd = headers.get("Content-Disposition", "")
+        if "filename=" in cd:
             import re
+
             match = re.search(r'filename=["\']?([^"\';]+)', cd)
             if match:
                 return match.group(1)
@@ -177,18 +177,14 @@ class RawDataAdapter(InputAdapter):
 
     def read(self, source: bytes | str, filename: str | None = None) -> InputData:
         if isinstance(source, str):
-            data = source.encode('utf-8')
+            data = source.encode("utf-8")
             logger.debug("原始数据适配器: 字符串输入, length=%d", len(source))
         else:
             data = source
             logger.debug("原始数据适配器: 字节输入, size=%d", len(source))
 
         return InputData(
-            source_type="raw",
-            data=data,
-            filename=filename or "raw_data",
-            mime_type=None,
-            metadata={"size": len(data)}
+            source_type="raw", data=data, filename=filename or "raw_data", mime_type=None, metadata={"size": len(data)}
         )
 
 
@@ -196,7 +192,7 @@ class StreamInputAdapter(InputAdapter):
     """流式数据输入适配器"""
 
     def can_handle(self, source: Any) -> bool:
-        return hasattr(source, 'read')
+        return hasattr(source, "read")
 
     def read(self, source: BinaryIO, filename: str | None = None, chunk_size: int = 8192) -> InputData:
         chunks = []
@@ -205,11 +201,11 @@ class StreamInputAdapter(InputAdapter):
             chunk = source.read(chunk_size)
             if not chunk:
                 break
-            chunk_bytes = chunk if isinstance(chunk, bytes) else chunk.encode('utf-8')
+            chunk_bytes = chunk if isinstance(chunk, bytes) else chunk.encode("utf-8")
             chunks.append(chunk_bytes)
             total += len(chunk_bytes)
 
-        data = b''.join(chunks)
+        data = b"".join(chunks)
         logger.info("流式读取完成: size=%d bytes", total)
 
         return InputData(
@@ -217,7 +213,7 @@ class StreamInputAdapter(InputAdapter):
             data=data,
             filename=filename or "stream_data",
             mime_type=None,
-            metadata={"size": len(data)}
+            metadata={"size": len(data)},
         )
 
 
@@ -225,7 +221,7 @@ class InputAdapterManager:
     """输入适配器管理器 - 自动选择最佳适配器"""
 
     def __init__(self):
-        self._adapters: List[InputAdapter] = [
+        self._adapters: list[InputAdapter] = [
             FileInputAdapter(),
             UrlInputAdapter(),
             RawDataAdapter(),

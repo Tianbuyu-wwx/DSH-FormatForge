@@ -1,14 +1,41 @@
-fastapi==0.109.0
-uvicorn==0.27.0
-python-multipart==0.0.6
-openai==1.12.0
-python-pptx==0.6.23
-pdfplumber==0.11.9
-pydantic==2.6.0
+# Data Format Translator v2.1.0 — 必需依赖
+# 与 pyproject.toml [project.dependencies] 完全同步
+# 安装方式：pip install -r requirements.txt
+
+# === Web 框架 ===
+fastapi>=0.109.0,<1.0
+uvicorn>=0.27.0,<1.0
+python-multipart>=0.0.6
+
+# === 数据模型 ===
+pydantic>=2.6.0,<3.0
 pydantic-settings>=2.1.0
-python-dotenv==1.0.0
-httpx==0.26.0
-Pillow==11.3.0
+
+# === HTTP 客户端 ===
+httpx>=0.26.0
+python-dotenv>=1.0.0
+
+# === AI / LLM ===
+openai>=1.12.0
+
+# === 核心解析器（必需）===
+pdfplumber>=0.11.9
+Pillow>=10.0.0
 PyYAML>=6.0
-# 邮件解析
-extract-msg>=0.55.0
+
+# === 主流 Office 解析器 ===
+openpyxl>=3.1.0        # XLSX/XLSM
+python-docx>=1.0.0     # DOCX
+python-pptx>=0.6.23    # PPTX
+
+# === 编码检测 ===
+chardet>=5.0.0
+
+# === 邮件解析 ===
+extract-msg>=0.55.0    # Outlook .msg
+
+# === 可选依赖（按需安装）===
+# pip install pdfminer.six pytesseract       # OCR/PDF 备用
+# pip install py7zr rarfile                 # 压缩格式
+# pip install striprtf                      # RTF
+# pip install -e ".[all]"                   # 全部可选

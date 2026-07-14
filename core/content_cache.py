@@ -5,6 +5,7 @@
 磁盘缓存采用 JSON 序列化（取代 pickle）以避免反序列化任意代码漏洞。
 向后兼容：仍可读取旧版 .pkl 文件，但下次写入会迁移为 .json。
 """
+
 import hashlib
 import json
 import logging
@@ -19,6 +20,7 @@ logger = logging.getLogger("content_cache")
 @dataclass
 class CacheEntry:
     """缓存条目"""
+
     content_hash: str
     result_data: Any
     created_at: datetime
@@ -36,7 +38,7 @@ class ContentHashCache:
         max_memory_entries: int = 1000,
         default_ttl: int = 3600,
         persist_path: Path | None = None,
-        enable_disk_cache: bool = True
+        enable_disk_cache: bool = True,
     ):
         self._memory_cache: dict[str, CacheEntry] = {}
         self._max_memory_entries = max_memory_entries
@@ -49,11 +51,7 @@ class ContentHashCache:
             self._load_from_disk()
 
     def _compute_hash(
-        self,
-        source_data: bytes,
-        conversion_type: str,
-        output_format: str,
-        custom_prompt: str | None = None
+        self, source_data: bytes, conversion_type: str, output_format: str, custom_prompt: str | None = None
     ) -> str:
         """计算内容哈希（包含转换参数）"""
         hasher = hashlib.sha256()
@@ -73,11 +71,7 @@ class ContentHashCache:
         return hasher.hexdigest()
 
     def get(
-        self,
-        source: Any,
-        conversion_type: str,
-        output_format: str,
-        custom_prompt: str | None = None
+        self, source: Any, conversion_type: str, output_format: str, custom_prompt: str | None = None
     ) -> Any | None:
         """
         获取缓存结果
@@ -121,7 +115,7 @@ class ContentHashCache:
         output_format: str,
         result_data: Any,
         custom_prompt: str | None = None,
-        ttl: int | None = None
+        ttl: int | None = None,
     ):
         """
         设置缓存
@@ -147,11 +141,7 @@ class ContentHashCache:
         logger.debug(f"缓存已设置: {content_hash[:16]}...")
 
     def _get_content_hash(
-        self,
-        source: Any,
-        conversion_type: str,
-        output_format: str,
-        custom_prompt: str | None = None
+        self, source: Any, conversion_type: str, output_format: str, custom_prompt: str | None = None
     ) -> str | None:
         """根据输入源获取内容哈希"""
         try:
@@ -159,29 +149,16 @@ class ContentHashCache:
                 path = Path(source)
                 if path.exists():
                     file_hash = self._compute_file_hash(path)
-                    return self._compute_hash(
-                        file_hash.encode("utf-8"),
-                        conversion_type,
-                        output_format,
-                        custom_prompt
-                    )
+                    return self._compute_hash(file_hash.encode("utf-8"), conversion_type, output_format, custom_prompt)
                 else:
                     # 可能是原始数据字符串
                     return self._compute_hash(
-                        str(source).encode("utf-8"),
-                        conversion_type,
-                        output_format,
-                        custom_prompt
+                        str(source).encode("utf-8"), conversion_type, output_format, custom_prompt
                     )
             elif isinstance(source, bytes):
                 return self._compute_hash(source, conversion_type, output_format, custom_prompt)
             else:
-                return self._compute_hash(
-                    str(source).encode("utf-8"),
-                    conversion_type,
-                    output_format,
-                    custom_prompt
-                )
+                return self._compute_hash(str(source).encode("utf-8"), conversion_type, output_format, custom_prompt)
         except Exception as e:
             logger.warning(f"计算内容哈希失败: {e}")
             return None
@@ -194,7 +171,7 @@ class ContentHashCache:
             result_data=result_data,
             created_at=now,
             expires_at=now + timedelta(seconds=custom_ttl),
-            last_accessed=now
+            last_accessed=now,
         )
 
         # 清理过期条目
@@ -212,10 +189,7 @@ class ContentHashCache:
 
     def _cleanup_expired(self):
         """清理过期条目"""
-        expired = [
-            k for k, v in self._memory_cache.items()
-            if self._is_expired(v)
-        ]
+        expired = [k for k, v in self._memory_cache.items() if self._is_expired(v)]
         for k in expired:
             del self._memory_cache[k]
 
@@ -230,10 +204,7 @@ class ContentHashCache:
         # 优先移除未访问过的，然后是最早访问的
         lru_key = min(
             self._memory_cache.keys(),
-            key=lambda k: (
-                self._memory_cache[k].access_count,
-                self._memory_cache[k].last_accessed or datetime.min
-            )
+            key=lambda k: (self._memory_cache[k].access_count, self._memory_cache[k].last_accessed or datetime.min),
         )
         del self._memory_cache[lru_key]
 
@@ -246,12 +217,9 @@ class ContentHashCache:
                 "result_data": self._serialize_for_disk(result_data),
                 "created_at": datetime.now().isoformat(),
                 "expires_at": (datetime.now() + timedelta(seconds=ttl)).isoformat(),
-                "version": 2
+                "version": 2,
             }
-            cache_file.write_text(
-                json.dumps(entry, ensure_ascii=False, default=str),
-                encoding="utf-8"
-            )
+            cache_file.write_text(json.dumps(entry, ensure_ascii=False, default=str), encoding="utf-8")
         except Exception as e:
             logger.warning(f"保存磁盘缓存失败: {e}")
 
@@ -287,6 +255,7 @@ class ContentHashCache:
             elif legacy_file.exists():
                 # 旧格式：仍用 pickle 读取一次性，迁移到 JSON
                 import pickle as _pickle
+
                 with open(legacy_file, "rb") as f:
                     entry = _pickle.load(f)
                 legacy_file.unlink(missing_ok=True)
@@ -330,7 +299,7 @@ class ContentHashCache:
                     result_data=entry["result_data"],
                     created_at=datetime.fromisoformat(entry["created_at"]),
                     expires_at=expires_at,
-                    last_accessed=datetime.now()
+                    last_accessed=datetime.now(),
                 )
                 loaded += 1
             except Exception as e:
@@ -341,6 +310,7 @@ class ContentHashCache:
         for cache_file in self._persist_path.glob("*.pkl"):
             try:
                 import pickle as _pickle
+
                 with open(cache_file, "rb") as f:
                     entry = _pickle.load(f)
                 expires_at = datetime.fromisoformat(entry["expires_at"])
@@ -353,7 +323,7 @@ class ContentHashCache:
                     result_data=entry["result_data"],
                     created_at=datetime.fromisoformat(entry["created_at"]),
                     expires_at=expires_at,
-                    last_accessed=datetime.now()
+                    last_accessed=datetime.now(),
                 )
                 loaded += 1
                 logger.info("迁移 .pkl → 内存: %s", content_hash[:16])
@@ -399,10 +369,9 @@ class ContentHashCache:
             "memory_limit": self._max_memory_entries,
             "default_ttl": self._default_ttl,
             "disk_cache_enabled": self._enable_disk_cache,
-            "persist_path": str(self._persist_path)
+            "persist_path": str(self._persist_path),
         }
 
 
 # 全局缓存实例
 content_cache = ContentHashCache()
-

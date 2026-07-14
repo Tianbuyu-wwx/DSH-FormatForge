@@ -7,6 +7,7 @@
 - 用 hmac.compare_digest 防止时序攻击
 - 仅用于写接口（POST/PUT/DELETE/PATCH）；GET 接口保持公开
 """
+
 import hmac
 
 from fastapi import Depends, HTTPException, status

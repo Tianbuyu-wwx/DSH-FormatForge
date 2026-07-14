@@ -2,6 +2,7 @@
 转换决策引擎
 负责分析输入格式、AI能力，制定最优转换策略
 """
+
 import logging
 from typing import Any
 
@@ -19,8 +20,8 @@ class ConversionDecision:
         target_ai_capabilities: AiCapabilities | None = None,
         conversion_needed: bool = True,
         target_format: str = "text",
-        strategies: list[str] = None,
-        preserve_original: bool = False
+        strategies: list[str] | None = None,
+        preserve_original: bool = False,
     ):
         self.input_format = input_format
         self.target_ai_capabilities = target_ai_capabilities
@@ -36,7 +37,7 @@ class ConversionDecision:
             "conversion_needed": self.conversion_needed,
             "target_format": self.target_format,
             "strategies": self.strategies,
-            "preserve_original": self.preserve_original
+            "preserve_original": self.preserve_original,
         }
 
 
@@ -53,18 +54,15 @@ class DecisionEngine:
     def __init__(self):
         logger.debug("DecisionEngine 初始化完成")
 
-    def make_decision(
-        self,
-        detected: Any,
-        ai_caps: AiCapabilities | None,
-        parsed_file: Any
-    ) -> ConversionDecision:
+    def make_decision(self, detected: Any, ai_caps: AiCapabilities | None, parsed_file: Any) -> ConversionDecision:
         """制定转换决策"""
-        decision = ConversionDecision(
-            input_format=detected.format.value
+        decision = ConversionDecision(input_format=detected.format.value)
+        logger.debug(
+            "制定转换决策: input_format=%s, has_ai_caps=%s, has_parsed_file=%s",
+            detected.format.value,
+            bool(ai_caps),
+            bool(parsed_file),
         )
-        logger.debug("制定转换决策: input_format=%s, has_ai_caps=%s, has_parsed_file=%s",
-                     detected.format.value, bool(ai_caps), bool(parsed_file))
 
         if not ai_caps:
             # 无AI能力信息，默认需要转换
@@ -92,8 +90,7 @@ class DecisionEngine:
         elif detected.format.value in ["pdf", "pptx"]:
             # 文档输入
             has_image = parsed_file and any(page.hasImage for page in parsed_file.pages)
-            logger.debug("文档输入: has_image=%s, ai_multimodal=%s",
-                         has_image, ai_caps.supports_multimodal)
+            logger.debug("文档输入: has_image=%s, ai_multimodal=%s", has_image, ai_caps.supports_multimodal)
             if has_image:
                 if ai_caps.supports_multimodal:
                     # 多模态AI，可以保留原文件
@@ -121,14 +118,12 @@ class DecisionEngine:
 
         return decision
 
-    def build_recommendation(
-        self,
-        decision: ConversionDecision,
-        ai_caps: AiCapabilities | None
-    ) -> str:
+    def build_recommendation(self, decision: ConversionDecision, ai_caps: AiCapabilities | None) -> str:
         """构建使用建议"""
         if not decision.conversion_needed:
-            return f"目标AI ({ai_caps.provider if ai_caps else 'unknown'}) 支持直接处理此格式，建议保留原始文件直接发送。"
+            return (
+                f"目标AI ({ai_caps.provider if ai_caps else 'unknown'}) 支持直接处理此格式，建议保留原始文件直接发送。"
+            )
 
         if decision.preserve_original:
             return "转换完成。建议同时发送原始文件和转换后的文本，以获得最佳效果。"

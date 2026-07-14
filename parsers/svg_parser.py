@@ -4,10 +4,10 @@ SVG 矢量图解析器
 提取文本内容、图形元数据和结构信息
 纯 Python 标准库实现（xml.etree.ElementTree），零外部依赖
 """
+
 import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -57,36 +57,34 @@ class SVGParser(BaseParser):
         meta = self._extract_metadata(root)
         if meta:
             for key, value in meta.items():
-                elements.append(ExtractedElement(
-                    elementId=f"elem_1_{elem_idx[0]}",
-                    elementType="header",
-                    content=f"{key}: {value}",
-                    metadata={"field": key, "value": value}
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_1_{elem_idx[0]}",
+                        elementType="header",
+                        content=f"{key}: {value}",
+                        metadata={"field": key, "value": value},
+                    )
+                )
                 raw_lines.append(f"# {key}: {value}")
                 elem_idx[0] += 1
 
         # 2. 文档标题
         title_text = self._find_text_content(root, "title")
         if title_text:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="heading",
-                content=title_text,
-                metadata={"level": 1}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}", elementType="heading", content=title_text, metadata={"level": 1}
+                )
+            )
             raw_lines.append(title_text)
             elem_idx[0] += 1
 
         # 3. 文档描述
         desc_text = self._find_text_content(root, "desc")
         if desc_text:
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="text",
-                content=desc_text,
-                metadata={}
-            ))
+            elements.append(
+                ExtractedElement(elementId=f"elem_1_{elem_idx[0]}", elementType="text", content=desc_text, metadata={})
+            )
             raw_lines.append(desc_text)
             elem_idx[0] += 1
 
@@ -97,12 +95,14 @@ class SVGParser(BaseParser):
         shape_counts = self._count_shapes(root)
         if shape_counts:
             shape_summary = self._format_shape_summary(shape_counts)
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="text",
-                content=shape_summary,
-                metadata={"shapes": shape_counts}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="text",
+                    content=shape_summary,
+                    metadata={"shapes": shape_counts},
+                )
+            )
             raw_lines.append(shape_summary)
             elem_idx[0] += 1
 
@@ -110,25 +110,33 @@ class SVGParser(BaseParser):
         image_refs = self._find_image_refs(root)
         if image_refs:
             img_summary = f"外部图片引用: {len(image_refs)} 个"
-            elements.append(ExtractedElement(
-                elementId=f"elem_1_{elem_idx[0]}",
-                elementType="text",
-                content=img_summary,
-                metadata={"images": image_refs}
-            ))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="text",
+                    content=img_summary,
+                    metadata={"images": image_refs},
+                )
+            )
             raw_lines.append(img_summary)
             elem_idx[0] += 1
 
-        logger.info("SVG 解析完成: %d 个元素, 文本段数=%d, 图形数=%s",
-                     len(elements), text_count, dict(shape_counts) if shape_counts else {})
+        logger.info(
+            "SVG 解析完成: %d 个元素, 文本段数=%d, 图形数=%s",
+            len(elements),
+            text_count,
+            dict(shape_counts) if shape_counts else {},
+        )
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_lines),
-            hasImage=bool(image_refs),
-            hasTable=False,
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_lines),
+                hasImage=bool(image_refs),
+                hasTable=False,
+            )
+        ]
 
     def _extract_metadata(self, root: ET.Element) -> dict[str, str]:
         """提取 SVG 文档元数据"""
@@ -154,9 +162,7 @@ class SVGParser(BaseParser):
             return elem.text.strip()
         return ""
 
-    def _extract_text_elements(
-        self, parent: ET.Element, elements: list, raw_lines: list, elem_idx: list
-    ) -> int:
+    def _extract_text_elements(self, parent: ET.Element, elements: list, raw_lines: list, elem_idx: list) -> int:
         """提取所有文本元素内容"""
         count = 0
         for text_elem in parent.iter(f"{{{SVG_NS}}}text"):
@@ -174,27 +180,26 @@ class SVGParser(BaseParser):
                     tspan_content = (child.text or "").strip()
                     if tspan_content:
                         tspan_texts.append(tspan_content)
-                        tspan_x = child.get("x")
-                        tspan_y = child.get("y")
+                        child.get("x")
+                        child.get("y")
 
             # 如果无 tspan 子元素，取直接文本
-            if not tspan_texts:
-                full_text = (text_elem.text or "").strip()
-            else:
-                full_text = "\n".join(tspan_texts)
+            full_text = (text_elem.text or "").strip() if not tspan_texts else "\n".join(tspan_texts)
 
             if full_text:
-                elements.append(ExtractedElement(
-                    elementId=f"elem_1_{elem_idx[0]}",
-                    elementType="text",
-                    content=full_text,
-                    metadata={
-                        "x": x,
-                        "y": y,
-                        "transform": transform,
-                        "lines": tspan_texts if tspan_texts else [full_text],
-                    }
-                ))
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_1_{elem_idx[0]}",
+                        elementType="text",
+                        content=full_text,
+                        metadata={
+                            "x": x,
+                            "y": y,
+                            "transform": transform,
+                            "lines": tspan_texts if tspan_texts else [full_text],
+                        },
+                    )
+                )
                 raw_lines.append(full_text)
                 elem_idx[0] += 1
                 count += 1
@@ -216,18 +221,12 @@ class SVGParser(BaseParser):
                 counts[tag] = counts.get(tag, 0) + 1
 
         # 统计 <use> 引用
-        use_count = sum(
-            1 for _ in root.iter(f"{{{SVG_NS}}}use")
-            if _ not in defs_elements
-        )
+        use_count = sum(1 for _ in root.iter(f"{{{SVG_NS}}}use") if _ not in defs_elements)
         if use_count:
             counts["use"] = use_count
 
         # 统计 <g> 组数
-        g_count = sum(
-            1 for _ in root.iter(f"{{{SVG_NS}}}g")
-            if _ not in defs_elements
-        )
+        g_count = sum(1 for _ in root.iter(f"{{{SVG_NS}}}g") if _ not in defs_elements)
         if g_count:
             counts["group"] = g_count
 
@@ -236,11 +235,17 @@ class SVGParser(BaseParser):
     def _format_shape_summary(self, shape_counts: dict[str, int]) -> str:
         """格式化图形统计摘要"""
         name_map = {
-            "rect": "矩形", "circle": "圆形", "ellipse": "椭圆",
-            "line": "直线", "polyline": "折线", "polygon": "多边形",
-            "path": "路径", "use": "引用", "group": "组",
+            "rect": "矩形",
+            "circle": "圆形",
+            "ellipse": "椭圆",
+            "line": "直线",
+            "polyline": "折线",
+            "polygon": "多边形",
+            "path": "路径",
+            "use": "引用",
+            "group": "组",
         }
-        parts = [f"图形元素统计: "]
+        parts = ["图形元素统计: "]
         items = []
         for tag, count in sorted(shape_counts.items(), key=lambda x: -x[1]):
             name = name_map.get(tag, tag)
@@ -254,9 +259,11 @@ class SVGParser(BaseParser):
         for image in root.iter(f"{{{SVG_NS}}}image"):
             href = image.get(f"{{{XLINK_NS}}}href") or image.get("href")
             if href:
-                refs.append({
-                    "href": href,
-                    "width": image.get("width", ""),
-                    "height": image.get("height", ""),
-                })
+                refs.append(
+                    {
+                        "href": href,
+                        "width": image.get("width", ""),
+                        "height": image.get("height", ""),
+                    }
+                )
         return refs

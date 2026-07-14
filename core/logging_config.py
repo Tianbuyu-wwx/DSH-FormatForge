@@ -2,6 +2,7 @@
 结构化日志配置模块
 提供 JSON 格式日志和请求 Trace ID 跟踪功能
 """
+
 import json
 import logging
 import sys
@@ -69,10 +70,7 @@ def setup_logging(level: str = "INFO", json_format: bool = True) -> None:
     if json_format:
         formatter = JsonFormatter()
     else:
-        formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s "
-            "(%(filename)s:%(lineno)d)"
-        )
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s (%(filename)s:%(lineno)d)")
     console.setFormatter(formatter)
 
     root_logger.addHandler(console)

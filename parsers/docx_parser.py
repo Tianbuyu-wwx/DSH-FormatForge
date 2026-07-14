@@ -2,6 +2,7 @@
 DOCX/DOC 文件解析器
 支持解析 Word 文档 (.doc, .docx)
 """
+
 import logging
 from pathlib import Path
 
@@ -15,6 +16,7 @@ try:
     from docx import Document
     from docx.table import Table
     from docx.text.paragraph import Paragraph
+
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
@@ -55,41 +57,42 @@ class DOCXParser(BaseParser):
 
         # 遍历文档中的所有元素（保持顺序）
         for element in doc.element.body:
-            tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+            tag = element.tag.split("}")[-1] if "}" in element.tag else element.tag
 
-            if tag == 'p':
+            if tag == "p":
                 # 段落
                 para = Paragraph(element, doc)
                 text = para.text.strip()
                 if text:
                     elem_type = self._detect_paragraph_style(para)
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx}",
-                        elementType=elem_type,
-                        content=text,
-                        metadata={
-                            "style": para.style.name if para.style else None,
-                            "alignment": str(para.alignment) if para.alignment else None
-                        }
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx}",
+                            elementType=elem_type,
+                            content=text,
+                            metadata={
+                                "style": para.style.name if para.style else None,
+                                "alignment": str(para.alignment) if para.alignment else None,
+                            },
+                        )
+                    )
                     raw_text_parts.append(text)
                     elem_idx += 1
 
-            elif tag == 'tbl':
+            elif tag == "tbl":
                 # 表格
                 has_table = True
                 table = Table(element, doc)
                 table_text = self._extract_table_text(table)
                 if table_text:
-                    elements.append(ExtractedElement(
-                        elementId=f"elem_1_{elem_idx}",
-                        elementType="table",
-                        content=table_text,
-                        metadata={
-                            "rows": len(table.rows),
-                            "cols": len(table.columns) if table.rows else 0
-                        }
-                    ))
+                    elements.append(
+                        ExtractedElement(
+                            elementId=f"elem_1_{elem_idx}",
+                            elementType="table",
+                            content=table_text,
+                            metadata={"rows": len(table.rows), "cols": len(table.columns) if table.rows else 0},
+                        )
+                    )
                     raw_text_parts.append(f"[表格]\n{table_text}")
                     elem_idx += 1
 
@@ -98,13 +101,15 @@ class DOCXParser(BaseParser):
 
         logger.info("DOCX 解析完成: %d 个元素", len(elements))
 
-        return [PageContent(
-            pageNumber=1,
-            elements=elements,
-            rawText="\n".join(raw_text_parts),
-            hasImage=has_image,
-            hasTable=has_table
-        )]
+        return [
+            PageContent(
+                pageNumber=1,
+                elements=elements,
+                rawText="\n".join(raw_text_parts),
+                hasImage=has_image,
+                hasTable=has_table,
+            )
+        ]
 
     def _detect_paragraph_style(self, para: "Paragraph") -> str:
         """检测段落样式类型"""
@@ -116,25 +121,25 @@ class DOCXParser(BaseParser):
 
         # 标题检测
         style_name = para.style.name.lower() if para.style else ""
-        if 'heading' in style_name or '标题' in style_name:
+        if "heading" in style_name or "标题" in style_name:
             return "heading"
-        if para.style and para.style.name.startswith('Heading'):
+        if para.style and para.style.name.startswith("Heading"):
             return "heading"
 
         # 列表检测
-        if text.startswith(('•', '-', '*', '1.', '2.', '（', '(')):
+        if text.startswith(("•", "-", "*", "1.", "2.", "（", "(")):
             return "list"
         if para._p is not None:
-            numPr = para._p.find('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr')
+            numPr = para._p.find(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr")
             if numPr is not None:
                 return "list"
 
         # 引用检测
-        if text.startswith('>') or style_name.startswith('quote'):
+        if text.startswith(">") or style_name.startswith("quote"):
             return "quote"
 
         # 代码检测
-        if style_name.startswith('code') or 'code' in style_name:
+        if style_name.startswith("code") or "code" in style_name:
             return "code"
 
         return "text"

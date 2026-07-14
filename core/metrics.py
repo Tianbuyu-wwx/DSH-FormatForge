@@ -2,16 +2,17 @@
 轻量级指标收集器
 纯 Python 实现，无外部依赖，支持 Prometheus 文本格式导出
 """
+
 import logging
 import threading
 import time
-from typing import Any
 
 logger = logging.getLogger("metrics")
 
 
 class _Counter:
     """计数器"""
+
     def __init__(self, name: str, help_text: str, label_names: list[str] | None = None):
         self.name = name
         self.help = help_text
@@ -48,7 +49,7 @@ class _Counter:
         if not self.label_names:
             return ""
         parts = []
-        for k, v in zip(self.label_names, label_tuple):
+        for k, v in zip(self.label_names, label_tuple, strict=False):
             v_escaped = str(v).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
             parts.append(f'{k}="{v_escaped}"')
         return ",".join(parts)
@@ -56,6 +57,7 @@ class _Counter:
 
 class _Gauge:
     """仪表盘"""
+
     def __init__(self, name: str, help_text: str, label_names: list[str] | None = None):
         self.name = name
         self.help = help_text
@@ -102,7 +104,7 @@ class _Gauge:
         if not self.label_names:
             return ""
         parts = []
-        for k, v in zip(self.label_names, label_tuple):
+        for k, v in zip(self.label_names, label_tuple, strict=False):
             v_escaped = str(v).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
             parts.append(f'{k}="{v_escaped}"')
         return ",".join(parts)
@@ -110,10 +112,12 @@ class _Gauge:
 
 class _Histogram:
     """直方图"""
+
     DEFAULT_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0)
 
-    def __init__(self, name: str, help_text: str, label_names: list[str] | None = None,
-                 buckets: tuple[float, ...] | None = None):
+    def __init__(
+        self, name: str, help_text: str, label_names: list[str] | None = None, buckets: tuple[float, ...] | None = None
+    ):
         self.name = name
         self.help = help_text
         self.label_names = label_names or []
@@ -155,15 +159,15 @@ class _Histogram:
                     lines.append(f'{self.name}_bucket{{{label_str},le="{bucket}"}} {bucket_value}')
                 inf_count = self._counts.get(label_tuple, 0)
                 lines.append(f'{self.name}_bucket{{{label_str},le="+Inf"}} {inf_count}')
-                lines.append(f'{self.name}_count{{{label_str}}} {inf_count}')
-                lines.append(f'{self.name}_sum{{{label_str}}} {self._sums.get(label_tuple, 0)}')
+                lines.append(f"{self.name}_count{{{label_str}}} {inf_count}")
+                lines.append(f"{self.name}_sum{{{label_str}}} {self._sums.get(label_tuple, 0)}")
         return lines
 
     def _format_labels(self, label_tuple: tuple) -> str:
         if not self.label_names:
             return ""
         parts = []
-        for k, v in zip(self.label_names, label_tuple):
+        for k, v in zip(self.label_names, label_tuple, strict=False):
             v_escaped = str(v).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
             parts.append(f'{k}="{v_escaped}"')
         return ",".join(parts)

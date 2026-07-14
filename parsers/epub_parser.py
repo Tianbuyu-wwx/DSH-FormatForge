@@ -3,13 +3,12 @@ EPUB 电子书解析器
 支持解析 .epub 格式电子书
 纯 Python 标准库实现（zipfile + xml.etree.ElementTree + html.parser），零外部依赖
 """
+
 import logging
 import xml.etree.ElementTree as ET
 import zipfile
 from html.parser import HTMLParser
-from io import BytesIO
 from pathlib import Path
-from typing import Optional
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -52,7 +51,8 @@ class _HTMLTextExtractor(HTMLParser):
         text = "".join(self._parts)
         # 合并多余空行
         import re
-        text = re.sub(r'\n{3,}', '\n\n', text)
+
+        text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()
 
 
@@ -136,38 +136,45 @@ class EPUBParser(BaseParser):
                     if text:
                         # 按段落拆分为元素
                         import re
-                        paragraphs = re.split(r'\n\s*\n', text)
+
+                        paragraphs = re.split(r"\n\s*\n", text)
                         for para in paragraphs:
                             para = para.strip()
                             if para:
-                                elements.append(ExtractedElement(
-                                    elementId=f"elem_{page_num}_{elem_idx[0]}",
-                                    elementType="text",
-                                    content=para,
-                                    metadata={"chapter": item_id, "chapter_index": page_num - 1}
-                                ))
+                                elements.append(
+                                    ExtractedElement(
+                                        elementId=f"elem_{page_num}_{elem_idx[0]}",
+                                        elementType="text",
+                                        content=para,
+                                        metadata={"chapter": item_id, "chapter_index": page_num - 1},
+                                    )
+                                )
                                 raw_lines.append(para)
                                 elem_idx[0] += 1
 
                     # 检测是否有图片
                     has_image = b"<img" in raw_content if isinstance(raw_content, bytes) else "<img" in raw_content
 
-                    pages.append(PageContent(
-                        pageNumber=page_num,
-                        elements=elements,
-                        rawText="\n".join(raw_lines) if raw_lines else f"[章节 {item_id}]",
-                        hasImage=has_image,
-                        hasTable=False,
-                    ))
+                    pages.append(
+                        PageContent(
+                            pageNumber=page_num,
+                            elements=elements,
+                            rawText="\n".join(raw_lines) if raw_lines else f"[章节 {item_id}]",
+                            hasImage=has_image,
+                            hasTable=False,
+                        )
+                    )
 
                 if not pages:
-                    pages.append(PageContent(
-                        pageNumber=1,
-                        elements=[],
-                        rawText="",
-                        hasImage=False,
-                        hasTable=False,
-                    ))
+                    pages.append(
+                        PageContent(
+                            pageNumber=1,
+                            elements=[],
+                            rawText="",
+                            hasImage=False,
+                            hasTable=False,
+                        )
+                    )
 
         except zipfile.BadZipFile:
             logger.error("不是有效的 ZIP/EPUB 文件: %s", file_path)
