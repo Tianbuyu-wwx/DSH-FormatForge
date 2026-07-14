@@ -5,7 +5,7 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from core.config import settings
@@ -20,13 +20,14 @@ from core.stream_handler import streaming_convert
 from core.webhook_manager import get_webhook_manager
 from core.utils import build_convert_response_data, create_response, generate_request_id, save_upload_file
 from __version__ import __version__, __version_name__
+from core.auth import verify_api_key
 
 logger = logging.getLogger("api.v2")
 
 router = APIRouter(prefix="/api/v2")
 
 
-@router.post("/convert")
+@router.post("/convert", dependencies=[Depends(verify_api_key)])
 async def convert_data(
     source: str = Form(..., description="输入源（文件路径/URL/文本内容）"),
     source_type: str = Form(default="auto", description="输入源类型: auto, file, url, raw"),
@@ -106,7 +107,7 @@ async def convert_data(
         )
 
 
-@router.post("/convert/upload")
+@router.post("/convert/upload", dependencies=[Depends(verify_api_key)])
 async def convert_upload(
     file: UploadFile = File(..., description="待转换文件"),
     target_ai_endpoint: str | None = Form(default=None),
@@ -178,7 +179,7 @@ async def convert_upload(
         )
 
 
-@router.post("/convert/url")
+@router.post("/convert/url", dependencies=[Depends(verify_api_key)])
 async def convert_url(
     url: str = Form(..., description="目标 URL"),
     target_ai_endpoint: str | None = Form(default=None),
@@ -216,7 +217,7 @@ async def convert_url(
         return create_response(code=ResponseCode.SERVER_ERROR, msg=f"URL 转换失败: {str(e)}")
 
 
-@router.post("/convert/text")
+@router.post("/convert/text", dependencies=[Depends(verify_api_key)])
 async def convert_text(
     text: str = Form(..., description="待转换的文本内容"),
     file_name: str = Form(default="raw_text.txt", description="虚拟文件名，用于格式检测"),
@@ -299,7 +300,7 @@ async def get_history_detail(result_id: str):
         return create_response(code=ResponseCode.SERVER_ERROR, msg=f"获取失败: {str(e)}")
 
 
-@router.delete("/history/{result_id}")
+@router.delete("/history/{result_id}", dependencies=[Depends(verify_api_key)])
 async def delete_history(result_id: str):
     """删除单条历史记录"""
     try:
@@ -313,7 +314,7 @@ async def delete_history(result_id: str):
         return create_response(code=ResponseCode.SERVER_ERROR, msg=f"删除失败: {str(e)}")
 
 
-@router.delete("/history")
+@router.delete("/history", dependencies=[Depends(verify_api_key)])
 async def clear_history():
     """清空所有历史记录"""
     try:
@@ -405,7 +406,7 @@ async def export_result(result_id: str, format: str = Query(default="markdown"))
 
 # ==================== SSE 流式转换 API ====================
 
-@router.post("/convert/stream")
+@router.post("/convert/stream", dependencies=[Depends(verify_api_key)])
 async def convert_stream(
     file: UploadFile = File(...),
     conversion_type: ConversionType = Form(default=ConversionType.AUTO),
@@ -457,7 +458,7 @@ async def list_templates():
         return create_response(code=ResponseCode.SERVER_ERROR, msg=f"获取模板列表失败: {str(e)}")
 
 
-@router.post("/convert/template")
+@router.post("/convert/template", dependencies=[Depends(verify_api_key)])
 async def convert_with_template(
     file: UploadFile = File(...),
     template_name: str = Form(...),
@@ -538,7 +539,7 @@ async def get_quality_report(result_id: str):
         return create_response(code=ResponseCode.SERVER_ERROR, msg=f"生成质量报告失败: {str(e)}")
 
 
-@router.post("/quality/analyze")
+@router.post("/quality/analyze", dependencies=[Depends(verify_api_key)])
 async def analyze_quality(file: UploadFile = File(...)):
     """分析上传文件的质量并返回质量报告"""
     try:
@@ -615,7 +616,7 @@ class WebhookRegisterRequest(BaseModel):
     secret: str = ""
 
 
-@router.post("/webhook/register")
+@router.post("/webhook/register", dependencies=[Depends(verify_api_key)])
 async def register_webhook(req: WebhookRegisterRequest):
     """注册 Webhook 回调
 
@@ -640,7 +641,7 @@ async def get_webhook_status(task_id: str):
     return create_response(200, "查询成功", status)
 
 
-@router.delete("/webhook/{task_id}")
+@router.delete("/webhook/{task_id}", dependencies=[Depends(verify_api_key)])
 async def cancel_webhook(task_id: str):
     """取消 Webhook"""
     manager = get_webhook_manager()

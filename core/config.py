@@ -69,6 +69,8 @@ class AppSettings(BaseSettings):
     # - JSON 数组: ["http://localhost:3000", "https://app.example.com"]
     # - 单个域名: "http://localhost:3000"（自动包装为列表）
     ALLOWED_ORIGINS: Any = Field(default=['http://localhost:3000'], description="CORS 允许的域名列表。支持 `*`（所有来源）、JSON 数组字符串、或单个域名字符串")
+    # API 认证密钥。空字符串表示禁用认证（开发模式）；设置后写接口必须提供 Authorization: Bearer <key>
+    API_KEY: str = Field(default="", description="API 认证密钥（Bearer Token）。空字符串 = 禁用认证。仅用于写接口（POST/PUT/DELETE/PATCH），读接口（GET）公开。")
 
     # 支持的配置
     SUPPORTED_FILE_TYPES: dict = Field(default={

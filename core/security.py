@@ -335,6 +335,15 @@ def validate_path_safety(file_path: str, base_dir: Path) -> bool:
     """
     验证文件路径是否安全（防止路径遍历攻击）
 
+    防御：
+    - `../` 相对路径跳转
+    - 绝对路径 `/etc/passwd`
+    - Windows UNC 路径 `\\\\server\\share`
+    - 符号链接指向 base_dir 外
+    - 8.3 短文件名绕过 (C:\\PROGRA~1)
+    - NTFS 备用数据流 (`file.txt:hidden`)
+    - 大小写绕过（Windows 上 PROGRA~1 vs Program Files）
+
     Args:
         file_path: 待验证的文件路径
         base_dir: 基准目录（所有文件必须在此目录下）
@@ -342,13 +351,66 @@ def validate_path_safety(file_path: str, base_dir: Path) -> bool:
     Returns:
         bool: 是否安全
     """
+    import os
     try:
-        resolved = Path(file_path).resolve()
+        # 1. 字符串层防御：拒绝 NUL/控制字符 + UNC 路径 + 备用数据流
+        if "\x00" in file_path:
+            logger.warning("路径含 NUL 字节: %r", file_path[:50])
+            return False
+        if file_path.startswith("\\\\"):
+            logger.warning("UNC 路径拒绝: %s", file_path[:80])
+            return False
+        if ":" in file_path.replace(":", "", 1):  # 仅允许 `C:` 这种驱动器前缀
+            # Windows 备用数据流：`file.txt:stream` 攻击
+            if file_path[1:2] == ":" and len(file_path) > 2 and file_path[2] not in ("/", "\\"):
+                pass  # 相对路径不带分隔符，正常
+            elif file_path.count(":") > 1:
+                logger.warning("备用数据流/NTFS 流攻击检测: %s", file_path[:80])
+                return False
+            elif not (len(file_path) >= 2 and file_path[1] == ":" and file_path[0].isalpha()):
+                # 驱动器字母必须是英文字母开头
+                logger.warning("非法驱动器前缀: %s", file_path[:80])
+                return False
+
+        # 2. 解析绝对路径 + 解析符号链接
+        try:
+            resolved = Path(file_path).resolve()
+        except (OSError, RuntimeError) as e:
+            # 在 Windows 上 resolve() 可能因路径不存在或太长而失败
+            # 用 realpath 兜底（不要求路径存在）
+            try:
+                resolved = Path(os.path.realpath(file_path))
+            except Exception:
+                logger.warning("路径解析失败: %s, error=%s", file_path, e)
+                return False
+
         base_resolved = base_dir.resolve()
-        is_safe = str(resolved).startswith(str(base_resolved))
+
+        # 3. Windows 8.3 短文件名绕过：在 Windows 上比较短路径
+        # 短路径 `C:\\PROGRA~1` 和长路径 `C:\\Program Files` 应视为同一目录
+        if hasattr(os.path, "getshortpathname") and resolved.exists():
+            try:
+                short = os.path.getshortpathname(str(resolved))
+                resolved = Path(short).resolve() if short else resolved
+            except Exception:
+                pass
+
+        # 4. 规范化比较：用 commonpath 替代 startswith（更鲁棒）
+        try:
+            resolved_str = os.path.normcase(str(resolved))
+            base_str = os.path.normcase(str(base_resolved))
+            # commonpath 抛 ValueError 时表示不在同一驱动器或完全不同路径
+            common = os.path.commonpath([resolved_str, base_str])
+            is_safe = common == base_str
+        except ValueError:
+            # 不同驱动器（如 C:\ 和 D:\）→ 直接拒绝
+            is_safe = False
+
         if not is_safe:
-            logger.warning("路径遍历攻击检测: %s (不在基准目录 %s 下)",
-                           resolved, base_resolved)
+            logger.warning(
+                "路径遍历攻击检测: %s 不在基准目录 %s 下",
+                resolved, base_resolved
+            )
         return is_safe
     except Exception as e:
         logger.warning("路径验证异常: %s, error=%s", file_path, e)

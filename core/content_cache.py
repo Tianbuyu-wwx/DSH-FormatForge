@@ -1,10 +1,13 @@
 """
 智能缓存与去重模块
 基于内容哈希的转换结果缓存，支持持久化和跨实例共享
+
+磁盘缓存采用 JSON 序列化（取代 pickle）以避免反序列化任意代码漏洞。
+向后兼容：仍可读取旧版 .pkl 文件，但下次写入会迁移为 .json。
 """
 import hashlib
+import json
 import logging
-import pickle
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -235,58 +238,92 @@ class ContentHashCache:
         del self._memory_cache[lru_key]
 
     def _save_to_disk(self, content_hash: str, result_data: Any, ttl: int):
-        """保存到磁盘缓存"""
+        """保存到磁盘缓存（JSON 格式，取代 pickle）"""
         try:
-            cache_file = self._persist_path / f"{content_hash}.pkl"
+            cache_file = self._persist_path / f"{content_hash}.json"
             entry = {
                 "content_hash": content_hash,
-                "result_data": result_data,
+                "result_data": self._serialize_for_disk(result_data),
                 "created_at": datetime.now().isoformat(),
                 "expires_at": (datetime.now() + timedelta(seconds=ttl)).isoformat(),
-                "version": 1
+                "version": 2
             }
-            with open(cache_file, "wb") as f:
-                pickle.dump(entry, f)
+            cache_file.write_text(
+                json.dumps(entry, ensure_ascii=False, default=str),
+                encoding="utf-8"
+            )
         except Exception as e:
             logger.warning(f"保存磁盘缓存失败: {e}")
 
-    def _load_from_disk_by_hash(self, content_hash: str) -> Any | None:
-        """从磁盘加载指定哈希的缓存"""
-        try:
-            cache_file = self._persist_path / f"{content_hash}.pkl"
-            if not cache_file.exists():
-                return None
+    def _serialize_for_disk(self, data: Any) -> Any:
+        """将数据序列化为 JSON 可序列化形式"""
+        if isinstance(data, dict):
+            return {str(k): self._serialize_for_disk(v) for k, v in data.items()}
+        if isinstance(data, (list, tuple)):
+            return [self._serialize_for_disk(v) for v in data]
+        if hasattr(data, "model_dump"):  # Pydantic v2
+            try:
+                return data.model_dump(mode="json")
+            except Exception:
+                pass
+        if hasattr(data, "dict"):  # Pydantic v1
+            try:
+                return data.dict()
+            except Exception:
+                pass
+        if isinstance(data, (str, int, float, bool, type(None))):
+            return data
+        # 无法序列化的类型 → str fallback（避免任何情况下的崩溃）
+        return str(data)
 
-            with open(cache_file, "rb") as f:
-                entry = pickle.load(f)
+    def _load_from_disk_by_hash(self, content_hash: str) -> Any | None:
+        """从磁盘加载指定哈希的缓存（优先 .json，回退到 .pkl 向后兼容）"""
+        try:
+            cache_file = self._persist_path / f"{content_hash}.json"
+            legacy_file = self._persist_path / f"{content_hash}.pkl"
+
+            if cache_file.exists():
+                entry = json.loads(cache_file.read_text(encoding="utf-8"))
+            elif legacy_file.exists():
+                # 旧格式：仍用 pickle 读取一次性，迁移到 JSON
+                import pickle as _pickle
+                with open(legacy_file, "rb") as f:
+                    entry = _pickle.load(f)
+                legacy_file.unlink(missing_ok=True)
+                logger.info("迁移旧版 .pkl 缓存: %s", content_hash[:16])
+            else:
+                return None
 
             expires_at = datetime.fromisoformat(entry["expires_at"])
             if datetime.now() > expires_at:
-                # 过期，删除文件
                 cache_file.unlink(missing_ok=True)
                 return None
 
             return entry["result_data"]
         except Exception as e:
             logger.warning(f"加载磁盘缓存失败: {e}")
+            # 任何解析失败都删除损坏文件（pickle/JSON 损坏 → 触发攻击面）
+            for ext in (".json", ".pkl"):
+                p = self._persist_path / f"{content_hash}{ext}"
+                if p.exists():
+                    p.unlink(missing_ok=True)
+                    logger.warning("损坏缓存文件已删除: %s", p.name)
             return None
 
     def _load_from_disk(self):
-        """启动时从磁盘加载有效缓存"""
+        """启动时从磁盘加载有效缓存（支持 .json 新格式和 .pkl 旧格式）"""
         if not self._persist_path.exists():
             return
 
         loaded = 0
-        for cache_file in self._persist_path.glob("*.pkl"):
+        # 先扫 .json（新格式）
+        for cache_file in self._persist_path.glob("*.json"):
             try:
-                with open(cache_file, "rb") as f:
-                    entry = pickle.load(f)
-
+                entry = json.loads(cache_file.read_text(encoding="utf-8"))
                 expires_at = datetime.fromisoformat(entry["expires_at"])
                 if datetime.now() > expires_at:
                     cache_file.unlink(missing_ok=True)
                     continue
-
                 content_hash = entry["content_hash"]
                 self._memory_cache[content_hash] = CacheEntry(
                     content_hash=content_hash,
@@ -298,6 +335,31 @@ class ContentHashCache:
                 loaded += 1
             except Exception as e:
                 logger.warning(f"加载缓存文件失败 {cache_file}: {e}")
+                cache_file.unlink(missing_ok=True)
+
+        # 再扫 .pkl（旧格式，仅迁移到内存，下次写入自动转 JSON）
+        for cache_file in self._persist_path.glob("*.pkl"):
+            try:
+                import pickle as _pickle
+                with open(cache_file, "rb") as f:
+                    entry = _pickle.load(f)
+                expires_at = datetime.fromisoformat(entry["expires_at"])
+                if datetime.now() > expires_at:
+                    cache_file.unlink(missing_ok=True)
+                    continue
+                content_hash = entry["content_hash"]
+                self._memory_cache[content_hash] = CacheEntry(
+                    content_hash=content_hash,
+                    result_data=entry["result_data"],
+                    created_at=datetime.fromisoformat(entry["created_at"]),
+                    expires_at=expires_at,
+                    last_accessed=datetime.now()
+                )
+                loaded += 1
+                logger.info("迁移 .pkl → 内存: %s", content_hash[:16])
+            except Exception as e:
+                logger.warning(f"加载旧 .pkl 缓存失败 {cache_file}: {e}")
+                cache_file.unlink(missing_ok=True)
 
         if loaded > 0:
             logger.info(f"从磁盘加载 {loaded} 个缓存条目")
@@ -307,12 +369,14 @@ class ContentHashCache:
         if content_hash:
             self._memory_cache.pop(content_hash, None)
             if self._enable_disk_cache:
-                cache_file = self._persist_path / f"{content_hash}.pkl"
-                cache_file.unlink(missing_ok=True)
+                for ext in (".json", ".pkl"):
+                    (self._persist_path / f"{content_hash}{ext}").unlink(missing_ok=True)
         else:
             # 清除所有缓存
             self._memory_cache.clear()
             if self._enable_disk_cache:
+                for f in self._persist_path.glob("*.json"):
+                    f.unlink(missing_ok=True)
                 for f in self._persist_path.glob("*.pkl"):
                     f.unlink(missing_ok=True)
 
@@ -320,7 +384,10 @@ class ContentHashCache:
         """获取缓存统计信息"""
         total_memory = len(self._memory_cache)
         expired = sum(1 for v in self._memory_cache.values() if self._is_expired(v))
-        disk_files = len(list(self._persist_path.glob("*.pkl"))) if self._enable_disk_cache else 0
+        disk_files = 0
+        if self._enable_disk_cache:
+            disk_files = len(list(self._persist_path.glob("*.json")))
+            disk_files += len(list(self._persist_path.glob("*.pkl")))  # 旧文件也算
 
         total_access = sum(v.access_count for v in self._memory_cache.values())
 
