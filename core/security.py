@@ -68,7 +68,8 @@ def validate_mime_type(mime_type: str | None) -> bool:
         bool: 是否合法
     """
     if not mime_type:
-        return True  # 无 MIME 类型时不拦截
+        logger.warning("MIME 类型为空，拒绝访问")
+        return False  # 无 MIME 类型时拦截（安全加固）
     is_allowed = mime_type.lower() in ALLOWED_MIME_TYPES
     if not is_allowed:
         logger.warning("MIME 类型不在白名单中: %s", mime_type)
@@ -80,6 +81,9 @@ def validate_mime_type(mime_type: str | None) -> bool:
 # 允许下载的域名白名单（空列表表示不做限制，仅阻止已知危险域名）
 ALLOWED_DOMAINS: list[str] = []  # 例如: ["example.com", "cdn.example.com"]
 
+# 允许的 URL scheme 白名单
+ALLOWED_URL_SCHEMES: set[str] = {"http", "https"}
+
 # 明确禁止的域名（防止 SSRF 攻击）
 BLOCKED_DOMAINS: set[str] = {
     "localhost", "127.0.0.1", "0.0.0.0",
@@ -88,19 +92,143 @@ BLOCKED_DOMAINS: set[str] = {
     "100.100.100.200",  # 阿里云元数据
 }
 
-# 禁止的内网 IP 段
-BLOCKED_PRIVATE_RANGES: list[str] = [
-    "10.", "172.16.", "172.17.", "172.18.", "172.19.",
-    "172.20.", "172.21.", "172.22.", "172.23.",
-    "172.24.", "172.25.", "172.26.", "172.27.",
-    "172.28.", "172.29.", "172.30.", "172.31.",
-    "192.168.",
-]
+
+def _resolve_and_check_ip(hostname: str) -> bool:
+    """
+    解析域名并检查是否指向内网地址。
+    使用 socket.getaddrinfo 做 DNS 解析 + ipaddress 模块做内网检测。
+
+    Returns:
+        True 如果安全（非内网），False 如果应阻止
+    """
+    import socket
+    import ipaddress
+
+    # 先尝试直接用 ipaddress 解析 hostname（处理标准 IPv4/IPv6 字面量）
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast:
+            logger.warning("URL 指向内网地址: %s", hostname)
+            return False
+        if addr.is_private is False and addr.is_global is False:
+            logger.warning("URL 指向保留地址: %s", hostname)
+            return False
+        # IP 直接解析成功且非内网 → 安全
+        return True
+    except ValueError:
+        pass  # 不是标准 IP 字面量，继续走 DNS 解析
+
+    # 尝试解析 obfuscated IP（整数 IP、单字节 IP 等）
+    # 在 Windows 上 socket.getaddrinfo 不处理这些，所以先手动尝试
+    try:
+        resolved = _try_parse_obfuscated_ip(hostname)
+        if resolved is not None:
+            addr = ipaddress.ip_address(resolved)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast:
+                logger.warning("URL 指向内网地址(obfuscated): %s -> %s", hostname, resolved)
+                return False
+            if addr.is_private is False and addr.is_global is False:
+                logger.warning("URL 指向保留地址(obfuscated): %s -> %s", hostname, resolved)
+                return False
+            return True
+    except Exception:
+        pass
+
+    try:
+        addrinfo = socket.getaddrinfo(hostname, None)
+    except (socket.gaierror, OSError):
+        # DNS 解析失败 — 允许（后续请求时会失败）
+        return True
+
+    for family, _, _, _, sockaddr in addrinfo:
+        ip_str = sockaddr[0]  # type: ignore
+        try:
+            addr = ipaddress.ip_address(ip_str)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast:
+                logger.warning("URL 指向内网地址: %s -> %s", hostname, ip_str)
+                return False
+            # 检查保留地址 (100.64.0.0/10 等)
+            if addr.is_private is False and addr.is_global is False:
+                logger.warning("URL 指向保留地址: %s -> %s", hostname, ip_str)
+                return False
+        except ValueError:
+            continue
+
+    return True
+
+
+def _try_parse_obfuscated_ip(hostname: str) -> str | None:
+    """
+    尝试解析 obfuscated IP 地址到标准 IPv4 字符串。
+    处理：整数 IP (2130706433)、单字节/多字节 (127.1)、十六进制、混合格式。
+
+    Returns:
+        标准 IP 字符串 (如 "127.0.0.1") 或 None
+    """
+    import socket
+    import struct
+
+    # 1. 纯数字 → 整数 IP
+    if hostname.isdigit():
+        try:
+            n = int(hostname)
+            if n > 0xFFFFFFFF:
+                return None
+            return socket.inet_ntoa(struct.pack("!I", n))
+        except (ValueError, OSError):
+            return None
+
+    # 2. 十六进制（0x 开头）
+    if hostname.startswith("0x"):
+        try:
+            n = int(hostname, 16)
+            if n > 0xFFFFFFFF:
+                return None
+            return socket.inet_ntoa(struct.pack("!I", n))
+        except (ValueError, OSError):
+            return None
+
+    # 3. 八进制（0 开头但不含点号）
+    if hostname.startswith("0") and len(hostname) > 1 and hostname[1].isdigit() and "." not in hostname:
+        try:
+            n = int(hostname, 8)
+            if n > 0xFFFFFFFF:
+                return None
+            return socket.inet_ntoa(struct.pack("!I", n))
+        except (ValueError, OSError):
+            return None
+
+    # 4. 点分十进制但不标准（如 127.1 = 127.0.0.1）
+    parts = hostname.split(".")
+    if 2 <= len(parts) <= 3:
+        try:
+            nums = [int(p) for p in parts]
+            if any(n < 0 or n > 0xFFFFFFFF for n in nums):
+                return None
+            if len(parts) == 2:
+                # a.b = (a << 24) | (b)
+                val = (nums[0] << 24) | nums[1]
+            elif len(parts) == 3:
+                # a.b.c = (a << 24) | (b << 16) | c
+                val = (nums[0] << 24) | (nums[1] << 16) | nums[2]
+            if val > 0xFFFFFFFF:
+                return None
+            return socket.inet_ntoa(struct.pack("!I", val))
+        except (ValueError, OSError):
+            return None
+
+    return None
 
 
 def validate_url_domain(url: str) -> bool:
     """
-    验证 URL 域名是否允许下载（防止 SSRF）
+    验证 URL 域名是否允许下载（防止 SSRF 攻击）
+
+    检查项：
+    1. URL scheme 白名单（不允许 file:/// 等）
+    2. 域名黑名单（阻止 localhost/127.0.0.1/169.254.169.254 等）
+    3. IP 地址解析后 ipaddress 库内网检测
+    4. 域名白名单（如果设置）
 
     Args:
         url: 完整的 URL
@@ -112,24 +240,31 @@ def validate_url_domain(url: str) -> bool:
 
     try:
         parsed = urlparse(url)
+        scheme = parsed.scheme.lower()
         hostname = parsed.hostname.lower() if parsed.hostname else ""
     except Exception:
         logger.warning("URL 解析失败: %s", url)
         return False
 
-    # 检查被禁止的域名
+    # 1. Scheme 白名单
+    if scheme not in ALLOWED_URL_SCHEMES:
+        logger.warning("URL scheme 不在白名单: %s (scheme=%s)", url, scheme)
+        return False
+
+    if not hostname:
+        logger.warning("URL 缺少 hostname: %s", url)
+        return False
+
+    # 2. 检查被禁止的域名
     if hostname in BLOCKED_DOMAINS:
         logger.warning("URL 域名在禁止列表中: %s", url)
         return False
 
-    # 检查内网 IP 段
-    if hostname and hostname.replace(".", "").isdigit():  # 是 IP 地址
-        for prefix in BLOCKED_PRIVATE_RANGES:
-            if hostname.startswith(prefix):
-                logger.warning("URL 指向内网地址: %s (匹配: %s)", url, prefix)
-                return False
+    # 3. 检查内网 IP 段 (ipaddress 模块)
+    if not _resolve_and_check_ip(hostname):
+        return False
 
-    # 如果设置了域名白名单且非空，检查是否在白名单中
+    # 4. 如果设置了域名白名单且非空，检查是否在白名单中
     if ALLOWED_DOMAINS:
         is_allowed = any(
             hostname == domain or hostname.endswith("." + domain)

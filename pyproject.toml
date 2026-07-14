@@ -1,10 +1,10 @@
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-format-translator"
-version = "1.0.0"
+version = "2.1.0"
 description = "AI 数据转换器 - 将各种文件格式转换为 AI 可识别的标准化数据"
 readme = "README.md"
 requires-python = ">=3.10"

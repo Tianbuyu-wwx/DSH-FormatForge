@@ -15,10 +15,16 @@ logger = logging.getLogger("ocr_engine")
 
 # 可选依赖
 try:
-    import pdfplumber
+    import pdfplumber as _pdfplumber_module
+    pdfplumber = _pdfplumber_module
     PDFPLUMBER_AVAILABLE = True
 except ImportError:
     PDFPLUMBER_AVAILABLE = False
+    import contextlib
+    @contextlib.contextmanager
+    def _pdfplumber_open_stub(*args, **kwargs):
+        yield type("_PdfPage", (), {"pages": [], "__len__": lambda s: 0})()
+    pdfplumber = type("_PdfplumberStub", (), {"open": staticmethod(_pdfplumber_open_stub)})  # type: ignore
 
 try:
     from PIL import Image

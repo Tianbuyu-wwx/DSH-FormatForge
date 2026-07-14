@@ -29,6 +29,7 @@ from api.v2 import router as v2_router
 
 # 导出关键组件以支持测试和外部导入
 from core.di import data_converter, file_parser
+from __version__ import __version__, __version_name__
 
 # ==================== 日志配置 ====================
 
@@ -44,16 +45,26 @@ logger.info("日志系统初始化完成，敏感信息过滤已启用")
 app = FastAPI(
     title="AI 数据转换器",
     description="自动将各种格式数据转换为AI可识别的标准化数据",
-    version="2.1.0"
+    version=__version__
 )
 
 # ==================== 全局中间件 ====================
 
 # CORS 中间件
+# 注意：allow_origins=["*"] 与 allow_credentials=True 不能共存（浏览器会拒绝）
+# 当 ALLOWED_ORIGINS 包含 "*" 时自动设为 allow_credentials=False
+_cors_origins = settings.ALLOWED_ORIGINS
+_cors_credentials = True
+if isinstance(_cors_origins, list) and "*" in _cors_origins:
+    _cors_credentials = False
+elif _cors_origins == "*":
+    _cors_origins = ["*"]
+    _cors_credentials = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -93,14 +104,15 @@ async def api_v1_deprecation_middleware(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """全局异常处理器 - 统一错误响应格式"""
+    """全局异常处理器 - 统一错误响应格式（生产环境不泄漏堆栈）"""
     logger.error("未捕获的异常: %s, path=%s, method=%s",
                  exc, request.url.path, request.method, exc_info=True)
+    msg = "服务器内部错误: %s" % str(exc) if settings.DEBUG else "服务器内部错误"
     return JSONResponse(
         status_code=500,
         content={
             "code": ResponseCode.SERVER_ERROR,
-            "msg": f"服务器内部错误: {str(exc)}",
+            "msg": msg,
             "data": None,
             "requestId": generate_request_id()
         }
@@ -155,7 +167,7 @@ async def root():
     """根路径 - 返回服务信息和 API 文档链接"""
     return {
         "name": "AI 数据转换器",
-        "version": "2.1.0",
+        "version": __version__,
         "description": "自动将各种格式数据转换为AI可识别的标准化数据",
         "docs": "/docs",
         "health": "/health",
@@ -173,7 +185,7 @@ async def health_check():
         data={
             "status": "healthy",
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "version": "2.1.0"
+            "version": __version__
         }
     )
 

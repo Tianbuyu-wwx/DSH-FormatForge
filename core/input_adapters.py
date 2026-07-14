@@ -7,7 +7,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, List
 from urllib.parse import urlparse
 
 logger = logging.getLogger("input_adapters")

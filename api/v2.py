@@ -19,6 +19,7 @@ from core.security import validate_file_extension, validate_url_domain
 from core.stream_handler import streaming_convert
 from core.webhook_manager import get_webhook_manager
 from core.utils import build_convert_response_data, create_response, generate_request_id, save_upload_file
+from __version__ import __version__, __version_name__
 
 logger = logging.getLogger("api.v2")
 
@@ -597,7 +598,7 @@ async def health_v2():
     import time as _time
     return {
         "status": "ok",
-        "version": "1.3.0",
+        "version": __version__,
         "timestamp": _time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 

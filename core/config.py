@@ -4,6 +4,8 @@
 """
 from pathlib import Path
 
+from typing import Any
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -62,7 +64,11 @@ class AppSettings(BaseSettings):
     RATE_LIMIT_MAX: int = Field(default=60, description="每分钟最大请求数")
     FILE_TYPE_VALIDATION: bool = Field(default=True)
     URL_DOMAIN_VALIDATION: bool = Field(default=True)
-    ALLOWED_ORIGINS: list = Field(default=["*"], description="CORS 允许的域名，生产环境应设为具体域名")
+    # 注意：CORS 允许的来源。支持三种格式：
+    # - `*` 表示所有来源（此时 allow_credentials 自动设为 False）
+    # - JSON 数组: ["http://localhost:3000", "https://app.example.com"]
+    # - 单个域名: "http://localhost:3000"（自动包装为列表）
+    ALLOWED_ORIGINS: Any = Field(default=['http://localhost:3000'], description="CORS 允许的域名列表。支持 `*`（所有来源）、JSON 数组字符串、或单个域名字符串")
 
     # 支持的配置
     SUPPORTED_FILE_TYPES: dict = Field(default={
@@ -85,6 +91,29 @@ class AppSettings(BaseSettings):
         path = Path(v)
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        """支持环境变量中传入 `*` 或 JSON 数组格式的字符串，解析为 list[str]"""
+        if isinstance(v, str):
+            v_stripped = v.strip()
+            if v_stripped == "*":
+                return ["*"]
+            # 先尝试 JSON 解析
+            if v_stripped.startswith("["):
+                try:
+                    import json
+                    parsed = json.loads(v_stripped)
+                    if isinstance(parsed, list):
+                        return parsed
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # 单个域名
+            return [v_stripped]
+        if isinstance(v, list):
+            return v
+        return ["*"]
 
     model_config = SettingsConfigDict(
         env_file=".env",
