@@ -550,6 +550,7 @@ class BuildResultStep:
                 # v2.1.0: 在共享 asyncio 事件循环中投递（避免每任务 new event_loop）
                 # 若当前在线程中（如同步 Pipeline 调用），退化到后台线程
                 try:
+                    import asyncio as _asyncio
                     _loop = _asyncio.get_running_loop()
                     _loop.create_task(manager.deliver(task_id, result))
                     logger.debug("[result_id=%s] Webhook 已提交到事件循环", task_id)

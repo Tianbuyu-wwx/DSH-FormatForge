@@ -219,7 +219,7 @@ class DataParser(BaseParser):
         if YAML_AVAILABLE:
             try:
                 return self._parse_yaml(file_path)
-            except:
+            except Exception:  # noqa: BLE001
                 pass
 
         try:

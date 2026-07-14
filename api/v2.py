@@ -9,6 +9,8 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from __version__ import __version__
+from pydantic import BaseModel
+
 from core.auth import verify_api_key
 from core.config import settings
 from core.di import data_converter, file_parser
@@ -586,8 +588,6 @@ async def health_v2():
 
 
 # ==================== Webhook 回调 API ====================
-
-from pydantic import BaseModel
 
 
 class WebhookRegisterRequest(BaseModel):
