@@ -44,7 +44,7 @@ class TOMLParser(BaseParser):
                 data = tomllib.load(f)
         except Exception as e:
             logger.error("TOML 解析失败: %s", e)
-            raise ValueError(f"TOML 解析失败: {e}")
+            raise ValueError(f"TOML 解析失败: {e}") from e
 
         elements: list[ExtractedElement] = []
         raw_lines: list[str] = []

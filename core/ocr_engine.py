@@ -31,7 +31,7 @@ except ImportError:
     pdfplumber = type("_PdfplumberStub", (), {"open": staticmethod(_pdfplumber_open_stub)})  # type: ignore
 
 try:
-    from PIL import Image
+    from PIL import Image  # noqa: F401  (defensive: ensure PIL.Image can be imported)
 
     IMAGE_AVAILABLE = True
 except ImportError:

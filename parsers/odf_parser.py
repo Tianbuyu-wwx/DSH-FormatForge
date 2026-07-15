@@ -73,13 +73,13 @@ class ODFParser(BaseParser):
             raise ValueError(f"不是有效的 ODF 文件: {file_path}")
         except Exception as e:
             logger.error("读取 ODF 文件失败: %s", e)
-            raise ValueError(f"读取 ODF 文件失败: {e}")
+            raise ValueError(f"读取 ODF 文件失败: {e}") from e
 
         try:
             root = ET.fromstring(content_xml)
         except ET.ParseError as e:
             logger.error("解析 content.xml 失败: %s", e)
-            raise ValueError(f"ODF XML 解析失败: {e}")
+            raise ValueError(f"ODF XML 解析失败: {e}") from e
 
         # 查找 office:body
         body = root.find(_ns("office:body"))

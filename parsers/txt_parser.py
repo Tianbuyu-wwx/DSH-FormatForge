@@ -92,7 +92,7 @@ class TXTParser(BaseParser):
 
         except Exception as e:
             logger.error("TXT 解析失败: %s", e)
-            raise ValueError(f"TXT 解析失败: {e}")
+            raise ValueError(f"TXT 解析失败: {e}") from e
 
         logger.info("TXT 解析完成: %d 个元素, %d 行", len(elements), total_lines)
 

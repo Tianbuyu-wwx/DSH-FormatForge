@@ -47,7 +47,7 @@ class DOCXParser(BaseParser):
             doc = Document(str(file_path))
         except Exception as e:
             logger.error("无法打开 DOCX 文件: %s", e)
-            raise ValueError(f"无法打开 DOCX 文件: {e}")
+            raise ValueError(f"无法打开 DOCX 文件: {e}") from e
 
         elements = []
         raw_text_parts = []

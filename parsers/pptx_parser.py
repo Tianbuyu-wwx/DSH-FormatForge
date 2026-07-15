@@ -15,7 +15,7 @@ logger = logging.getLogger("parsers.pptx")
 # 可选依赖
 try:
     from pptx import Presentation
-    from pptx.util import Inches, Pt
+    from pptx.util import Inches, Pt  # noqa: F401  (defensive: ensure pptx.util loads)
 
     PPTX_AVAILABLE = True
 except ImportError:
@@ -47,7 +47,7 @@ class PPTXParser(BaseParser):
             prs = Presentation(str(file_path))
         except Exception as e:
             logger.error("无法打开 PPTX 文件: %s", e)
-            raise ValueError(f"无法打开 PPTX 文件: {e}")
+            raise ValueError(f"无法打开 PPTX 文件: {e}") from e
 
         pages = []
         for idx, slide in enumerate(prs.slides, 1):

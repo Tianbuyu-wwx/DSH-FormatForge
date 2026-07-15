@@ -104,7 +104,7 @@ class EmailParser(BaseParser):
                 msg = email.message_from_binary_file(f)
         except Exception as e:
             logger.error("EML 文件读取失败: %s", e)
-            raise ValueError(f"EML 文件读取失败: {e}")
+            raise ValueError(f"EML 文件读取失败: {e}") from e
 
         elements: list[ExtractedElement] = []
         raw_lines: list[str] = []
@@ -311,7 +311,7 @@ class EmailParser(BaseParser):
             msg = extract_msg.Message(str(file_path))
         except Exception as e:
             logger.error("MSG 文件读取失败: %s", e)
-            raise ValueError(f"MSG 文件读取失败: {e}")
+            raise ValueError(f"MSG 文件读取失败: {e}") from e
 
         # 1. 邮件头
         sender = msg.sender or ""

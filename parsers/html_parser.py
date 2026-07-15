@@ -149,7 +149,7 @@ class HTMLParser(BaseParser):
                 html_content = f.read()
         except Exception as e:
             logger.error("无法读取 HTML 文件: %s", e)
-            raise ValueError(f"无法读取 HTML 文件: {e}")
+            raise ValueError(f"无法读取 HTML 文件: {e}") from e
 
         # 提取标题
         title = self._extract_title(html_content)

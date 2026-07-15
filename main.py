@@ -18,12 +18,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-# 导出关键组件以支持测试和外部导入
-from core.di import data_converter, file_parser  # noqa: F401
 from __version__ import __version__
 from api.v1 import router as v1_router
 from api.v2 import router as v2_router
 from core.config import settings
+
+# 导出关键组件以支持测试和外部导入
+from core.di import data_converter, file_parser  # noqa: F401
 
 # ==================== 日志配置 ====================
 from core.logging_config import setup_logging

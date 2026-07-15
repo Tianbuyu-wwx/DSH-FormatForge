@@ -60,7 +60,7 @@ class RichTextParser(BaseParser):
                 content = f.read()
         except Exception as e:
             logger.error("无法读取 Markdown 文件: %s", e)
-            raise ValueError(f"无法读取 Markdown 文件: {e}")
+            raise ValueError(f"无法读取 Markdown 文件: {e}") from e
 
         elements = []
         raw_lines = []
@@ -277,7 +277,7 @@ class RichTextParser(BaseParser):
                 rtf_content = f.read()
         except Exception as e:
             logger.error("无法读取 RTF 文件: %s", e)
-            raise ValueError(f"无法读取 RTF 文件: {e}")
+            raise ValueError(f"无法读取 RTF 文件: {e}") from e
 
         # 转换为纯文本
         plain_text = rtf_to_text(rtf_content)

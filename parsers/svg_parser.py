@@ -44,10 +44,10 @@ class SVGParser(BaseParser):
             root = tree.getroot()
         except ET.ParseError as e:
             logger.error("SVG XML 解析失败: %s", e)
-            raise ValueError(f"SVG 解析失败（XML 格式错误）: {e}")
+            raise ValueError(f"SVG 解析失败（XML 格式错误）: {e}") from e
         except Exception as e:
             logger.error("SVG 文件读取失败: %s", e)
-            raise ValueError(f"SVG 文件读取失败: {e}")
+            raise ValueError(f"SVG 文件读取失败: {e}") from e
 
         elements: list[ExtractedElement] = []
         raw_lines: list[str] = []

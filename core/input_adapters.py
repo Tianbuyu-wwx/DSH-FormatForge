@@ -147,7 +147,7 @@ class UrlInputAdapter(InputAdapter):
 
         except httpx.RequestError as e:
             logger.error("下载失败: %s, error=%s", url, e)
-            raise RuntimeError(f"下载失败: {e}")
+            raise RuntimeError(f"下载失败: {e}") from e
 
     def _extract_filename(self, url: str, headers: dict) -> str | None:
         """从 URL 或响应头提取文件名"""

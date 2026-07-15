@@ -71,10 +71,10 @@ class DataParser(BaseParser):
                 data = json.load(f)
         except json.JSONDecodeError as e:
             logger.error("JSON 解析失败: %s", e)
-            raise ValueError(f"JSON 解析失败: {e}")
+            raise ValueError(f"JSON 解析失败: {e}") from e
         except Exception as e:
             logger.error("无法读取 JSON 文件: %s", e)
-            raise ValueError(f"无法读取 JSON 文件: {e}")
+            raise ValueError(f"无法读取 JSON 文件: {e}") from e
 
         elements = []
         raw_lines = []
@@ -129,10 +129,10 @@ class DataParser(BaseParser):
                 data = yaml.safe_load(f)
         except yaml.YAMLError as e:
             logger.error("YAML 解析失败: %s", e)
-            raise ValueError(f"YAML 解析失败: {e}")
+            raise ValueError(f"YAML 解析失败: {e}") from e
         except Exception as e:
             logger.error("无法读取 YAML 文件: %s", e)
-            raise ValueError(f"无法读取 YAML 文件: {e}")
+            raise ValueError(f"无法读取 YAML 文件: {e}") from e
 
         elements = []
         raw_lines = []
@@ -178,10 +178,10 @@ class DataParser(BaseParser):
             root = tree.getroot()
         except ET.ParseError as e:
             logger.error("XML 解析失败: %s", e)
-            raise ValueError(f"XML 解析失败: {e}")
+            raise ValueError(f"XML 解析失败: {e}") from e
         except Exception as e:
             logger.error("无法读取 XML 文件: %s", e)
-            raise ValueError(f"无法读取 XML 文件: {e}")
+            raise ValueError(f"无法读取 XML 文件: {e}") from e
 
         elements = []
         raw_lines = []

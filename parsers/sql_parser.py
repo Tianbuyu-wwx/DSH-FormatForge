@@ -48,7 +48,7 @@ class SQLParser(BaseParser):
                     content = f.read()
             except Exception as e2:
                 logger.error("无法读取 SQL 文件: %s", e2)
-                raise ValueError(f"无法读取 SQL 文件: {e2}")
+                raise ValueError(f"无法读取 SQL 文件: {e2}") from e
 
         # 分割 SQL 语句
         statements = self._split_statements(content)

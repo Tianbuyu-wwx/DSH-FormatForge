@@ -42,7 +42,7 @@ class LaTeXParser(BaseParser):
                 content = f.read()
         except Exception as e:
             logger.error("无法读取 LaTeX 文件: %s", e)
-            raise ValueError(f"无法读取 LaTeX 文件: {e}")
+            raise ValueError(f"无法读取 LaTeX 文件: {e}") from e
 
         # 步骤1: 去除注释（以 % 开头的行内注释）
         content = self._strip_comments(content)

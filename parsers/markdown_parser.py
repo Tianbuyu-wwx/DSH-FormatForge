@@ -36,7 +36,7 @@ class MarkdownParser(BaseParser):
                 content = f.read()
         except Exception as e:
             logger.error("无法读取 Markdown 文件: %s", e)
-            raise ValueError(f"无法读取 Markdown 文件: {e}")
+            raise ValueError(f"无法读取 Markdown 文件: {e}") from e
 
         elements = []
         raw_lines: list[str] = []

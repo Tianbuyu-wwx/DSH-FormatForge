@@ -10,9 +10,22 @@ v2.3 - 统一 Parser 接口：
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from core.models import ExtractedElement, FileType, PageContent, ParsedFile, TaskStatus
+
+__all__ = [
+    "BaseParser",
+    "ExtractedElement",
+    "FileType",
+    "PageContent",
+    "ParsedFile",
+    "TaskStatus",
+    "Any",
+    "ABC",
+    "abstractmethod",
+    "Path",
+]
 
 
 class BaseParser(ABC):

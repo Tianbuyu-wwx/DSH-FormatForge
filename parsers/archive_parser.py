@@ -131,10 +131,10 @@ class ArchiveParser(BaseParser):
 
         except zipfile.BadZipFile as e:
             logger.error("ZIP 文件损坏: %s", e)
-            raise ValueError(f"ZIP 文件损坏: {e}")
+            raise ValueError(f"ZIP 文件损坏: {e}") from e
         except Exception as e:
             logger.error("ZIP 解析失败: %s", e)
-            raise ValueError(f"ZIP 解析失败: {e}")
+            raise ValueError(f"ZIP 解析失败: {e}") from e
 
         return [
             PageContent(pageNumber=1, elements=elements, rawText="\n".join(raw_lines), hasImage=False, hasTable=False)
@@ -186,7 +186,7 @@ class ArchiveParser(BaseParser):
 
         except Exception as e:
             logger.error("7Z 解析失败: %s", e)
-            raise ValueError(f"7Z 解析失败: {e}")
+            raise ValueError(f"7Z 解析失败: {e}") from e
 
         return [
             PageContent(pageNumber=1, elements=elements, rawText="\n".join(raw_lines), hasImage=False, hasTable=False)
@@ -237,7 +237,7 @@ class ArchiveParser(BaseParser):
 
         except Exception as e:
             logger.error("RAR 解析失败: %s", e)
-            raise ValueError(f"RAR 解析失败: {e}")
+            raise ValueError(f"RAR 解析失败: {e}") from e
 
         return [
             PageContent(pageNumber=1, elements=elements, rawText="\n".join(raw_lines), hasImage=False, hasTable=False)

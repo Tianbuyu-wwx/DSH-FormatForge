@@ -274,8 +274,8 @@ class TableExtractionStrategy(ConversionStrategy):
         logs = [create_processing_log("table", "开始提取表格数据（增强模式）")]
         logger.info("[strategy=table] 开始提取表格数据: pages=%d", len(parsed_file.pages))
 
-        # 收集所有表格元素
-        all_tables = []
+        # 收集所有表格元素（v2.1.0: 显式类型注解避免 mypy 推断为 list[object]）
+        all_tables: list[dict[str, Any]] = []
         for page in parsed_file.pages:
             for elem in page.elements:
                 if elem.elementType == "table":

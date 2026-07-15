@@ -66,7 +66,7 @@ class CSVParser(BaseParser):
                     row_idx += 1
         except Exception as e:
             logger.error("CSV 解析失败: %s", e)
-            raise ValueError(f"CSV 解析失败: {e}")
+            raise ValueError(f"CSV 解析失败: {e}") from e
 
         # 表头检测
         has_header = self._detect_header(all_rows)

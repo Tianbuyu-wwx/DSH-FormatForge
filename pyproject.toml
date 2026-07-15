@@ -83,6 +83,19 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+# FastAPI 推荐的 Form/File/Depends 工厂函数模式（B008）允许默认参数调用
+# 详见: https://fastapi.tiangolo.com/tutorial/query-params-str-validations/
+"api/v1.py" = ["B008"]
+"api/v2.py" = ["B008"]
+
+# test/ 目录全部放宽（fixture / 性能样板 / 防御性导入多）
+"test/**/*.py" = ["B", "SIM", "N"]
+
+[tool.ruff.lint.flake8-bugbear]
+# 默认参数中允许 FastAPI 工厂调用（与 per-file-ignores 互补）
+extend-immutable-calls = []
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

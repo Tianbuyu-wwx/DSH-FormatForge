@@ -1,0 +1,66 @@
+# .pre-commit-config.yaml — DFT v2.1.0
+# 在本地 git commit 时自动运行 ruff + ruff-format + mypy
+# 安装：pip install pre-commit && pre-commit install
+# 手动运行：pre-commit run --all-files
+
+repos:
+  - repo: local
+    hooks:
+      # === Ruff check (lint) ===
+      - id: ruff-check
+        name: ruff check
+        description: 静态检查（E/F/W/I/N/UP/B/SIM）
+        entry: "E:/.venv-common/Scripts/python.exe -m ruff check ."
+        language: system
+        types: [python]
+        pass_filenames: false
+        # 始终跑（不要只对暂存文件），便于 CI 阻断
+        always_run: true
+
+      # === Ruff format (format check) ===
+      - id: ruff-format-check
+        name: ruff format --check
+        description: 格式检查（diff 模式显示差异）
+        entry: "E:/.venv-common/Scripts/python.exe -m ruff format --check --diff ."
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+
+      # === mypy (类型检查，non-blocking warning) ===
+      - id: mypy
+        name: mypy
+        description: 类型检查（warning 模式，不阻断 commit 但显示问题）
+        entry: "E:/.venv-common/Scripts/python.exe -m mypy core/ api/ parsers/ --ignore-missing-imports"
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+        # mypy warning：未来 CI 阻断前先保持本地提示
+        stages: [manual]
+
+      # === pytest smoke（关键模块测试） ===
+      - id: pytest-smoke
+        name: pytest smoke
+        description: 运行核心模块测试（security/converter/content_cache/api）
+        entry: "E:/.venv-common/Scripts/python.exe -I -m pytest test/unit/test_security.py test/unit/test_content_cache.py test/unit/test_converter_engine.py test/integration/test_api.py -q --tb=line --no-header"
+        language: system
+        pass_filenames: false
+        always_run: true
+        # 默认不跑（手动 pre-commit run pytest-smoke 或 CI 跑）
+        stages: [manual]
+
+  # === 标准 hooks ===
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: end-of-file-fixer
+        exclude: ^(.*\.csv|.*\.json)$
+      - id: trailing-whitespace
+        exclude: ^(.*\.md|.*\.csv|.*\.json)$
+      - id: detect-private-key

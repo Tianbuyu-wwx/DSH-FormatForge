@@ -44,7 +44,7 @@ class SubtitleParser(BaseParser):
                 content = f.read()
         except Exception as e:
             logger.error("无法读取字幕文件: %s", e)
-            raise ValueError(f"无法读取字幕文件: {e}")
+            raise ValueError(f"无法读取字幕文件: {e}") from e
 
         if ext == ".srt":
             return self._parse_srt(content, file_path.name)

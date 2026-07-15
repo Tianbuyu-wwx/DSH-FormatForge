@@ -36,7 +36,7 @@ except ImportError:
 
 
 try:
-    from PIL import Image
+    from PIL import Image  # noqa: F401  (defensive: ensure PIL.Image can be imported)
 
     IMAGE_AVAILABLE = True
 except ImportError:
@@ -99,7 +99,7 @@ class PDFParser(BaseParser):
 
         except Exception as e:
             logger.error("PDF 解析失败: %s", e)
-            raise ValueError(f"PDF 解析失败: {e}")
+            raise ValueError(f"PDF 解析失败: {e}") from e
 
     def _parse_page(
         self,

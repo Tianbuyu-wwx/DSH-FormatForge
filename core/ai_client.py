@@ -149,11 +149,17 @@ class MiniMaxClient(AIClient):
         ]
 
         self.logger.info("OpenAI SDK 请求超时设置: %d秒", self.timeout)
+        assert self.openai_client is not None  # safety: openai_client is set in __init__
         response = self.openai_client.chat.completions.create(
-            model="MiniMax-M2.5", messages=messages, temperature=0.7, max_tokens=8000, timeout=self.timeout
+            model="MiniMax-M2.5",
+            messages=messages,  # type: ignore[arg-type]
+            temperature=0.7,
+            max_tokens=8000,
+            timeout=self.timeout,
         )
 
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        return content if content is not None else ""
 
     def _generate_with_anthropic(self, prompt: str, image_paths: list[str]) -> str:
         """
@@ -203,11 +209,12 @@ class MiniMaxClient(AIClient):
 
         # 调用 Anthropic API
         self.logger.info("Anthropic SDK 请求超时设置: %d秒", self.timeout)
+        assert self.anthropic_client is not None
         response = self.anthropic_client.messages.create(
             model="MiniMax-M2.5",
             max_tokens=8000,
             system="你是一个数据转换助手，擅长将各种格式的数据（包括图片）转换为AI可理解的标准化格式。",
-            messages=messages,
+            messages=messages,  # type: ignore[arg-type]
         )
 
         # 提取文本内容

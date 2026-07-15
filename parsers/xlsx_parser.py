@@ -13,9 +13,9 @@ logger = logging.getLogger("parsers.xlsx")
 
 # 可选依赖
 try:
-    import openpyxl
+    import openpyxl  # noqa: F401  (defensive: ensure openpyxl is loadable)
     from openpyxl import load_workbook
-    from openpyxl.utils import get_column_letter
+    from openpyxl.utils import get_column_letter  # noqa: F401  (defensive: ensure utils submodule loads)
 
     XLSX_AVAILABLE = True
 except ImportError:
@@ -66,7 +66,7 @@ class XLSXParser(BaseParser):
             wb = load_workbook(file_path, data_only=True, read_only=True)
         except Exception as e:
             logger.error("无法打开 XLSX 文件: %s", e)
-            raise ValueError(f"无法打开 XLSX 文件: {e}")
+            raise ValueError(f"无法打开 XLSX 文件: {e}") from e
 
         elements = []
         raw_text_parts = []
@@ -157,7 +157,7 @@ class XLSXParser(BaseParser):
             wb = xlrd.open_workbook(str(file_path))
         except Exception as e:
             logger.error("无法打开 XLS 文件: %s", e)
-            raise ValueError(f"无法打开 XLS 文件: {e}")
+            raise ValueError(f"无法打开 XLS 文件: {e}") from e
 
         elements = []
         raw_text_parts = []

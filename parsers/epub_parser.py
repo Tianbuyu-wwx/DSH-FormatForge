@@ -181,13 +181,13 @@ class EPUBParser(BaseParser):
             raise ValueError(f"不是有效的 EPUB 文件: {file_path}")
         except KeyError as e:
             logger.error("EPUB 缺少必要文件: %s", e)
-            raise ValueError(f"无效的 EPUB 文件：缺少 {e}")
+            raise ValueError(f"无效的 EPUB 文件：缺少 {e}") from e
         except ET.ParseError as e:
             logger.error("EPUB XML 解析失败: %s", e)
-            raise ValueError(f"EPUB XML 解析失败: {e}")
+            raise ValueError(f"EPUB XML 解析失败: {e}") from e
         except Exception as e:
             logger.error("EPUB 解析失败: %s", e)
-            raise ValueError(f"EPUB 解析失败: {e}")
+            raise ValueError(f"EPUB 解析失败: {e}") from e
 
         logger.info("EPUB 解析完成: %d 章", len(pages))
         return pages
