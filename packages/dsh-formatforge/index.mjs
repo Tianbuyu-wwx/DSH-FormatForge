@@ -18,9 +18,10 @@ import { createTranslateTool } from './tools/translate.mjs'
 import { createFormatsTool } from './tools/formats.mjs'
 import { findRepoRoot, resolvePython, DEFAULT_TIMEOUT_MS } from './services/python-runner.mjs'
 import { createInboxWatcher, inboxDir } from './services/inbox-watcher.mjs'
+import { registerUploadRoute } from './http/upload.mjs'
 import { makeNotifier } from './services/notify.mjs'
 
-const VERSION = '0.2.0'
+const VERSION = '0.3.0'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const pluginDir = join(here)
@@ -29,7 +30,7 @@ const skillDir = join(pluginDir, 'skills')
 const defaultRepoRoot = findRepoRoot(join(pluginDir, '..', '..'))
 
 export const name = 'dsh-formatforge'
-export const inject = ['skills', 'tools', 'sessions', 'agents']
+export const inject = ['skills', 'tools', 'sessions', 'agents', 'webServer']
 
 function timeoutFromEnv() {
   const raw = Number(process.env.FF_TIMEOUT_S)
@@ -79,7 +80,14 @@ export function apply(ctx) {
     console.error(`[dsh-formatforge v${VERSION}] tool registration failed:`, (e && e.message) || e)
   }
 
-  // 4. Inbox watcher — drop files into ~/.dsh/formatforge/inbox/ → auto forge.
+  // 4. HTTP routes — browser drop uploads land straight in the inbox.
+  try {
+    registerUploadRoute(ctx, { maxBytes: maxBytesFromEnv(), log })
+  } catch (e) {
+    console.error(`[dsh-formatforge v${VERSION}] upload route failed:`, (e && e.message) || e)
+  }
+
+  // 5. Inbox watcher — drop files into ~/.dsh/formatforge/inbox/ → auto forge.
   //    Never crashes boot; sessions injection is best-effort.
   try {
     const notifier = makeNotifier({ log })
