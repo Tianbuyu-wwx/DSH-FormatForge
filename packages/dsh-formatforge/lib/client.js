@@ -173,8 +173,10 @@ function activate() {
 }
 
 
-		// auto-activate on materialization
-		activate();
+		// cordis plugin contract: host treats each client module as a plugin —
+		// exports must carry { inject: [...], apply(ctx) }.
+		exports.inject = [];
+		exports.apply = function () { activate(); };
 		return exports;
 	},
 });
