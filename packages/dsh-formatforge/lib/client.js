@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-	id: "@tianbuyu-wwx/dsh-formatforge",
+	id: "dsh-formatforge",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -171,6 +171,7 @@ function activate() {
     document.removeEventListener('paste', onPaste, true)
   }
 }
+
 
 		// auto-activate on materialization
 		activate();
