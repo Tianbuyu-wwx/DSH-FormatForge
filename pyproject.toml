@@ -34,6 +34,8 @@ dependencies = [
     "chardet>=5.0.0",
     # === 邮件解析 ===
     "extract-msg>=0.55.0",  # Outlook .msg
+    # === TOML 解析（3.11+ 用标准库 tomllib）===
+    'tomli>=2.0 ; python_version < "3.11"',
 ]
 
 [project.optional-dependencies]

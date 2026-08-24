@@ -11,7 +11,11 @@ from typing import Any
 try:
     import tomllib
 except ImportError:
-    tomllib = None  # Python < 3.11
+    # Python < 3.11：回退到第三方 tomli（API 与 tomllib 兼容）
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None  # Python < 3.11 且未安装 tomli
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
