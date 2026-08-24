@@ -288,12 +288,31 @@ dispatch_probe {"skill":"ff_translate"} → e2e: dispatch_task 转真实 pdf
    不重试（用户重新拖入即手动重试）。
 4. 大小/类型 clamp 与 ff_translate 一致（FF_MAX_BYTES；不支持格式直接报 unsupported_format）。
 
-### 11.3 层 3 · HTTP 上传端点 + UI 注入【占位，暂不实现】
+### 11.5 Phase 6 — 网页端拖拽直投（2026-08-25 实装，v0.3.0）
 
-设计备忘（未来若做）：`POST /formatforge/upload`（multipart，扩展名白名单）
-→ 落 inbox → 复用层 2 流程；新增 `ff_result(id, offset)` 工具分页取内容；
-UI 拖拽区仿 dshmarket DOM 注入——但 dsh 无官方 UI 扩展 API，宿主升级易碎，
-等官方扩展点出现再立项。
+**6A 侦察结论**（函数级证据）：
+- 官方附件 MIME 白名单硬拦非图片：`dsh-client-ui-conversation` 的 `imageMediaType()`
+  只认 png/jpeg/webp/gif，其余 throw `UnsupportedImageMediaTypeError`
+- 图片 = base64 内嵌 prompt content（`serializeImages` → `{type:'image',mediaType,data,name}`），
+  无独立上传端点——协议层没有文档附件概念 → **路线乙确认**
+- 宿主 client 模块系统（正门）：包内 `lib/client.js` + package.json 声明
+  `"dsh": {"client": {...}}` 且 exports 提供 `"./client"` 子路径 →
+  宿主自动挂 `/plugins/<pkg>/client.js?rev=` 并注册进 boot manifest
+
+**实装**：
+- `http/upload.mjs`：POST /formatforge/upload —— raw body 流式落盘 inbox，
+  x-ff-filename 头传名（免 multipart 解析），扩展名白名单+FF_MAX_BYTES+文件名消毒，
+  同名自动加序号；GET /formatforge/health
+- `lib/client.js`：`window.__ModuleLoader__.load({id, factory})` 包裹形态；
+  捕获阶段拦 drop/paste，partition 分流——图片放行原生管线，
+  非图片 fetch 上传（右下 toast 进度），混合拖拽时图片经合成 DataTransfer 归还原生流
+- index.mjs v0.3.0：inject 加 webServer
+
+**踩坑**：只声明 `dsh.client` 不够——宿主要求 exports 必须有 `"./client"`
+子路径映射到 client.js，否则 boot 崩 `declares dsh.client but exports no "./client" bundle`。
+
+**验证**：manifest 收录 ✓ / client.js 200 ✓ / upload→watcher 锻造 ✓ /
+415 拒绝 exe ✓ / hermes-link 与既有 e2e 无回归 ✓
 
 ### 11.4 验收
 
