@@ -4,3 +4,4 @@
 - insert:
     - id: dsh-formatforge
       name: 'dsh-formatforge'
+      package: '@tianbuyu-wwx/dsh-formatforge'
