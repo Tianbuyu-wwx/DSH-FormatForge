@@ -3,7 +3,15 @@
 
 为 Pipeline 各 Step 的单元测试提供统一的 mock 对象工厂。
 """
+import os
+
 import pytest
+
+# 必须在首次导入 core.*（config 在导入期读环境变量）之前设置：
+# RateLimitMiddleware 按 client_ip 进程内全局计数（默认 60 次/分钟），全量跑测试时
+# 所有集成测试共享同一 TestClient 来源，累计超限误触发 429，造成跨文件污染。
+# 用 setdefault：外部显式设置的 RATE_LIMIT_ENABLED 仍然优先生效。
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 from datetime import datetime
 from unittest.mock import MagicMock, PropertyMock
 

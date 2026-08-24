@@ -2,26 +2,22 @@
 集成测试 - API 路由端到端测试
 使用 FastAPI TestClient 测试所有 HTTP 接口
 """
-import pytest
 import json
 import os
 import tempfile
-from pathlib import Path
 from datetime import datetime
-from unittest.mock import patch, MagicMock
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 # 必须在导入 main 之前设置环境变量
 os.environ.setdefault("MINIMAX_API_KEY", "test-key")
 os.environ.setdefault("MINIMAX_BASE_URL", "https://test.api.minimax.chat")
 
-from main import app, file_parser, data_converter
-from core.models import (
-    ParsedFile, PageContent, ExtractedElement,
-    FileType, TaskStatus, ConversionType, OutputFormat
-)
-
+from core.config import settings
+from core.models import ExtractedElement, FileType, PageContent, ParsedFile, TaskStatus
+from main import app, data_converter, file_parser
 
 client = TestClient(app)
 
@@ -690,3 +686,63 @@ class TestConcurrency:
 
         assert result1.resultId != result2.resultId
         assert result1.parseId != result2.parseId
+
+
+class TestV2ReadAuthentication:
+    """敏感 v2 读接口应与写接口使用相同的 API Key 认证。"""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/v2/history",
+            "/api/v2/history/sensitive-result",
+            "/api/v2/history/stats",
+            "/api/v2/export/sensitive-result",
+            "/api/v2/quality/sensitive-result",
+            "/api/v2/webhook/status/sensitive-task",
+            "/api/v2/webhook/stats",
+        ],
+    )
+    def test_sensitive_get_requires_api_key(self, monkeypatch, path):
+        monkeypatch.setattr(settings, "API_KEY", "test-api-key")
+
+        response = client.get(path)
+
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
+
+    def test_sensitive_get_rejects_incorrect_api_key(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "test-api-key")
+
+        response = client.get(
+            "/api/v2/history",
+            headers={"Authorization": "Bearer wrong-key"},
+        )
+
+        assert response.status_code == 403
+
+    def test_sensitive_get_accepts_correct_api_key(self, monkeypatch):
+        monkeypatch.setattr(settings, "API_KEY", "test-api-key")
+
+        response = client.get(
+            "/api/v2/history",
+            headers={"Authorization": "Bearer test-api-key"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["code"] == 200
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/v2/health",
+            "/api/v2/templates",
+            "/api/v2/metrics",
+        ],
+    )
+    def test_operational_gets_remain_public(self, monkeypatch, path):
+        monkeypatch.setattr(settings, "API_KEY", "test-api-key")
+
+        response = client.get(path)
+
+        assert response.status_code == 200
