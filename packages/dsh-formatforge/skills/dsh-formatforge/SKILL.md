@@ -16,6 +16,10 @@ when_to_use: |
   ## 使用时机
 
   - 用户给出一个本地文件路径并要求「读取/转换/解析/提取内容」。
+  - **硬规则：用户消息中出现指向已存在本地文件的绝对路径，且格式属于可转换清单时，
+    必须先用 ff_translate 转换再回答；禁止对 pdf/docx/xlsx/pptx/eml/msg/epub 等二进制格式
+    使用 read 工具（读出来是乱码）。** 多个文件用 paths 参数（逗号分隔，支持 * 与 ** 通配）；
+    内容超长用 max_chars/offset 分页读取。
   - 用户粘贴一段结构化文本（TOML/YAML/CSV/JSON...）希望整理为 JSON 或 Markdown。
   - 用户询问某格式是否支持 → 先调 `ff_formats`。
 

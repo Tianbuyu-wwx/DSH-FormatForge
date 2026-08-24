@@ -1,4 +1,4 @@
-// dsh-formatforge — DSH plugin entry (v0.1).
+// dsh-formatforge — DSH plugin entry (v0.2).
 //
 // What this plugin wires:
 //   1. Skill provider so `skills/dsh-formatforge/SKILL.md` is discoverable
@@ -6,8 +6,9 @@
 //   2. Python runner bootstrap: resolve interpreter (FF_PYTHON → .venv-fg → PATH)
 //      and repo root (walk up from this file; contains formatforge/ + core/).
 //   3. Cordis tools: ff_translate, ff_formats.
-//
-// No HTTP routes, no background watchers, no sessions injection — one-shot spawn only.
+//   4. Inbox watcher (v0.2): drop files into ~/.dsh/formatforge/inbox/ → auto
+//      forge → lightweight notice appended to every live session
+//      (FF_INBOX_NOTIFY=false to disable). No full-content injection.
 
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -16,8 +17,10 @@ import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import { createTranslateTool } from './tools/translate.mjs'
 import { createFormatsTool } from './tools/formats.mjs'
 import { findRepoRoot, resolvePython, DEFAULT_TIMEOUT_MS } from './services/python-runner.mjs'
+import { createInboxWatcher, inboxDir } from './services/inbox-watcher.mjs'
+import { makeNotifier } from './services/notify.mjs'
 
-const VERSION = '0.1.0'
+const VERSION = '0.2.0'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const pluginDir = join(here)
@@ -26,7 +29,7 @@ const skillDir = join(pluginDir, 'skills')
 const defaultRepoRoot = findRepoRoot(join(pluginDir, '..', '..'))
 
 export const name = 'dsh-formatforge'
-export const inject = ['skills', 'tools']
+export const inject = ['skills', 'tools', 'sessions', 'agents']
 
 function timeoutFromEnv() {
   const raw = Number(process.env.FF_TIMEOUT_S)
@@ -74,5 +77,28 @@ export function apply(ctx) {
     }
   } catch (e) {
     console.error(`[dsh-formatforge v${VERSION}] tool registration failed:`, (e && e.message) || e)
+  }
+
+  // 4. Inbox watcher — drop files into ~/.dsh/formatforge/inbox/ → auto forge.
+  //    Never crashes boot; sessions injection is best-effort.
+  try {
+    const notifier = makeNotifier({ log })
+    const watcher = createInboxWatcher({
+      repoRoot,
+      maxBytes: maxBytesFromEnv(),
+      timeoutMs: timeoutFromEnv(),
+      log,
+      onDone: (result) => {
+        try {
+          notifier.broadcast(ctx, notifier.buildNotice(result))
+        } catch (e) {
+          log(`[dsh-formatforge] notify failed: ${(e && e.message) || e}`)
+        }
+      },
+    })
+    watcher.start()
+    console.log(`[dsh-formatforge v${VERSION}] inbox watching: ${inboxDir()} (notify=${notifier.enabled})`)
+  } catch (e) {
+    console.error(`[dsh-formatforge v${VERSION}] inbox watcher init failed:`, (e && e.message) || e)
   }
 }
