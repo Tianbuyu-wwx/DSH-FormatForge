@@ -144,7 +144,7 @@ def _resolve_and_check_ip(hostname: str) -> bool:
         return True
 
     for _family, _, _, _, sockaddr in addrinfo:
-        ip_str = sockaddr[0]  # type: ignore
+        ip_str = sockaddr[0]
         try:
             addr = ipaddress.ip_address(ip_str)
             if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_multicast:

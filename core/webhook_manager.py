@@ -20,9 +20,10 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
+
+from core.security import validate_url_domain
 
 logger = logging.getLogger("webhook")
 
@@ -85,12 +86,8 @@ class WebhookManager:
 
     def register(self, task_id: str, callback_url: str, secret: str = "") -> dict[str, Any]:
         """注册 webhook"""
-        # 验证 URL
-        parsed = urlparse(callback_url)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError(f"不支持的 URL 协议: {parsed.scheme}")
-        if not parsed.netloc:
-            raise ValueError("无效的 URL: 缺少主机名")
+        if not validate_url_domain(callback_url):
+            raise ValueError("Webhook URL 未通过安全校验")
 
         now = datetime.now().isoformat()
         webhook_secret = secret or secrets.token_hex(16)
@@ -164,7 +161,20 @@ class WebhookManager:
 
             # 指数退避重试
             last_error = ""
+            attempts = 0
             for attempt in range(1, self.MAX_RETRIES + 1):
+                attempts = attempt
+                # 每次实际投递前重新解析并验证，防止数据库篡改、DNS
+                # 结果变化或重试阶段绕过注册时的 SSRF 校验。
+                if not validate_url_domain(callback_url):
+                    last_error = "Webhook URL 未通过安全校验"
+                    logger.error(
+                        "Webhook 投递被安全策略阻止: task_id=%s, attempt=%d",
+                        task_id,
+                        attempt,
+                    )
+                    break
+
                 try:
                     async with httpx.AsyncClient(timeout=self.TIMEOUT) as client:
                         response = await client.post(callback_url, content=payload_bytes, headers=headers)
@@ -215,7 +225,7 @@ class WebhookManager:
                 """UPDATE webhooks
                    SET status = ?, retry_count = ?, last_error = ?, updated_at = ?
                    WHERE task_id = ?""",
-                (WebhookStatus.FAILED, self.MAX_RETRIES, last_error, datetime.now().isoformat(), task_id),
+                (WebhookStatus.FAILED, attempts, last_error, datetime.now().isoformat(), task_id),
             )
             conn.commit()
             logger.error("Webhook 投递最终失败: task_id=%s, error=%s", task_id, last_error)
@@ -223,7 +233,7 @@ class WebhookManager:
             return {
                 "status": "failed",
                 "task_id": task_id,
-                "attempt": self.MAX_RETRIES,
+                "attempt": attempts,
                 "error": last_error,
             }
 

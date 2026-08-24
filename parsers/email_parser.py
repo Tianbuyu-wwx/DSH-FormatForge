@@ -9,6 +9,7 @@ import logging
 import re
 from email.header import decode_header
 from pathlib import Path
+from typing import Any, cast
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -212,7 +213,7 @@ class EmailParser(BaseParser):
                 # 正文
                 if content_type == "text/plain":
                     try:
-                        payload = part.get_payload(decode=True)
+                        payload = cast(bytes | None, part.get_payload(decode=True))
                         if payload:
                             charset = part.get_content_charset() or "utf-8"
                             body_text += payload.decode(charset, errors="replace")
@@ -220,7 +221,7 @@ class EmailParser(BaseParser):
                         pass
                 elif content_type == "text/html":
                     try:
-                        payload = part.get_payload(decode=True)
+                        payload = cast(bytes | None, part.get_payload(decode=True))
                         if payload:
                             charset = part.get_content_charset() or "utf-8"
                             body_html += payload.decode(charset, errors="replace")
@@ -230,12 +231,12 @@ class EmailParser(BaseParser):
             # 非 multipart
             content_type = msg.get_content_type()
             if content_type == "text/plain":
-                payload = msg.get_payload(decode=True)
+                payload = cast(bytes | None, msg.get_payload(decode=True))
                 if payload:
                     charset = msg.get_content_charset() or "utf-8"
                     body_text = payload.decode(charset, errors="replace")
             elif content_type == "text/html":
-                payload = msg.get_payload(decode=True)
+                payload = cast(bytes | None, msg.get_payload(decode=True))
                 if payload:
                     charset = msg.get_content_charset() or "utf-8"
                     body_html = payload.decode(charset, errors="replace")
@@ -385,7 +386,7 @@ class EmailParser(BaseParser):
         if not body.strip():
             html_body = msg.htmlBody or ""
             if html_body:
-                body = _extract_text_from_html(html_body)
+                body = _extract_text_from_html(cast(str, html_body))
 
         if body.strip():
             paragraphs = re.split(r"\n\s*\n", body.strip())
@@ -409,7 +410,7 @@ class EmailParser(BaseParser):
             elem_idx[0] += 1
 
         # 3. 附件
-        attachments = []
+        attachments: list[dict[str, Any]] = []
         try:
             for att in msg.attachments:
                 attachments.append(

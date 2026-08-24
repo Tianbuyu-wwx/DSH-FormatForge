@@ -67,6 +67,8 @@ def setup_logging(level: str = "INFO", json_format: bool = True) -> None:
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(getattr(logging, level.upper(), logging.INFO))
 
+    # 两个分支都产出 Formatter 子类，统一按基类标注。
+    formatter: logging.Formatter
     if json_format:
         formatter = JsonFormatter()
     else:

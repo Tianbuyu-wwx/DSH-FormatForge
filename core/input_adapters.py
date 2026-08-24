@@ -99,7 +99,8 @@ class UrlInputAdapter(InputAdapter):
     def can_handle(self, source: Any) -> bool:
         if isinstance(source, str):
             parsed = urlparse(source)
-            return parsed.scheme in ("http", "https") and parsed.netloc
+            # bool() 收窄：netloc 是 str，直接返回会让签名变成 Literal[False] | str。
+            return parsed.scheme in ("http", "https") and bool(parsed.netloc)
         return False
 
     def read(self, source: str, timeout: int = 30, max_size: int = 100 * 1024 * 1024) -> InputData:

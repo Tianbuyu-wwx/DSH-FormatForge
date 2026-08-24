@@ -6,7 +6,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -78,7 +78,12 @@ class ImageParser(BaseParser):
             ]
 
         # 基础信息
-        img_info = {"format": img.format, "size": img.size, "mode": img.mode, "filename": file_path.name}
+        img_info: dict[str, Any] = {
+            "format": img.format,
+            "size": img.size,
+            "mode": img.mode,
+            "filename": file_path.name,
+        }
 
         elements = []
         raw_text_parts = [f"[图片文件] {file_path.name}"]
@@ -136,10 +141,10 @@ class ImageParser(BaseParser):
             )
         ]
 
-    def _extract_exif(self, img: "Image") -> dict[str, Any] | None:
+    def _extract_exif(self, img: "Image.Image") -> dict[str, Any] | None:
         """提取 EXIF 元数据"""
         try:
-            exif = img._getexif()
+            exif = cast(Any, img)._getexif()  # Pillow 私有方法，类型存根未声明
             if not exif:
                 return None
 

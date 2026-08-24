@@ -7,10 +7,9 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
-
-from __version__ import __version__
 from pydantic import BaseModel
 
+from __version__ import __version__
 from core.auth import verify_api_key
 from core.config import settings
 from core.di import data_converter, file_parser
@@ -50,6 +49,7 @@ async def convert_data(
             return create_response(code=ResponseCode.PARAM_ERROR, msg="不允许访问的 URL 域名")
 
         # 根据source_type构建输入源
+        input_source: bytes | str
         if source_type == "raw":
             input_source = source.encode("utf-8") if isinstance(source, str) else source
         elif source_type == "auto":
@@ -242,7 +242,7 @@ async def convert_text(
 # ==================== 历史记录 API ====================
 
 
-@router.get("/history")
+@router.get("/history", dependencies=[Depends(verify_api_key)])
 async def get_history(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -263,7 +263,7 @@ async def get_history(
         return create_response(code=ResponseCode.SERVER_ERROR, msg=f"获取历史记录失败: {str(e)}")
 
 
-@router.get("/history/{result_id}")
+@router.get("/history/{result_id}", dependencies=[Depends(verify_api_key)])
 async def get_history_detail(result_id: str):
     """获取单条历史记录详情"""
     try:
@@ -303,7 +303,7 @@ async def clear_history():
         return create_response(code=ResponseCode.SERVER_ERROR, msg=f"清空失败: {str(e)}")
 
 
-@router.get("/history/stats")
+@router.get("/history/stats", dependencies=[Depends(verify_api_key)])
 async def get_history_stats():
     """获取历史统计信息"""
     try:
@@ -318,7 +318,7 @@ async def get_history_stats():
 # ==================== 导出 API ====================
 
 
-@router.get("/export/{result_id}")
+@router.get("/export/{result_id}", dependencies=[Depends(verify_api_key)])
 async def export_result(result_id: str, format: str = Query(default="markdown")):
     """
     导出转换结果（v2.3）
@@ -490,7 +490,7 @@ async def convert_with_template(
 # ==================== 质量报告 API ====================
 
 
-@router.get("/quality/{result_id}")
+@router.get("/quality/{result_id}", dependencies=[Depends(verify_api_key)])
 async def get_quality_report(result_id: str):
     """获取历史记录的质量报告"""
     try:
@@ -613,7 +613,7 @@ async def register_webhook(req: WebhookRegisterRequest):
         return create_response(400, str(e))
 
 
-@router.get("/webhook/status/{task_id}")
+@router.get("/webhook/status/{task_id}", dependencies=[Depends(verify_api_key)])
 async def get_webhook_status(task_id: str):
     """查询 Webhook 投递状态"""
     manager = get_webhook_manager()
@@ -633,7 +633,7 @@ async def cancel_webhook(task_id: str):
     return create_response(404, "Webhook 未找到或已投递")
 
 
-@router.get("/webhook/stats")
+@router.get("/webhook/stats", dependencies=[Depends(verify_api_key)])
 async def get_webhook_stats():
     """Webhook 统计信息"""
     manager = get_webhook_manager()

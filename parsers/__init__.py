@@ -116,7 +116,7 @@ class ParserRegistry:
     def __init__(self):
         self._parsers: list[BaseParser] = []
         self._ext_map: dict[str, BaseParser] = {}
-        self._magic_map: list[tuple] = []
+        self._magic_map: list[tuple[bytes, BaseParser]] = []
 
     def register(self, parser: BaseParser):
         """注册解析器"""

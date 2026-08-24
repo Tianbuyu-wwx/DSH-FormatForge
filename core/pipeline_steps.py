@@ -138,7 +138,7 @@ class InputStep:
 class CacheCheckStep:
     """步骤 2: 缓存检查 —— 检查内容哈希缓存，命中则提前返回"""
 
-    def __init__(self, pipeline):  # type: ignore  # ConversionPipeline 循环引用
+    def __init__(self, pipeline: Any) -> None:  # pipeline 实为 ConversionPipeline，避免循环引用
         self._pipeline = pipeline
 
     def process(self, ctx):
@@ -226,7 +226,7 @@ class DiscoverStep:
 class ParseStep:
     """步骤 5: 文件解析 —— 使用插件化解析器解析文件内容"""
 
-    def __init__(self, pipeline):  # type: ignore  # ConversionPipeline 循环引用
+    def __init__(self, pipeline: Any) -> None:  # pipeline 实为 ConversionPipeline，避免循环引用
         self._pipeline = pipeline
 
     def process(self, ctx):
@@ -431,7 +431,7 @@ class ConvertStep:
 class EnhanceStep:
     """步骤 8: AI 增强 —— 使用 AI 提升转换质量（低置信度时触发）"""
 
-    def __init__(self, pipeline):  # type: ignore
+    def __init__(self, pipeline: Any) -> None:  # pipeline 实为 ConversionPipeline，避免循环引用
         self._pipeline = pipeline
 
     def process(self, ctx):
@@ -484,7 +484,7 @@ class FormatStep:
 class BuildResultStep:
     """步骤 10: 构建结果 —— 组装 ConvertResultData 并缓存"""
 
-    def __init__(self, pipeline):  # type: ignore
+    def __init__(self, pipeline: Any) -> None:  # pipeline 实为 ConversionPipeline，避免循环引用
         self._pipeline = pipeline
 
     def process(self, ctx):
@@ -507,7 +507,8 @@ class BuildResultStep:
                 fileName=ctx.input_data.filename or "unknown",
                 fileSize=ctx.input_data.size,
                 pageCount=ctx.parsed_file.pageCount if ctx.parsed_file else 0,
-                fileType=ctx.parsed_file.fileType if ctx.parsed_file else "unknown",
+                # FileType 为 str 枚举，字面量回退值对齐枚举类型。
+                fileType=ctx.parsed_file.fileType if ctx.parsed_file else FileType.UNKNOWN,
             ),
             conversionType=ctx.conversion_type,
             outputFormat=ctx.output_format,
@@ -551,6 +552,7 @@ class BuildResultStep:
                 # 若当前在线程中（如同步 Pipeline 调用），退化到后台线程
                 try:
                     import asyncio as _asyncio
+
                     _loop = _asyncio.get_running_loop()
                     _loop.create_task(manager.deliver(task_id, result))
                     logger.debug("[result_id=%s] Webhook 已提交到事件循环", task_id)

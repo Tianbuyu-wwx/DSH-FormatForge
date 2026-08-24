@@ -131,10 +131,22 @@ async def file_not_found_handler(request: Request, exc: FileNotFoundError):
 
 # ==================== 注册路由 ====================
 
-# 挂载前端静态文件
-frontend_path = Path(__file__).parent / "frontend"
-if frontend_path.exists():
-    app.mount("/static", StaticFiles(directory=str(frontend_path), html=True), name="static")
+# 只挂载 Vite 的生产构建，避免把 TypeScript 源文件当作可运行的静态站点。
+# 开发环境仍由 ``npm run dev`` 提供热更新服务（见 start_frontend_dev）。
+frontend_path = Path(__file__).resolve().parent / "frontend"
+frontend_dist_path = frontend_path / "dist"
+frontend_index_path = frontend_dist_path / "index.html"
+frontend_build_available = frontend_index_path.is_file()
+
+if frontend_build_available:
+    app.mount("/static", StaticFiles(directory=str(frontend_dist_path), html=True), name="static")
+    logger.info("已挂载前端生产构建: %s", frontend_dist_path)
+else:
+    logger.warning(
+        "未找到前端生产构建（%s），/static 未挂载。"
+        "开发请运行 npm --prefix frontend run dev；生产请先运行 npm --prefix frontend run build。",
+        frontend_index_path,
+    )
 
 # 注册 API 路由
 app.include_router(v1_router)
@@ -243,6 +255,7 @@ if __name__ == "__main__":
     FRONTEND_PORT = 3000
     FRONTEND_URL = f"http://localhost:{FRONTEND_PORT}/"
     BACKEND_URL = f"http://localhost:{settings.APP_PORT}/static/index.html"
+    API_URL = f"http://localhost:{settings.APP_PORT}/"
 
     logger.info("=" * 60)
     logger.info("       AI 数据转换器")
@@ -262,9 +275,12 @@ if __name__ == "__main__":
             logger.info("前端开发服务器启动中，请稍候...")
             time.sleep(5)  # 等待前端启动
             target_url = FRONTEND_URL
-        else:
-            logger.info("前端开发服务器未启动，回退到静态文件: %s", BACKEND_URL)
+        elif frontend_build_available:
+            logger.info("前端开发服务器未启动，使用生产构建: %s", BACKEND_URL)
             target_url = BACKEND_URL
+        else:
+            logger.warning("前端开发服务器和生产构建均不可用，打开 API 服务页: %s", API_URL)
+            target_url = API_URL
 
     logger.info("打开页面: %s", target_url)
     logger.info("=" * 60)

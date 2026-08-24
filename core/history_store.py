@@ -104,7 +104,15 @@ class HistoryStore:
                 logs = result_data.get("processingLogs") or []
                 conn.executemany(
                     "INSERT INTO history_logs (history_id, step, level, message) VALUES (?, ?, ?, ?)",
-                    [(history_id, l.get("step", ""), l.get("level", "info"), l.get("message", "")) for l in logs],
+                    [
+                        (
+                            history_id,
+                            log.get("step", ""),
+                            log.get("level", "info"),
+                            log.get("message", ""),
+                        )
+                        for log in logs
+                    ],
                 )
 
                 conn.commit()

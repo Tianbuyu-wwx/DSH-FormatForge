@@ -368,9 +368,13 @@ class FormatDetector:
             yaml_indicators = 0
             for line in lines:
                 stripped = line.strip()
-                if stripped and not stripped.startswith("#"):
-                    if ":" in stripped and not stripped.startswith(("-", "*", "|", ">")):
-                        yaml_indicators += 1
+                if (
+                    stripped
+                    and not stripped.startswith("#")
+                    and ":" in stripped
+                    and not stripped.startswith(("-", "*", "|", ">"))
+                ):
+                    yaml_indicators += 1
             if yaml_indicators >= 3:
                 return FormatDetectionResult(format=DataFormat.YAML, mime_type="application/yaml", confidence=0.6)
 

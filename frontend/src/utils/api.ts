@@ -5,6 +5,51 @@
 import type { ApiResponse, ConvertResult, ConversionType, OutputFormat, HistoryItem } from '../types/index.js';
 
 const API_BASE = '/api/v2';
+const API_KEY_SESSION_STORAGE_KEY = 'dft.apiKey';
+
+// API Key 仅保存在当前标签页的会话存储中。它不会进入 URL、日志或构建产物。
+// 使用 undefined 区分“尚未读取会话存储”和“已明确配置为空”。
+let configuredApiKey: string | undefined;
+
+function readApiKey(): string {
+  if (configuredApiKey !== undefined) return configuredApiKey;
+
+  try {
+    configuredApiKey = globalThis.sessionStorage?.getItem(API_KEY_SESSION_STORAGE_KEY)?.trim() || '';
+  } catch {
+    // 禁用存储或隐私模式下仍允许以内存方式使用。
+    configuredApiKey = '';
+  }
+  return configuredApiKey;
+}
+
+/** 为当前标签页配置后端 API Key；传入空字符串可清除。 */
+export function configureApiKey(apiKey: string): void {
+  if (/\r|\n/.test(apiKey)) {
+    throw new Error('API Key 不能包含换行符');
+  }
+
+  configuredApiKey = apiKey.trim();
+  try {
+    if (configuredApiKey) {
+      globalThis.sessionStorage?.setItem(API_KEY_SESSION_STORAGE_KEY, configuredApiKey);
+    } else {
+      globalThis.sessionStorage?.removeItem(API_KEY_SESSION_STORAGE_KEY);
+    }
+  } catch {
+    // 存储不可用时保留内存中的配置，不影响当前页面请求。
+  }
+}
+
+/** 只暴露配置状态，避免 UI 或日志意外读取并显示密钥原文。 */
+export function isApiKeyConfigured(): boolean {
+  return Boolean(readApiKey());
+}
+
+function authHeaders(): HeadersInit | undefined {
+  const apiKey = readApiKey();
+  return apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
+}
 
 /** 通用 API 错误 */
 export class ApiError extends Error {
@@ -24,6 +69,7 @@ async function post<T>(path: string, body: FormData, signal?: AbortSignal): Prom
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
     body,
+    headers: authHeaders(),
     signal: sig,
   });
 
@@ -40,6 +86,7 @@ async function post<T>(path: string, body: FormData, signal?: AbortSignal): Prom
 async function get<T>(path: string): Promise<ApiResponse<T>> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'GET',
+    headers: authHeaders(),
     signal: AbortSignal.timeout?.(30000),
   });
 
@@ -56,6 +103,7 @@ async function get<T>(path: string): Promise<ApiResponse<T>> {
 async function del<T>(path: string): Promise<ApiResponse<T>> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'DELETE',
+    headers: authHeaders(),
     signal: AbortSignal.timeout?.(30000),
   });
 

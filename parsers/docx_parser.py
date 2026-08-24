@@ -130,8 +130,8 @@ class DOCXParser(BaseParser):
         if text.startswith(("•", "-", "*", "1.", "2.", "（", "(")):
             return "list"
         if para._p is not None:
-            numPr = para._p.find(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr")
-            if numPr is not None:
+            num_pr = para._p.find(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}numPr")
+            if num_pr is not None:
                 return "list"
 
         # 引用检测

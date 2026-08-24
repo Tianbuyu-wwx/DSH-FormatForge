@@ -210,7 +210,7 @@ class SVGParser(BaseParser):
         """统计基本图形元素的数量"""
         counts: dict[str, int] = {}
         # 跳过 defs 中的元素（定义不统计为实际图形）
-        defs_elements = set()
+        defs_elements: set[ET.Element] = set()
         for defs in root.iter(f"{{{SVG_NS}}}defs"):
             defs_elements.update(defs.iter())
 

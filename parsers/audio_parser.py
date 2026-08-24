@@ -350,13 +350,12 @@ class AudioParser(BaseParser):
                     metadata["track"] = frame_data_str
                 elif frame_id in ("TCON", "TCO") and frame_data_str:
                     metadata["genre"] = frame_data_str
-                elif frame_id in ("COMM", "COM") and frame_data_str:
+                elif frame_id in ("COMM", "COM") and frame_data_str and len(frame_data) > 4:
                     # COMM 帧有编码和描述前缀
-                    if len(frame_data) > 4:
-                        try:
-                            metadata["comment"] = frame_data[4:].decode("utf-8", errors="ignore").strip("\x00").strip()
-                        except Exception:
-                            metadata["comment"] = frame_data_str
+                    try:
+                        metadata["comment"] = frame_data[4:].decode("utf-8", errors="ignore").strip("\x00").strip()
+                    except Exception:
+                        metadata["comment"] = frame_data_str
 
                 pos += header_size + frame_size
 

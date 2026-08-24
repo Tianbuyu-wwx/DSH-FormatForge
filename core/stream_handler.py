@@ -6,13 +6,14 @@ SSE 流式处理器
 import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, cast
 
 from core.models import ConversionType, OutputFormat
 
 logger = logging.getLogger("stream_handler")
 
-SSE_STEPS = [
+# 字面量步骤表；消费端以 cast 收窄键类型。
+SSE_STEPS: list[dict[str, Any]] = [
     {"step": "upload", "progress": 10, "message": "正在读取文件..."},
     {"step": "parse", "progress": 30, "message": "正在解析文件内容..."},
     {"step": "ocr", "progress": 50, "message": "正在识别文本和图像..."},
@@ -61,7 +62,7 @@ async def streaming_convert(
 
     try:
         for step_info in steps[:-1]:
-            step_name = step_info["step"]
+            step_name = cast(str, step_info["step"])
             yield _build_sse_event(
                 step_name,
                 {

@@ -376,7 +376,11 @@ class OcrEngine:
         return list(self._backends.keys())
 
     def extract_text_from_pdf(
-        self, pdf_path: Path, use_ai_for_images: bool = False, backend: str | None = None, apply_postprocess: bool = True
+        self,
+        pdf_path: Path,
+        use_ai_for_images: bool = False,
+        backend: str | None = None,
+        apply_postprocess: bool = True,
     ) -> list[OcrResult]:
         """
         从 PDF 中提取文字，包括图片中的文字
@@ -422,7 +426,9 @@ class OcrEngine:
 
         return results
 
-    def _ocr_page_images(self, page, page_number: int, use_ai: bool = False, backend: BaseOcrBackend = None) -> str:
+    def _ocr_page_images(
+        self, page, page_number: int, use_ai: bool = False, backend: BaseOcrBackend | None = None
+    ) -> str:
         """对页面的图片进行 OCR"""
         texts = []
 

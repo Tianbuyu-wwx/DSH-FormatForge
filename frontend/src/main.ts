@@ -24,6 +24,8 @@ import {
   convertText,
   batchConvert,
   ApiError,
+  configureApiKey,
+  isApiKeyConfigured,
 } from './utils/api.js';
 import { AppUpload } from './components/app-upload.js';
 
@@ -31,6 +33,8 @@ import { AppUpload } from './components/app-upload.js';
 export class AppRoot extends LitElement {
   @query('app-upload') private _upload!: AppUpload;
   @state() private _sidebarOpen = false;
+  @state() private _apiKeyEditorOpen = false;
+  @state() private _apiKeyDraft = '';
 
   private _onConvertBound = this._onConvert.bind(this);
   private _onConvertUrlBound = this._onConvertUrl.bind(this);
@@ -120,6 +124,41 @@ export class AppRoot extends LitElement {
     }
 
     .top-actions button:hover { color: var(--text); }
+
+    .api-key-editor {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: var(--space-2);
+      align-items: center;
+      margin: -8px 0 16px;
+      padding: var(--space-2);
+      background: rgba(0,0,0,0.18);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .api-key-editor input {
+      min-width: 0;
+      padding: 6px 8px;
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--text);
+      background: rgba(0,0,0,0.2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      outline: none;
+    }
+    .api-key-editor input:focus { border-color: var(--border-focus); }
+    .api-key-editor button {
+      padding: 5px 8px;
+      font-family: var(--font-body);
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .api-key-editor button:hover { color: var(--text); border-color: var(--border-focus); }
 
     /* ===== 右侧角色区域 ===== */
     .character-area {
@@ -255,9 +294,27 @@ export class AppRoot extends LitElement {
             <span class="logo">AI 数据转换器</span>
             <div class="top-actions">
               <button @click=${this._toggleHistory}>历史</button>
+              <button @click=${this._toggleApiKeyEditor}>密钥${isApiKeyConfigured() ? ' ✓' : ''}</button>
               <button @click=${() => toggleLang()}>${getLang() === 'zh' ? 'EN' : '中'}</button>
             </div>
           </div>
+
+          ${this._apiKeyEditorOpen ? html`
+            <div class="api-key-editor">
+              <input
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="API Key"
+                placeholder=${isApiKeyConfigured() ? '输入新密钥以替换' : '输入 API Key'}
+                .value=${this._apiKeyDraft}
+                @input=${(e: InputEvent) => this._apiKeyDraft = (e.target as HTMLInputElement).value}
+                @keydown=${this._onApiKeyKeydown}
+              >
+              <button @click=${this._saveApiKey}>保存</button>
+              <button @click=${this._clearApiKey}>清除</button>
+            </div>
+          ` : ''}
 
           <app-upload></app-upload>
           <app-options></app-options>
@@ -284,6 +341,39 @@ export class AppRoot extends LitElement {
 
   private _toggleHistory() {
     store.toggleHistory();
+  }
+
+  private _toggleApiKeyEditor() {
+    this._apiKeyDraft = '';
+    this._apiKeyEditorOpen = !this._apiKeyEditorOpen;
+  }
+
+  private _saveApiKey() {
+    if (!this._apiKeyDraft.trim()) {
+      store.showStatus('请输入 API Key；如需移除请点击“清除”', 'error');
+      return;
+    }
+
+    try {
+      configureApiKey(this._apiKeyDraft);
+      this._apiKeyDraft = '';
+      this._apiKeyEditorOpen = false;
+      store.showStatus('API Key 已为当前标签页配置', 'success');
+    } catch (err) {
+      store.showStatus(err instanceof Error ? err.message : 'API Key 配置失败', 'error');
+    }
+  }
+
+  private _clearApiKey() {
+    configureApiKey('');
+    this._apiKeyDraft = '';
+    this._apiKeyEditorOpen = false;
+    store.showStatus('API Key 已清除', 'success');
+  }
+
+  private _onApiKeyKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') this._saveApiKey();
+    if (e.key === 'Escape') this._toggleApiKeyEditor();
   }
 
   private _toggleSidebar() {

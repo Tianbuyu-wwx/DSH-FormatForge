@@ -5,7 +5,7 @@
 - API_KEY 为空时跳过认证（开发模式）
 - API_KEY 设置时，验证 `Authorization: Bearer <key>` 头
 - 用 hmac.compare_digest 防止时序攻击
-- 仅用于写接口（POST/PUT/DELETE/PATCH）；GET 接口保持公开
+- 用作路由级依赖；写接口和包含用户数据的敏感读接口需要显式启用
 """
 
 import hmac
@@ -19,7 +19,7 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def verify_api_key(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),  # noqa: B008
 ) -> bool:
     """
     验证 API Key（Bearer Token）。

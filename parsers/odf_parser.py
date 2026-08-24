@@ -68,9 +68,9 @@ class ODFParser(BaseParser):
                     raise ValueError("无效的 ODF 文件：缺少 content.xml")
 
                 content_xml = zf.read("content.xml")
-        except zipfile.BadZipFile:
+        except zipfile.BadZipFile as e:
             logger.error("不是有效的 ZIP/ODF 文件: %s", file_path)
-            raise ValueError(f"不是有效的 ODF 文件: {file_path}")
+            raise ValueError(f"不是有效的 ODF 文件: {file_path}") from e
         except Exception as e:
             logger.error("读取 ODF 文件失败: %s", e)
             raise ValueError(f"读取 ODF 文件失败: {e}") from e
@@ -207,10 +207,7 @@ class ODFParser(BaseParser):
             return [PageContent(pageNumber=1, elements=[], rawText="", hasImage=False, hasTable=False)]
 
         pages: list[PageContent] = []
-        page_num = 0
-
-        for table_elem in office_spreadsheet.findall(_ns("table:table")):
-            page_num += 1
+        for page_num, table_elem in enumerate(office_spreadsheet.findall(_ns("table:table")), start=1):
             sheet_name = table_elem.get(_ns("table:name")) or f"Sheet{page_num}"
 
             elements: list[ExtractedElement] = []
@@ -284,10 +281,7 @@ class ODFParser(BaseParser):
             return [PageContent(pageNumber=1, elements=[], rawText="", hasImage=False, hasTable=False)]
 
         pages: list[PageContent] = []
-        page_num = 0
-
-        for draw_page in office_presentation.findall(_ns("draw:page")):
-            page_num += 1
+        for page_num, draw_page in enumerate(office_presentation.findall(_ns("draw:page")), start=1):
             page_name = draw_page.get(_ns("draw:name")) or f"幻灯片 {page_num}"
 
             elements: list[ExtractedElement] = []

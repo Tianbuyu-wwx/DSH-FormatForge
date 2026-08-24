@@ -301,7 +301,7 @@ class SQLParser(BaseParser):
         """按逗号分割列定义，处理嵌套括号"""
         cols = []
         depth = 0
-        current = []
+        current: list[str] = []
         for ch in col_text:
             if ch == "(":
                 depth += 1

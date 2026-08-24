@@ -391,7 +391,10 @@ def _export_to_html(result) -> str:
 <meta name="confidence" content="{result.confidence:.2f}">
 <title>转换结果</title>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }}
+body {{
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6;
+}}
 h1, h2, h3 {{ color: #333; }}
 code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }}
 pre {{ background: #f4f4f4; padding: 16px; overflow-x: auto; border-radius: 6px; }}

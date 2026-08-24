@@ -15,14 +15,15 @@ logger = logging.getLogger("parsers.html")
 
 # 可选依赖
 try:
-    from html.parser import HTMLParser
+    # 标准库解析器加别名，避免遮蔽本模块导出的 HTMLParser 解析器类
+    from html.parser import HTMLParser as _StdHTMLParser
 
     HTML_PARSER_AVAILABLE = True
 except ImportError:
     HTML_PARSER_AVAILABLE = False
 
 
-class HTMLParserExtractor(HTMLParser):
+class HTMLParserExtractor(_StdHTMLParser):
     """简单的 HTML 内容提取器"""
 
     def __init__(self):

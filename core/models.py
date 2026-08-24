@@ -219,7 +219,9 @@ class ParsedDocument(BaseModel):
     pages: list[PageContent] = Field(default_factory=list, description="兼容旧接口的页面列表")
     blocks: list[DocBlock] = Field(default_factory=list, description="扁平块列表")
     sections: list[DocSection] = Field(default_factory=list, description="层级化章节")
-    furniture: dict[str, list[DocBlock]] = Field(default_factory=dict, description="{'header': [...], 'footer': [...], 'caption': [...]}")
+    furniture: dict[str, list[DocBlock]] = Field(
+        default_factory=dict, description="{'header': [...], 'footer': [...], 'caption': [...]}"
+    )
     metadata: dict[str, Any] = Field(default_factory=dict, description="解析器 provenance、页数、token 估算")
     createdAt: datetime = Field(default_factory=datetime.now)
 
@@ -242,14 +244,16 @@ class ParsedDocument(BaseModel):
                 if elem.position:
                     for k, v in elem.position.items():
                         bbox[k] = float(v)
-                blocks.append(DocBlock(
-                    blockId=elem.elementId,
-                    type=elem.elementType,
-                    text=elem.content,
-                    level=getattr(elem, "level", 0) or 0,
-                    bbox=bbox,
-                    metadata=elem.metadata,
-                ))
+                blocks.append(
+                    DocBlock(
+                        blockId=elem.elementId,
+                        type=elem.elementType,
+                        text=elem.content,
+                        level=getattr(elem, "level", 0) or 0,
+                        bbox=bbox,
+                        metadata=elem.metadata,
+                    )
+                )
         return cls(
             documentId=document_id or parsed.parseId,
             fileName=parsed.fileName,

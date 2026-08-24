@@ -152,7 +152,7 @@ class QualityReport:
         """评估表格准确度 (0-100)"""
         if not structured_data:
             # 没有结构化数据，检查内容中是否有表格
-            table_lines = [l for l in content.split("\n") if "|" in l and l.strip().startswith("|")]
+            table_lines = [line for line in content.split("\n") if "|" in line and line.strip().startswith("|")]
             if not table_lines:
                 return 100.0  # 无表格，视为满分
             score = 50.0  # 有表格标记但无结构化数据
@@ -291,7 +291,7 @@ class QualityReport:
         # 确定文件大小和类型
         actual_file_size = file_size if file_size > 0 else getattr(parsed_file, "fileSize", 0)
         actual_file_type = getattr(parsed_file, "fileType", None)
-        if hasattr(actual_file_type, "value"):
+        if actual_file_type is not None and hasattr(actual_file_type, "value"):
             actual_file_type = actual_file_type.value
         elif actual_file_type is None:
             actual_file_type = "unknown"

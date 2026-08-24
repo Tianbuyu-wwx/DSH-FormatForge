@@ -183,4 +183,6 @@ def apply_template(
         raise ValueError(f"未知的模板: {template_name}，可用模板: {', '.join(TEMPLATES.keys())}")
 
     transform_fn = tmpl["transform"]
-    return transform_fn(content, structured_data, file_name)
+    # TEMPLATES 值类型为 Any，显式收窄返回类型以满足签名声明。
+    result: dict[str, Any] = transform_fn(content, structured_data, file_name)
+    return result

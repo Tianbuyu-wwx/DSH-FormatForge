@@ -119,6 +119,8 @@ class AutoDetectStrategy(ConversionStrategy):
         ai_supports_images = ai_caps and ai_caps.supports_input(InputType.IMAGE) if ai_caps else False
 
         # 根据特征和AI能力选择策略
+        # 四个分支产出的都是 ConversionStrategy 子类，统一按基类标注。
+        strategy: ConversionStrategy
         if has_tables and not has_images:
             logger.info("[strategy=auto_detect] 选择表格提取策略")
             logs.append(create_processing_log("strategy_select", "选择表格提取策略"))
@@ -227,10 +229,11 @@ class StructuredExtractionStrategy(ConversionStrategy):
         logs = [create_processing_log("structured", "开始结构化提取")]
         logger.info("[strategy=structured] 开始结构化提取: pages=%d", len(parsed_file.pages))
 
-        structure = {"document": {"title": parsed_file.fileName, "pages": []}}
+        # 显式标注嵌套结构，避免字面量被推断成 dict[str, object] 导致 append 报错。
+        structure: dict[str, dict[str, Any]] = {"document": {"title": parsed_file.fileName, "pages": []}}
 
         for page in parsed_file.pages:
-            page_data = {"page_number": page.pageNumber, "elements": []}
+            page_data: dict[str, Any] = {"page_number": page.pageNumber, "elements": []}
             for elem in page.elements:
                 page_data["elements"].append({"type": elem.elementType, "content": elem.content[:500]})
             structure["document"]["pages"].append(page_data)
@@ -378,7 +381,7 @@ class TableExtractionStrategy(ConversionStrategy):
             lines = lines[1:]
 
         # 过滤空行
-        lines = [l.strip() for l in lines if l.strip() and not l.strip().startswith("Sheet:")]
+        lines = [line.strip() for line in lines if line.strip() and not line.strip().startswith("Sheet:")]
 
         if not lines:
             return []
@@ -421,9 +424,9 @@ class TableExtractionStrategy(ConversionStrategy):
             return "|"
 
         # 优先检查竖线
-        pipe_count = sum(l.count("|") for l in lines)
-        tab_count = sum(l.count("\t") for l in lines)
-        comma_count = sum(l.count(",") for l in lines)
+        pipe_count = sum(line.count("|") for line in lines)
+        tab_count = sum(line.count("\t") for line in lines)
+        comma_count = sum(line.count(",") for line in lines)
 
         if pipe_count > tab_count and pipe_count > comma_count:
             return "|"
@@ -565,6 +568,8 @@ class TableExtractionStrategy(ConversionStrategy):
         if any(c in stripped for c in ["http", "www", "@", "：", "："]):
             return stripped
 
+        # 先声明联合类型：下方两个分支分别赋 int / float。
+        num: int | float
         # 尝试解析为整数
         try:
             num = int(stripped.replace(",", "").replace(" ", ""))

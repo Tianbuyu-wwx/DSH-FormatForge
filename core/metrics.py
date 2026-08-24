@@ -239,7 +239,9 @@ class MetricsCollector:
 
     def export_prometheus(self) -> str:
         """以 Prometheus 文本格式导出所有指标"""
-        collectors = [
+        parts = []
+        # 三类收集器接口一致（都有 collect），用联合类型标注。
+        collectors_list: list[_Counter | _Gauge | _Histogram] = [
             self.request_total,
             self.request_duration_seconds,
             self.conversion_total,
@@ -249,10 +251,8 @@ class MetricsCollector:
             self.active_conversions,
             self.errors_total,
         ]
-
-        parts = []
-        for collector in collectors:
-            lines = collector.collect()
+        for collector in collectors_list:
+            lines: list[str] = collector.collect()
             if lines:
                 parts.append("\n".join(lines))
 

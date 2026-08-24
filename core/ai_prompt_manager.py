@@ -42,6 +42,11 @@ class AIPromptManager:
             OutputFormat.TEXT: "输出纯文本格式",
             OutputFormat.HTML: "输出HTML格式",
         }.get(output_format, "输出结构化文本")
+        output_instruction = (
+            "请输出JSON格式，包含 'content' 和 'structured_data' 字段"
+            if output_format == OutputFormat.JSON
+            else "请直接输出转换后的内容"
+        )
 
         prompt = f"""你是一个数据转换专家。请将以下从 {file_type} 文件中提取的内容转换为AI可理解和处理的标准格式。
 
@@ -67,7 +72,7 @@ class AIPromptManager:
 
 ## 输出格式
 
-{"请输出JSON格式，包含 'content' 和 'structured_data' 字段" if output_format == OutputFormat.JSON else "请直接输出转换后的内容"}
+{output_instruction}
 
 {custom_prompt if custom_prompt else ""}
 

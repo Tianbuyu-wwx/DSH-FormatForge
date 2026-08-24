@@ -105,24 +105,27 @@ class PPTXParser(BaseParser):
                 continue
 
             # 处理图片
-            if shape.shape_type is not None and hasattr(shape.shape_type, "name"):
-                if "PICTURE" in shape.shape_type.name:
-                    has_image = True
-                    elements.append(
-                        ExtractedElement(
-                            elementId=f"elem_{slide_number}_{elem_idx}",
-                            elementType="image",
-                            content=f"[图片] {shape.name}",
-                            metadata={
-                                "shape_name": shape.name,
-                                "width": shape.width.inches if hasattr(shape, "width") else None,
-                                "height": shape.height.inches if hasattr(shape, "height") else None,
-                            },
-                        )
+            if (
+                shape.shape_type is not None
+                and hasattr(shape.shape_type, "name")
+                and "PICTURE" in shape.shape_type.name
+            ):
+                has_image = True
+                elements.append(
+                    ExtractedElement(
+                        elementId=f"elem_{slide_number}_{elem_idx}",
+                        elementType="image",
+                        content=f"[图片] {shape.name}",
+                        metadata={
+                            "shape_name": shape.name,
+                            "width": shape.width.inches if hasattr(shape, "width") else None,
+                            "height": shape.height.inches if hasattr(shape, "height") else None,
+                        },
                     )
-                    raw_text_parts.append(f"[图片] {shape.name}")
-                    elem_idx += 1
-                    continue
+                )
+                raw_text_parts.append(f"[图片] {shape.name}")
+                elem_idx += 1
+                continue
 
             # 处理文本
             if hasattr(shape, "text") and shape.text.strip():

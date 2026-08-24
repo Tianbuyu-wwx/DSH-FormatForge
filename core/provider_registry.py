@@ -10,6 +10,7 @@
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -40,7 +41,10 @@ class ProviderInfo:
 
     name: str
     capabilities: AiCapabilities
-    client_class: type[AIClient] | None = None
+    # 各客户端 __init__ 签名一致但互不继承（AIClient 只定义抽象方法），
+    # 用 Callable[..., AIClient] 表达"可调用并返回 AIClient"，否则 mypy 会按
+    # 基类的 object.__init__ 校验关键字参数而误报。
+    client_class: Callable[..., AIClient] | None = None
     env_prefix: str = ""
     default_base_url: str = ""
     default_model: str = ""
@@ -246,9 +250,10 @@ class ProviderRegistry:
             logger.error("未知的 AI Provider: %s", provider_name)
             raise ValueError(f"不支持的 AI 提供商: {provider_name}，支持: {self.list_providers()}")
 
-        # 获取配置：kwargs > env > defaults
+        # 获取配置：kwargs > env > defaults（取值经 or 回退后运行时必为字符串，
+        # 但 kwargs.get 返回 Any | None，交由下游判空，不在此处显式标注）
         api_key = kwargs.get("api_key") or getattr(settings, f"{info.env_prefix}_API_KEY", "")
-        base_url = (
+        base_url: str = (
             kwargs.get("base_url") or getattr(settings, f"{info.env_prefix}_BASE_URL", "") or info.default_base_url
         )
 

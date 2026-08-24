@@ -7,6 +7,7 @@ import logging
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -27,7 +28,7 @@ except ImportError:
     import contextlib
 
     @contextlib.contextmanager
-    def _pdfplumber_open_stub(*args, **kwargs):  # type: ignore
+    def _pdfplumber_open_stub(*args, **kwargs):
         """pdfplumber.open 占位实现"""
         yield type("_PdfPage", (), {"pages": [], "__len__": lambda s: 0})()
 
@@ -154,7 +155,7 @@ class PDFParser(BaseParser):
         for line_idx, line in enumerate(lines):
             if line.strip():
                 elem_type = self._detect_element_type(line)
-                metadata = {}
+                metadata: dict[str, Any] = {}
                 if ocr_used:
                     metadata["ocr"] = True
                     metadata["ocr_confidence"] = ocr_confidence

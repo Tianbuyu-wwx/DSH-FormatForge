@@ -366,7 +366,7 @@ class FileParser:
 
         # 如果超出容量，移除最旧的
         while len(self.parsed_cache) >= self._max_cache_size:
-            oldest = min(self._cache_timestamps, key=self._cache_timestamps.get)
+            oldest = min(self._cache_timestamps, key=lambda k: self._cache_timestamps[k])
             self.parsed_cache.pop(oldest, None)
             self._cache_timestamps.pop(oldest, None)
             logger.debug("缓存超出容量，移除最旧项: %s", oldest)

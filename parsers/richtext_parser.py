@@ -188,7 +188,7 @@ class RichTextParser(BaseParser):
                     i += 1
 
                 # 过滤分隔行（如 |---|---|）
-                content_lines = [l for l in table_lines if not re.match(r"^\|?[\s\-:|]+\|?$", l)]
+                content_lines = [line for line in table_lines if not re.match(r"^\|?[\s\-:|]+\|?$", line)]
                 if content_lines:
                     table_text = "\n".join(content_lines)
                     elements.append(

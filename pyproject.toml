@@ -69,6 +69,11 @@ all = [
     "striprtf>=0.0.26",
 ]
 
+[tool.setuptools.packages.find]
+# 显式声明 Python 包范围：避免 setuptools flat-layout 自动发现把
+# frontend/（前端项目）、test/ 等误判为顶层包导致 editable 构建失败。
+include = ["api*", "core*", "parsers*"]
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
@@ -79,6 +84,8 @@ filterwarnings = [
 [tool.ruff]
 target-version = "py310"
 line-length = 120
+# 测试源码保持可追踪，但不作为生产源码的 lint/format 门禁对象。
+extend-exclude = ["test"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
@@ -86,8 +93,12 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 # FastAPI 推荐的 Form/File/Depends 工厂函数模式（B008）允许默认参数调用
 # 详见: https://fastapi.tiangolo.com/tutorial/query-params-str-validations/
-"api/v1.py" = ["B008"]
+"api/v1.py" = ["B008", "N803"]
 "api/v2.py" = ["B008"]
+"core/auth.py" = ["B008"]
+
+# v1 数据模型的 camelCase 字段是公开 API 契约，重命名会破坏现有客户端。
+"core/models.py" = ["N815"]
 
 # test/ 目录全部放宽（fixture / 性能样板 / 防御性导入多）
 "test/**/*.py" = ["B", "SIM", "N"]

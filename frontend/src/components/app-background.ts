@@ -5,7 +5,12 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
 
-const VIDEO_SRC = 'background/Genshin Impact -  Kusanali in the forest - PC.mp4';
+// 让 Vite 将视频作为构建依赖复制到 dist/assets，并生成带哈希的生产 URL。
+// 相对 URL 同时兼容开发服务器，不再依赖源目录被后端直接暴露。
+const VIDEO_SRC = new URL(
+  '../../background/Genshin Impact -  Kusanali in the forest - PC.mp4',
+  import.meta.url,
+).href;
 
 @customElement('app-background')
 export class AppBackground extends LitElement {

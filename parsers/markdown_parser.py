@@ -229,7 +229,7 @@ class MarkdownParser(BaseParser):
             # --- 有序列表 ---
             ol_match = re.match(r"^\s*(\d+)\.\s+(.+)$", stripped)
             if ol_match:
-                items: list[dict] = []
+                items = []
                 start_line = current_line
                 while i < len(lines):
                     li_match = re.match(r"^\s*(\d+)\.\s+(.+)$", lines[i].strip())
@@ -447,21 +447,21 @@ class MarkdownParser(BaseParser):
         tokens: list[dict] = []
 
         # 图片 ![alt](url)
-        def replace_img(m: re.Match) -> str:
+        def replace_img(m: re.Match[str]) -> str:
             tokens.append({"type": "image", "alt": m.group(1), "url": m.group(2)})
             return m.group(1) or "[图片]"
 
         text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", replace_img, text)
 
         # 链接 [text](url)
-        def replace_link(m: re.Match) -> str:
+        def replace_link(m: re.Match[str]) -> str:
             tokens.append({"type": "link", "text": m.group(1), "url": m.group(2)})
             return m.group(1)
 
         text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_link, text)
 
         # 行内代码 `code`
-        def replace_code(m: re.Match) -> str:
+        def replace_code(m: re.Match[str]) -> str:
             tokens.append({"type": "code", "content": m.group(1)})
             return m.group(1)
 

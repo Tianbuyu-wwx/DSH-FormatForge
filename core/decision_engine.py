@@ -4,8 +4,9 @@
 """
 
 import logging
-from typing import Any
+from typing import Any, cast
 
+from core.ai_discovery import InputType
 from core.provider_registry import AiCapabilities
 
 logger = logging.getLogger("decision_engine")
@@ -74,7 +75,8 @@ class DecisionEngine:
         # 根据AI能力决定是否需要转换
         if detected.format.value in ["png", "jpeg", "gif", "webp", "bmp", "tiff"]:
             # 图片输入
-            if ai_caps.supports_input("image"):
+            # "image" 是 InputType.IMAGE 的取值，此处以字面量传入需 cast 对齐签名。
+            if ai_caps.supports_input(cast(InputType, "image")):
                 # AI支持图片输入，可以保留原图
                 decision.conversion_needed = False
                 decision.preserve_original = True

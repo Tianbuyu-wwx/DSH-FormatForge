@@ -17,6 +17,7 @@ import base64
 import logging
 import threading
 from abc import ABC, abstractmethod
+from typing import Any, cast
 
 # 尝试导入各种 SDK
 try:
@@ -214,7 +215,7 @@ class MiniMaxClient(AIClient):
             model="MiniMax-M2.5",
             max_tokens=8000,
             system="你是一个数据转换助手，擅长将各种格式的数据（包括图片）转换为AI可理解的标准化格式。",
-            messages=messages,  # type: ignore[arg-type]
+            messages=cast(Any, messages),
         )
 
         # 提取文本内容
@@ -252,7 +253,9 @@ class MiniMaxClient(AIClient):
         result = response.json()
 
         if "choices" in result and len(result["choices"]) > 0:
-            return result["choices"][0]["message"]["content"]
+            # response.json() 返回 Any，显式收窄为 str。
+            content: str = result["choices"][0]["message"]["content"]
+            return content
         else:
             raise RuntimeError(f"MiniMax API 返回异常: {result}")
 
@@ -283,13 +286,15 @@ class OpenAIClient(AIClient):
 
     def generate_text(self, prompt: str, image_paths: list[str] | None = None) -> str:
         """生成文本"""
-        messages = [
+        # 消息体含纯文本与多模态两种形态，按 SDK 入参类型整体 cast。
+        messages: list[dict[str, Any]] = [
             {"role": "system", "content": "你是一个数据转换助手，擅长将各种格式的数据转换为AI可理解的标准化格式。"}
         ]
 
-        # 构建用户消息
+        # 构建用户消息（多模态分支 content 为部件列表，纯文本分支为 str）
         if image_paths:
-            content = [{"type": "text", "text": prompt}]
+            # 部件值含嵌套结构（image_url → {url}），按 Any 值标注。
+            content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
             for img_path in image_paths[:5]:
                 base64_image = self._encode_image(img_path)
                 if base64_image:
@@ -299,10 +304,16 @@ class OpenAIClient(AIClient):
             messages.append({"role": "user", "content": prompt})
 
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini", messages=messages, temperature=0.7, max_tokens=4000, timeout=self.timeout
+            model="gpt-4o-mini",
+            messages=cast(Any, messages),
+            temperature=0.7,
+            max_tokens=4000,
+            timeout=self.timeout,
         )
 
-        return response.choices[0].message.content
+        # content 理论上可为 None，此处按协议非空收窄（改名避免与上方多模态列表变量重名）。
+        text: str = response.choices[0].message.content or ""
+        return text
 
 
 def create_ai_client(provider: str = "minimax", timeout: int = 120, **kwargs) -> AIClient:
@@ -319,15 +330,17 @@ def create_ai_client(provider: str = "minimax", timeout: int = 120, **kwargs) ->
     """
     provider = provider.lower()
 
+    # api_key 经下游判空校验，kwargs 取值统一收窄为 str。
+    api_key: str = kwargs.get("api_key") or ""
     if provider == "minimax":
         return MiniMaxClient(
-            api_key=kwargs.get("api_key"),
-            base_url=kwargs.get("base_url", "https://api.minimaxi.com/v1"),
+            api_key=api_key,
+            base_url=kwargs.get("base_url") or "https://api.minimaxi.com/v1",
             timeout=timeout,
         )
     elif provider == "openai":
         return OpenAIClient(
-            api_key=kwargs.get("api_key"), base_url=kwargs.get("base_url", "https://api.openai.com/v1"), timeout=timeout
+            api_key=api_key, base_url=kwargs.get("base_url") or "https://api.openai.com/v1", timeout=timeout
         )
     else:
         raise ValueError(f"不支持的 AI 提供商: {provider}")

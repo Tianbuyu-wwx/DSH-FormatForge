@@ -279,7 +279,7 @@ class ArchiveParser(BaseParser):
         ext = Path(filename).suffix.lower()
         return ext in text_exts
 
-    def _format_size(self, size: int) -> str:
+    def _format_size(self, size: float) -> str:
         """格式化文件大小"""
         for unit in ["B", "KB", "MB", "GB"]:
             if size < 1024:

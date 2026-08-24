@@ -1,7 +1,8 @@
 # .pre-commit-config.yaml — DFT v2.1.0
-# 在本地 git commit 时自动运行 ruff + ruff-format + mypy
-# 安装：pip install pre-commit && pre-commit install
-# 手动运行：pre-commit run --all-files
+# 在本地 git commit 时自动运行 ruff + ruff-format；mypy/pytest 可手动运行。
+# 请先激活项目虚拟环境并安装开发依赖：pip install -e ".[dev]"
+# 安装：python -m pre_commit install
+# 手动运行：python -m pre_commit run --all-files
 
 repos:
   - repo: local
@@ -10,7 +11,7 @@ repos:
       - id: ruff-check
         name: ruff check
         description: 静态检查（E/F/W/I/N/UP/B/SIM）
-        entry: "E:/.venv-common/Scripts/python.exe -m ruff check ."
+        entry: python -m ruff check .
         language: system
         types: [python]
         pass_filenames: false
@@ -21,7 +22,7 @@ repos:
       - id: ruff-format-check
         name: ruff format --check
         description: 格式检查（diff 模式显示差异）
-        entry: "E:/.venv-common/Scripts/python.exe -m ruff format --check --diff ."
+        entry: python -m ruff format --check --diff .
         language: system
         types: [python]
         pass_filenames: false
@@ -31,7 +32,7 @@ repos:
       - id: mypy
         name: mypy
         description: 类型检查（warning 模式，不阻断 commit 但显示问题）
-        entry: "E:/.venv-common/Scripts/python.exe -m mypy core/ api/ parsers/ --ignore-missing-imports"
+        entry: python -m mypy core/ api/ parsers/ --ignore-missing-imports
         language: system
         types: [python]
         pass_filenames: false
@@ -43,7 +44,7 @@ repos:
       - id: pytest-smoke
         name: pytest smoke
         description: 运行核心模块测试（security/converter/content_cache/api）
-        entry: "E:/.venv-common/Scripts/python.exe -I -m pytest test/unit/test_security.py test/unit/test_content_cache.py test/unit/test_converter_engine.py test/integration/test_api.py -q --tb=line --no-header"
+        entry: python -I -m pytest test/unit/test_security.py test/unit/test_content_cache.py test/unit/test_converter_engine.py test/integration/test_api.py -q --tb=line --no-header
         language: system
         pass_filenames: false
         always_run: true

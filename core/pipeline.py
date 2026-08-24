@@ -9,6 +9,7 @@ import asyncio
 import logging
 import threading
 import time
+from datetime import datetime
 from typing import Any
 
 from core.ai_prompt_manager import AIPromptManager
@@ -17,7 +18,7 @@ from core.content_cache import ContentHashCache
 from core.decision_engine import ConversionDecision, DecisionEngine
 from core.format_detector import FormatDetector
 from core.input_adapters import InputAdapterManager, InputData
-from core.models import ConversionType, ConvertResultData, FileInfo, OutputFormat, ParsedFile, ProcessingLog
+from core.models import ConversionType, ConvertResultData, FileInfo, FileType, OutputFormat, ParsedFile, ProcessingLog
 from core.provider_registry import (
     AiCapabilities,
     AIClient,
@@ -152,7 +153,7 @@ class ConversionPipeline:
                 self.result_cache.pop(k, None)
                 self._cache_timestamps.pop(k, None)
             while len(self.result_cache) >= self._max_cache_size:
-                oldest = min(self._cache_timestamps, key=self._cache_timestamps.get)
+                oldest = min(self._cache_timestamps, key=lambda k: self._cache_timestamps[k])
                 self.result_cache.pop(oldest, None)
                 self._cache_timestamps.pop(oldest, None)
             self.result_cache[result_id] = result
@@ -206,11 +207,13 @@ class ConversionPipeline:
 
     def get_result(self, result_id: str) -> ConvertResultData | None:
         with self._cache_lock:
-            if result_id in self._cache_timestamps:
-                if time.time() - self._cache_timestamps[result_id] > self._cache_ttl:
-                    self.result_cache.pop(result_id, None)
-                    self._cache_timestamps.pop(result_id, None)
-                    return None
+            if (
+                result_id in self._cache_timestamps
+                and time.time() - self._cache_timestamps[result_id] > self._cache_ttl
+            ):
+                self.result_cache.pop(result_id, None)
+                self._cache_timestamps.pop(result_id, None)
+                return None
             return self.result_cache.get(result_id)
 
     # ---- 主执行入口 ----
@@ -246,8 +249,9 @@ class ConversionPipeline:
             FormatStep(),
             BuildResultStep(self),
         ]
-
-        for step in steps:
+        # 各 Step 类分散定义于 pipeline_steps，运行时都有 process()；统一按协议基类标注。
+        steps_typed: list[Any] = steps
+        for step in steps_typed:
             if ctx.finished or ctx.error:
                 break
             try:
@@ -281,7 +285,7 @@ class ConversionPipeline:
             "result": ConvertResultData(
                 resultId=ctx.result_id,
                 parseId="",
-                fileInfo=FileInfo(fileName="error", fileSize=0, pageCount=0, fileType="unknown"),
+                fileInfo=FileInfo(fileName="error", fileSize=0, pageCount=0, fileType=FileType.UNKNOWN),
                 conversionType=ctx.conversion_type,
                 outputFormat=OutputFormat.TEXT,
                 extractedContent="",
@@ -289,7 +293,8 @@ class ConversionPipeline:
                 structuredData={"error": True},
                 confidence=0.0,
                 processingLogs=ctx.logs,
-                createdAt=ctx.start_time,
+                # start_time 为 time.time() 时间戳，响应模型字段需要 datetime。
+                createdAt=datetime.fromtimestamp(ctx.start_time),
             ),
             "decision": None,
             "ai_capabilities": None,

@@ -64,19 +64,22 @@ def _ns(tag: str, ns_map: dict) -> str:
 
 def _extract_html_text(html_content: str | bytes) -> str:
     """从 HTML/XHTML 中提取纯文本"""
+    text: str
     if isinstance(html_content, bytes):
-        # 尝试检测编码
+        # 尝试检测编码（始终对原始字节解码，不回写参数）
         for encoding in ("utf-8", "utf-16", "gbk", "latin-1"):
             try:
-                html_content = html_content.decode(encoding)
+                text = html_content.decode(encoding)
                 break
             except (UnicodeDecodeError, UnicodeError):
                 continue
         else:
-            html_content = html_content.decode("utf-8", errors="replace")
+            text = html_content.decode("utf-8", errors="replace")
+    else:
+        text = html_content
 
     extractor = _HTMLTextExtractor()
-    extractor.feed(html_content)
+    extractor.feed(text)
     return extractor.get_text()
 
 
@@ -176,9 +179,9 @@ class EPUBParser(BaseParser):
                         )
                     )
 
-        except zipfile.BadZipFile:
+        except zipfile.BadZipFile as e:
             logger.error("不是有效的 ZIP/EPUB 文件: %s", file_path)
-            raise ValueError(f"不是有效的 EPUB 文件: {file_path}")
+            raise ValueError(f"不是有效的 EPUB 文件: {file_path}") from e
         except KeyError as e:
             logger.error("EPUB 缺少必要文件: %s", e)
             raise ValueError(f"无效的 EPUB 文件：缺少 {e}") from e
