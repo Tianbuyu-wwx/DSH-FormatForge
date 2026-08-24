@@ -4,21 +4,26 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-// FormatForge drop-to-forge — dsh client module (v0.2).
+// FormatForge drop-to-forge — dsh client module (v0.3).
 //
 // Behavior:
 //   - Drop NON-image files anywhere → POST /formatforge/upload → lands in
 //     ~/.dsh/formatforge/inbox/ → inbox watcher forges → session notice.
 //   - Image files (png/jpeg/webp/gif) are IGNORED here (native attachment flow).
 //
-// v0.2 fix — native overlay freeze: the host's DropOverlay shows on dragenter
-// and only resets inside its own drop handler. If we stopPropagation()'d the
-// drop (to handle non-images ourselves), the host never reset → full-screen
-// mask stuck until refresh. Fix: when a drag contains non-image files we take
-// over the WHOLE drag lifecycle at capture phase (dragenter/dragover/drop),
-// so the host never sees it and never shows its overlay; we render our own.
-// Belt-and-braces: after handling a drop we also dispatch a synthetic empty
-// drop so any host drag state still resets.
+// v0.3 fix — pure-image drag froze the page:
+//   The host DropOverlay shows when its dragDepth>0 and resets only in ITS OWN
+//   drop/dragleave handlers. Our old state machine could flip mid-drag: at
+//   dragenter dataTransfer.files is often EMPTY in Chrome → we didn't capture;
+//   a moment later files became readable, we captured and stopPropagation()'d
+//   every subsequent event — the host never received leave/drop, its dragDepth
+//   stayed >0, and the full-screen mask stuck until refresh.
+//
+//   New rule: DECIDE ONCE per drag, at first classification, then stay
+//   consistent for the whole drag. If undecided at dragenter, do NOT capture —
+//   let the host own the drag; we only act on the final `drop` (which needs no
+//   early capture: preventDefault on drop is enough to divert it). A watchdog
+//   timer also force-hides our overlay if no drop/leave arrives within 10s.
 
 const FF_UPLOAD = '/formatforge/upload'
 const IMAGE_RE = /^image\/(png|jpeg|webp|gif)$/i
@@ -82,14 +87,17 @@ function partition(files) {
   const images = []
   const others = []
   for (const f of files) {
-    if ((f.type && IMAGE_RE.test(f.type)) || IMAGE_EXT_RE.test(f.name || '')) images.push(f)
+    // 图片判定放宽：任何 image/* MIME 或常见图片扩展名都算图片（交给原生管线，
+    // 即使原生不认 heic/avif 也由它自己弹"不支持"——绝不能由我们误接管导致卡死）。
+    if ((f.type && /^image\//i.test(f.type)) || IMAGE_EXT_RE.test(f.name || '')) images.push(f)
     else others.push(f)
   }
   return { images, others }
 }
 
-// ─── our own overlay (shown only when the drag contains non-image files) ───
+// ─── our own overlay (shown only while WE own an active drag) ───
 let overlayEl = null
+let overlayWatchdog = null
 function showOverlay() {
   if (overlayEl) return
   overlayEl = document.createElement('div')
@@ -105,18 +113,21 @@ function showOverlay() {
   card.textContent = 'FormatForge：松手即锻造成 AI 可读数据'
   overlayEl.appendChild(card)
   document.body.appendChild(overlayEl)
+  // Watchdog: any overlay older than 10s is a bug — remove it ourselves.
+  overlayWatchdog = setTimeout(hideOverlay, 10_000)
 }
 function hideOverlay() {
+  if (overlayWatchdog) {
+    clearTimeout(overlayWatchdog)
+    overlayWatchdog = null
+  }
   if (overlayEl) {
     overlayEl.remove()
     overlayEl = null
   }
 }
 
-let uploading = 0
-
 async function handleOthers(others) {
-  uploading += others.length
   flash(`FormatForge：正在锻造 ${others.length} 个文件…`, 'info')
   const results = []
   for (const f of others) {
@@ -127,8 +138,6 @@ async function handleOthers(others) {
     } catch (e) {
       results.push(`✗ ${f.name || '未命名'}: ${e.message}`)
       log('upload failed ' + f.name + ': ' + e.message)
-    } finally {
-      uploading--
     }
   }
   const okN = results.filter((r) => r.startsWith('✓')).length
@@ -140,100 +149,77 @@ async function handleOthers(others) {
   flash(`${head}\n${results.join('\n')}`, failN === 0 ? 'info' : 'error')
 }
 
-/**
- * Dispatch a synthetic empty drop so the host's DropOverlay state machine
- * resets (its handler calls reset() then onAddImages([]) — a no-op).
- * Only needed when the host may have seen the dragenter (i.e. we did NOT
- * fully capture this drag from the start).
- */
-function resetHostOverlay() {
-  try {
-    const dt = new DataTransfer()
-    const synthetic = new DragEvent('drop', { bubbles: true, cancelable: true })
-    Object.defineProperty(synthetic, 'dataTransfer', { value: dt })
-    document.dispatchEvent(synthetic)
-  } catch (e) {
-    log('synthetic reset failed: ' + (e && e.message))
-  }
-}
-
 function activate() {
-  let captured = false // true while WE own the current drag (contains others)
+  // Per-drag decision, fixed at FIRST classification:
+  //   null          = undecided (host owns the visuals; we still watch drop)
+  //   'ours'        = contains non-image files → we own everything
+  //   'theirs'      = pure images / no files → host owns everything
+  let decision = null
 
-  const classify = (e) => {
-    if (!hasFiles(e)) return null
-    let files = []
-    try { files = Array.from(e.dataTransfer.files || []) } catch { return null }
-    if (files.length === 0) return null // undecidable yet — don't interfere
-    return partition(files)
+  const classifyFiles = (files) => {
+    if (!files || files.length === 0) return null
+    const p = partition(files)
+    return p.others.length > 0 ? 'ours' : 'theirs'
   }
 
-  // Take over the drag as early as possible so the host overlay never appears.
   const onDragEnter = (e) => {
-    const p = classify(e)
-    if (!p || p.others.length === 0) return
-    captured = true
-    e.preventDefault()
-    e.stopPropagation()
-    showOverlay()
+    if (decision !== null || !hasFiles(e)) return
+    let files = []
+    try { files = Array.from(e.dataTransfer.files || []) } catch { return }
+    const c = classifyFiles(files)
+    if (c === 'ours') {
+      decision = 'ours' // decided ONCE — stays for this whole drag
+      e.preventDefault()
+      e.stopPropagation()
+      showOverlay()
+    }
+    // 'theirs'/undecided: hands off completely. The host owns the visuals and
+    // will get the natural leave/drop sequence — counters stay balanced.
   }
 
   const onDragOver = (e) => {
-    if (captured) {
-      e.preventDefault()
-      e.stopPropagation()
-      e.dataTransfer.dropEffect = 'copy'
-      return
-    }
-    const p = classify(e)
-    if (!p || p.others.length === 0) return
-    // Host may have already shown its overlay (files were empty on dragenter).
-    captured = true
+    if (decision !== 'ours') return
     e.preventDefault()
     e.stopPropagation()
-    showOverlay()
+    e.dataTransfer.dropEffect = 'copy'
   }
 
   const onDragLeave = (e) => {
-    if (!captured) return
-    // Left the window entirely?
+    if (decision !== 'ours') return
     const left =
       e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight
     if (left) {
-      captured = false
+      decision = null
       hideOverlay()
     }
   }
 
   const onDrop = (e) => {
-    const wasCaptured = captured
-    captured = false
+    // Final say happens here regardless of earlier indecision.
+    let p = null
+    if (hasFiles(e)) {
+      try { p = partition(Array.from(e.dataTransfer.files || [])) } catch { p = null }
+    }
+    const ours = p ? p.others.length > 0 : false
+    const wasOurs = decision === 'ours'
+    decision = null
     hideOverlay()
 
-    const p = classify(e)
-    const others = p ? p.others : []
-    const images = p ? p.images : []
-
-    if (others.length === 0) {
-      if (wasCaptured) {
-        // We owned the drag but the user dropped only images (or nothing):
-        // nothing to upload; if the host overlay is somehow showing, reset it.
-        e.preventDefault()
-        resetHostOverlay()
-      }
-      return // pure-image drop → native flow untouched
+    if (!ours) {
+      if (wasOurs) e.preventDefault() // we showed UI for this drag; swallow it
+      return // pure-image / empty drop → native flow untouched
     }
 
-    // We handle this drop; the host must not see it.
+    // Ours: divert before the host's bubble-phase handler runs.
     e.preventDefault()
     e.stopPropagation()
-    void handleOthers(others)
+    void handleOthers(p.others)
 
-    if (images.length > 0) {
-      // Mixed drag: hand images to the native attachment pipeline.
+    if (p.images.length > 0) {
+      // Mixed drag: hand images back through a fresh synthetic drop.
       try {
         const dt = new DataTransfer()
-        for (const img of images) dt.items.add(img)
+        for (const img of p.images) dt.items.add(img)
         const synthetic = new DragEvent('drop', { bubbles: true, cancelable: true })
         Object.defineProperty(synthetic, 'dataTransfer', { value: dt })
         document.dispatchEvent(synthetic)
@@ -241,16 +227,12 @@ function activate() {
         log('native handoff failed: ' + (err && err.message))
         flash('图片未能交给原生附件通道，请单独拖入', 'warn')
       }
-    } else if (!wasCaptured) {
-      // Edge case: host saw the dragenter/over (we couldn't classify then) and
-      // its overlay is up, but we just consumed the drop. Force-reset it.
-      resetHostOverlay()
     }
   }
 
-  const onDragEnd = () => {
-    if (captured) {
-      captured = false
+  const endDrag = () => {
+    if (decision === 'ours') {
+      decision = null
       hideOverlay()
     }
   }
@@ -270,10 +252,11 @@ function activate() {
   document.addEventListener('dragover', onDragOver, true)
   document.addEventListener('dragleave', onDragLeave, true)
   document.addEventListener('drop', onDrop, true)
-  window.addEventListener('dragend', onDragEnd, true)
-  window.addEventListener('blur', onDragEnd, true)
+  window.addEventListener('dragend', endDrag, true)
+  window.addEventListener('blur', endDrag, true)
   document.addEventListener('paste', onPaste, true)
-  log('v0.2 active — drop non-image files to forge them (overlay-safe)')
+
+  log('v0.3 active — decide-once drag state machine (no mid-drag capture flips)')
 }
 
 
