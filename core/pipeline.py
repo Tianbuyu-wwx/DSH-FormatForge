@@ -5,26 +5,17 @@
 PipelineContext 携带所有状态在步骤间流转，每个步骤职责单一、可独立测试。
 """
 
-import asyncio
 import logging
 import threading
 import time
 from datetime import datetime
 from typing import Any
 
-from core.ai_prompt_manager import AIPromptManager
-from core.config import settings
 from core.content_cache import ContentHashCache
 from core.decision_engine import ConversionDecision, DecisionEngine
 from core.format_detector import FormatDetector
 from core.input_adapters import InputAdapterManager, InputData
 from core.models import ConversionType, ConvertResultData, FileInfo, FileType, OutputFormat, ParsedFile, ProcessingLog
-from core.provider_registry import (
-    AiCapabilities,
-    AIClient,
-    AiDiscovery,
-    provider_registry,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -37,28 +28,19 @@ class PipelineContext:
         source: Any,
         conversion_type: ConversionType,
         output_format: OutputFormat,
-        custom_prompt: str | None,
-        use_ai_enhance: bool,
-        target_ai_endpoint: str | None,
-        target_ai_key: str | None,
-        target_ai_provider: str | None,
+        custom_prompt: str | None = None,
     ):
         # 输入参数
         self.source = source
         self.conversion_type = conversion_type
         self.output_format = output_format
         self.custom_prompt = custom_prompt
-        self.use_ai_enhance = use_ai_enhance
-        self.target_ai_endpoint = target_ai_endpoint
-        self.target_ai_key = target_ai_key
-        self.target_ai_provider = target_ai_provider
 
         # 步骤产出
         self.result_id: str = ""
         self.logs: list[ProcessingLog] = []
         self.input_data: InputData | None = None
         self.detected: Any | None = None
-        self.ai_caps: AiCapabilities | None = None
         self.parsed_file: ParsedFile | None = None
         self.decision: ConversionDecision | None = None
         self.content: str = ""
@@ -86,13 +68,16 @@ class ConversionPipeline:
     1. 管理 PipelineContext 在步骤间的流转
     2. 管理两级缓存（内存 result_cache + 内容哈希 cache）
     3. 编排步骤执行顺序
+
+    注：插件形态下无内置 AI 客户端；需要模型增强时由调用方（dsh 会话模型）按
+    enhance 提示完成，见 PLUGIN_PLAN.md §6。
     """
 
     def __init__(
         self,
         max_cache_size: int = 1000,
         cache_ttl: int = 3600,
-        max_concurrent_ai: int = 5,
+        enable_content_cache: bool = True,
     ):
         # 内存缓存（result_id → ConvertResultData）
         self.result_cache: dict[str, ConvertResultData] = {}
@@ -100,48 +85,30 @@ class ConversionPipeline:
         self._cache_lock = threading.Lock()
         self._max_cache_size = max_cache_size
         self._cache_ttl = cache_ttl
-        self.api_semaphore = asyncio.Semaphore(max_concurrent_ai)
 
-        # 内容哈希缓存（内存 + 磁盘两级）
-        self._content_cache = ContentHashCache(
-            max_memory_entries=max_cache_size,
-            default_ttl=cache_ttl,
+        # 内容哈希缓存（内存 + 磁盘两级）；CLI 一次性进程默认关闭
+        self._content_cache = (
+            ContentHashCache(
+                max_memory_entries=max_cache_size,
+                default_ttl=cache_ttl,
+            )
+            if enable_content_cache
+            else None
         )
 
-        # 子系统（按需初始化，供步骤使用）
+        # 子系统（供步骤使用）
         self.input_manager = InputAdapterManager()
         self.format_detector = FormatDetector()
-        self.ai_discovery = AiDiscovery()
-        self.ai_client: AIClient | None = None
         self.decision_engine = DecisionEngine()
-        self.prompt_manager: AIPromptManager | None = None
 
         logger.info(
-            "ConversionPipeline 初始化: cache_size=%d, cache_ttl=%d, max_concurrent_ai=%d",
+            "ConversionPipeline 初始化: cache_size=%d, cache_ttl=%d",
             max_cache_size,
             cache_ttl,
-            max_concurrent_ai,
         )
 
     def initialize(self):
-        """延迟初始化 AI 客户端（避免在导入时执行昂贵的网络操作）"""
-        if self.ai_client is not None:
-            return
-        self.ai_client = self._init_ai_client()
-        self.prompt_manager = AIPromptManager(ai_client=self.ai_client)
-        logger.info("Pipeline AI客户端=%s", "可用" if self.ai_client else "不可用")
-
-    def _init_ai_client(self) -> AIClient | None:
-        try:
-            provider = settings.AI_PROVIDER.lower()
-            timeout = settings.AI_TIMEOUT
-            client = provider_registry.create_client(provider=provider, timeout=timeout)
-            if client is None:
-                logger.warning("未配置有效的AI客户端 (provider=%s)", provider)
-            return client
-        except Exception as e:
-            logger.error("AI客户端初始化失败: %s", e, exc_info=True)
-            return None
+        """保留钩子：CLI 模式下无需初始化外部资源"""
 
     # ---- 缓存管理 ----
 
@@ -166,6 +133,8 @@ class ConversionPipeline:
         output_format: OutputFormat,
         custom_prompt: str | None = None,
     ) -> dict[str, Any] | None:
+        if self._content_cache is None:
+            return None
         try:
             cached = self._content_cache.get(
                 input_data.data,
@@ -181,7 +150,6 @@ class ConversionPipeline:
                 return {
                     "result": cached,
                     "decision": {"from_cache": True},
-                    "ai_capabilities": None,
                     "recommendation": "from cache",
                 }
         except Exception as e:
@@ -195,6 +163,8 @@ class ConversionPipeline:
         output_format: OutputFormat,
         result_data: ConvertResultData,
     ):
+        if self._content_cache is None:
+            return
         try:
             self._content_cache.set(
                 input_data.data,
@@ -226,8 +196,6 @@ class ConversionPipeline:
             ConvertStep,
             DecisionStep,
             DetectStep,
-            DiscoverStep,
-            EnhanceStep,
             FormatStep,
             InitStep,
             InputStep,
@@ -240,12 +208,10 @@ class ConversionPipeline:
             InputStep(self.input_manager),
             CacheCheckStep(self),
             DetectStep(self.format_detector),
-            DiscoverStep(self.ai_discovery),
             ParseStep(self),
             OcrStep(),
             DecisionStep(self.decision_engine),
             ConvertStep(),
-            EnhanceStep(self),
             FormatStep(),
             BuildResultStep(self),
         ]
@@ -297,6 +263,5 @@ class ConversionPipeline:
                 createdAt=datetime.fromtimestamp(ctx.start_time),
             ),
             "decision": None,
-            "ai_capabilities": None,
             "recommendation": f"处理失败: {error_msg}",
         }

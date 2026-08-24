@@ -3,25 +3,17 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "data-format-translator"
-version = "2.1.0"
-description = "AI 数据转换器 - 将各种文件格式转换为 AI 可识别的标准化数据"
+name = "dsh-formatforge"
+version = "3.0.0"
+description = "FormatForge - 把任意文件格式锻造成 AI 可读的结构化数据（dsh 插件内核）"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
-    # === Web 框架 ===
-    "fastapi>=0.109.0,<1.0",
-    "uvicorn>=0.27.0,<1.0",
-    "python-multipart>=0.0.6",
     # === 数据模型 ===
     "pydantic>=2.6.0,<3.0",
     "pydantic-settings>=2.1.0",
-    # === HTTP 客户端 ===
-    "httpx>=0.26.0",
     "python-dotenv>=1.0.0",
-    # === AI / LLM ===
-    "openai>=1.12.0",
     # === 核心解析器（必需） ===
     "pdfplumber>=0.11.9",
     "Pillow>=10.0.0",
@@ -74,7 +66,7 @@ all = [
 [tool.setuptools.packages.find]
 # 显式声明 Python 包范围：避免 setuptools flat-layout 自动发现把
 # frontend/（前端项目）、test/ 等误判为顶层包导致 editable 构建失败。
-include = ["api*", "core*", "parsers*"]
+include = ["core*", "parsers*", "formatforge*"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
@@ -92,13 +84,10 @@ extend-exclude = ["test"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
 
-[tool.ruff.lint.per-file-ignores]
-# FastAPI 推荐的 Form/File/Depends 工厂函数模式（B008）允许默认参数调用
-# 详见: https://fastapi.tiangolo.com/tutorial/query-params-str-validations/
-"api/v1.py" = ["B008", "N803"]
-"api/v2.py" = ["B008"]
-"core/auth.py" = ["B008"]
+[project.scripts]
+formatforge = "formatforge.__main__:main"
 
+[tool.ruff.lint.per-file-ignores]
 # v1 数据模型的 camelCase 字段是公开 API 契约，重命名会破坏现有客户端。
 "core/models.py" = ["N815"]
 

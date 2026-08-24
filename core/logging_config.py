@@ -78,14 +78,4 @@ def setup_logging(level: str = "INFO", json_format: bool = True) -> None:
     root_logger.addHandler(console)
 
     # 调整第三方库日志级别，避免过多噪音
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("openai").setLevel(logging.WARNING)
-
-    # 为关键日志器添加敏感信息过滤
-    from core.security import SensitiveDataFilter
-
-    sensitive_filter = SensitiveDataFilter()
-    for logger_name in ["main", "api", "converter_engine", "ai_client", "file_parser"]:
-        logging.getLogger(logger_name).addFilter(sensitive_filter)

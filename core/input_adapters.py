@@ -1,6 +1,7 @@
 """
 输入适配器模块
-统一处理多种输入源：文件、URL、原始数据、流式数据
+插件形态只保留本地输入：文件、原始数据、流式数据。
+（URL 适配器随 SSRF 攻击面一起移除，见 PLUGIN_PLAN.md §4.1）
 """
 
 import logging
@@ -9,7 +10,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, BinaryIO
-from urllib.parse import urlparse
 
 logger = logging.getLogger("input_adapters")
 
@@ -93,83 +93,6 @@ class FileInputAdapter(InputAdapter):
             return None
 
 
-class UrlInputAdapter(InputAdapter):
-    """URL 输入适配器 - 下载远程内容"""
-
-    def can_handle(self, source: Any) -> bool:
-        if isinstance(source, str):
-            parsed = urlparse(source)
-            # bool() 收窄：netloc 是 str，直接返回会让签名变成 Literal[False] | str。
-            return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-        return False
-
-    def read(self, source: str, timeout: int = 30, max_size: int = 100 * 1024 * 1024) -> InputData:
-        import httpx
-
-        url = source
-        logger.info("正在下载: %s", url)
-
-        try:
-            with httpx.Client(timeout=timeout) as client:
-                resp = client.get(url)
-            resp.raise_for_status()
-            logger.debug(
-                "URL请求成功: status=%d, content_length=%s", resp.status_code, resp.headers.get("Content-Length")
-            )
-
-            # 检查内容长度
-            content_length = resp.headers.get("Content-Length")
-            if content_length and int(content_length) > max_size:
-                logger.error("文件大小超过限制: %s > %d", content_length, max_size)
-                raise ValueError(f"文件大小超过限制: {content_length} > {max_size}")
-
-            data = resp.content
-            if len(data) > max_size:
-                raise ValueError(f"下载内容超过最大限制 {max_size} 字节")
-
-            # 从 URL 或响应头获取文件名
-            filename = self._extract_filename(url, dict(resp.headers))
-            mime_type = resp.headers.get("Content-Type")
-
-            logger.info("下载完成: %s, 大小=%d 字节, filename=%s, mime=%s", url, len(data), filename, mime_type)
-
-            return InputData(
-                source_type="url",
-                data=data,
-                filename=filename,
-                mime_type=mime_type,
-                metadata={
-                    "url": url,
-                    "size": len(data),
-                    "status_code": resp.status_code,
-                    "headers": dict(resp.headers),
-                },
-            )
-
-        except httpx.RequestError as e:
-            logger.error("下载失败: %s, error=%s", url, e)
-            raise RuntimeError(f"下载失败: {e}") from e
-
-    def _extract_filename(self, url: str, headers: dict) -> str | None:
-        """从 URL 或响应头提取文件名"""
-        # 从 Content-Disposition 提取
-        cd = headers.get("Content-Disposition", "")
-        if "filename=" in cd:
-            import re
-
-            match = re.search(r'filename=["\']?([^"\';]+)', cd)
-            if match:
-                return match.group(1)
-
-        # 从 URL 路径提取
-        parsed = urlparse(url)
-        path = Path(parsed.path)
-        if path.name:
-            return path.name
-
-        return None
-
-
 class RawDataAdapter(InputAdapter):
     """原始数据输入适配器 - 处理字节或字符串"""
 
@@ -224,7 +147,6 @@ class InputAdapterManager:
     def __init__(self):
         self._adapters: list[InputAdapter] = [
             FileInputAdapter(),
-            UrlInputAdapter(),
             RawDataAdapter(),
             StreamInputAdapter(),
         ]

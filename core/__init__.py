@@ -1,9 +1,10 @@
 """
-core 包 - 数据转换器核心模块
+core 包 - FormatForge 核心模块
 
-包含数据转换器的核心组件：
+包含转换管线核心组件：
 - models: 数据模型定义
 - config: 配置管理
 - file_parser: 文件解析引擎
-- converter_engine: 转换引擎
+- pipeline / pipeline_steps: 转换管线
+- conversion_strategies: 策略注册表
 """

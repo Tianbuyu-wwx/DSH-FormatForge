@@ -1,27 +1,23 @@
 """
 工具函数单元测试
 
-测试 ID 生成、响应构建、文件保存、格式输出等公共函数
+测试 ID 生成、文件保存、处理日志、格式输出等公共函数
+（HTTP 响应构建相关用例已随 API 层移除）
 """
 import pytest
-import tempfile
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from core.utils import (
     generate_request_id,
     generate_result_id,
     generate_parse_id,
-    create_response,
-    save_upload_file,
-    build_convert_response_data,
+    save_bytes_to_dir,
     build_parse_response_data,
     create_processing_log,
     format_output,
 )
 from core.models import (
-    BaseResponse,
     FileInfo,
     FileType,
     ConvertResultData,
@@ -61,129 +57,47 @@ class TestIdGeneration:
         assert len(ids) == 300
 
     def test_request_id_contains_date(self):
-        from datetime import datetime
         rid = generate_request_id()
         today = datetime.now().strftime("%Y%m%d")
         assert today in rid
 
 
-class TestCreateResponse:
-    """测试统一响应创建"""
+class TestSaveBytesToDir:
+    """测试字节内容保存（原 save_upload_file 的本地化版本）"""
 
-    def test_success_response(self):
-        resp = create_response(200, "成功", {"key": "value"})
-        assert resp.code == 200
-        assert resp.msg == "成功"
-        assert resp.data == {"key": "value"}
-        assert resp.requestId.startswith("req")
-
-    def test_error_response(self):
-        resp = create_response(500, "服务器错误")
-        assert resp.code == 500
-        assert resp.data is None
-
-    def test_response_type(self):
-        resp = create_response(200, "test")
-        assert isinstance(resp, BaseResponse)
-
-
-class TestSaveUploadFile:
-    """测试文件上传保存"""
-
-    @pytest.mark.asyncio
-    async def test_save_small_file(self, tmp_path):
-        from fastapi import UploadFile
-        import io
-
-        file = UploadFile(filename="test.pdf", file=io.BytesIO(b"PDF content"))
-        saved_path = await save_upload_file(tmp_path, file, 50 * 1024 * 1024)
+    def test_save_small_content(self, tmp_path):
+        saved_path = save_bytes_to_dir(tmp_path, "test.pdf", b"PDF content", 50 * 1024 * 1024)
 
         assert saved_path.exists()
         assert saved_path.read_bytes() == b"PDF content"
 
-    @pytest.mark.asyncio
-    async def test_save_file_size_exceeded(self, tmp_path):
-        from fastapi import UploadFile
-        import io
-
-        file = UploadFile(filename="large.bin", file=io.BytesIO(b"x" * 100))
+    def test_save_size_exceeded(self, tmp_path):
         with pytest.raises(ValueError, match="文件大小超过限制"):
-            await save_upload_file(tmp_path, file, 50)  # 限制50字节
+            save_bytes_to_dir(tmp_path, "large.bin", b"x" * 100, 50)  # 限制50字节
 
-    @pytest.mark.asyncio
-    async def test_save_file_preserves_name(self, tmp_path):
-        from fastapi import UploadFile
-        import io
-
-        file = UploadFile(filename="document.pdf", file=io.BytesIO(b"content"))
-        saved_path = await save_upload_file(tmp_path, file, 1024)
+    def test_save_preserves_name(self, tmp_path):
+        saved_path = save_bytes_to_dir(tmp_path, "document.pdf", b"content", 1024)
 
         assert "document.pdf" in saved_path.name
 
+    def test_save_strips_path_traversal(self, tmp_path):
+        saved_path = save_bytes_to_dir(tmp_path, "../../etc/passwd", b"data", 1024)
 
-class TestBuildConvertResponseData:
-    """测试转换响应数据构建"""
+        # 文件名应只保留 basename，不允许目录穿越
+        assert ".." not in saved_path.name
+        assert saved_path.parent == tmp_path
 
-    def test_build_basic_response(self):
-        result = ConvertResultData(
-            resultId="cvt001",
-            parseId="parse001",
-            fileInfo=FileInfo(
-                fileName="test.pdf",
-                fileSize=1024,
-                pageCount=3,
-                fileType=FileType.PDF,
-            ),
-            conversionType=ConversionType.TEXT,
-            outputFormat=OutputFormat.JSON,
-            extractedContent="extracted",
-            convertedContent="converted",
-            structuredData={"key": "val"},
-            confidence=0.95,
-            processingLogs=[
-                ProcessingLog(
-                    timestamp=datetime.now(),
-                    step="parse",
-                    level="info",
-                    message="parsed successfully",
-                )
-            ],
-            createdAt=datetime.now(),
-        )
+    def test_save_none_filename_uses_default(self, tmp_path):
+        saved_path = save_bytes_to_dir(tmp_path, None, b"data", 1024)
 
-        data = build_convert_response_data(result)
-
-        assert data["resultId"] == "cvt001"
-        assert data["fileName"] == "test.pdf"
-        assert data["confidence"] == 0.95
-        assert data["convertedContent"] == "converted"
-        assert len(data["processingLogs"]) == 1
-
-    def test_build_response_with_base_url(self):
-        result = ConvertResultData(
-            resultId="cvt002",
-            parseId="parse002",
-            fileInfo=FileInfo(fileName="test.txt", fileSize=100, pageCount=1, fileType=FileType.TXT),
-            conversionType=ConversionType.AUTO,
-            outputFormat=OutputFormat.TEXT,
-            extractedContent="",
-            convertedContent="content",
-            structuredData=None,
-            confidence=0.8,
-            processingLogs=[],
-            createdAt=datetime.now(),
-        )
-
-        data = build_convert_response_data(result, base_url="http://example.com")
-        assert "exportUrl" in data
-        assert data["exportUrl"].startswith("http://example.com")
+        assert saved_path.exists()
 
 
 class TestBuildParseResponseData:
     """测试解析响应数据构建"""
 
-    def test_build_parse_response(self):
-        result = ConvertResultData(
+    def _make_result(self) -> ConvertResultData:
+        return ConvertResultData(
             resultId="parse001",
             parseId="parse001",
             fileInfo=FileInfo(
@@ -202,7 +116,8 @@ class TestBuildParseResponseData:
             createdAt=datetime.now(),
         )
 
-        data = build_parse_response_data(result)
+    def test_build_parse_response(self):
+        data = build_parse_response_data(self._make_result())
 
         assert data["parseId"] == "parse001"
         assert data["fileInfo"]["fileName"] == "doc.docx"

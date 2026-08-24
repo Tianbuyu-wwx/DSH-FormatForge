@@ -10,7 +10,8 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from core.models import ConversionType, FileType, OutputFormat, ParsedFile
-from core.provider_registry import AiCapabilities, InputType
+
+# 插件形态：ai_caps 参数保留占位（恒为 None），增强由 dsh 会话模型完成。
 from core.utils import create_processing_log
 
 logger = logging.getLogger("conversion_strategies")
@@ -26,7 +27,7 @@ class ConversionStrategy(ABC):
         self.supported_types: list[FileType] = []
 
     @abstractmethod
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: Any = None) -> float:
         """
         评估对输入数据的处理能力
         Args:
@@ -41,7 +42,7 @@ class ConversionStrategy(ABC):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: AiCapabilities | None = None,
+        ai_caps: Any = None,
         custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         """
@@ -81,14 +82,14 @@ class AutoDetectStrategy(ConversionStrategy):
             FileType.XLS,
         ]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: Any = None) -> float:
         return 0.9
 
     def convert(
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: AiCapabilities | None = None,
+        ai_caps: Any = None,
         custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("auto_detect", "开始自动检测内容特征")]
@@ -116,7 +117,8 @@ class AutoDetectStrategy(ConversionStrategy):
         )
 
         # 如果提供了AI能力，考虑AI支持情况
-        ai_supports_images = ai_caps and ai_caps.supports_input(InputType.IMAGE) if ai_caps else False
+        # 无内置 AI 客户端：图片保留与否由调用方模型决定，此处恒按不支持处理。
+        ai_supports_images = False
 
         # 根据特征和AI能力选择策略
         # 四个分支产出的都是 ConversionStrategy 子类，统一按基类标注。
@@ -159,7 +161,7 @@ class TextExtractionStrategy(ConversionStrategy):
         self.description = "提取文件中的纯文本内容，保留原始格式"
         self.supported_types = [FileType.PPT, FileType.PDF, FileType.DOC, FileType.TXT]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: Any = None) -> float:
         if parsed_file.fileType in self.supported_types:
             return 0.95
         return 0.3
@@ -168,7 +170,7 @@ class TextExtractionStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: AiCapabilities | None = None,
+        ai_caps: Any = None,
         custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("text_extract", "开始提取纯文本")]
@@ -210,7 +212,7 @@ class StructuredExtractionStrategy(ConversionStrategy):
         self.description = "将内容提取为结构化格式（JSON/Markdown），保留层级关系"
         self.supported_types = [FileType.PPT, FileType.PDF, FileType.DOC]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: Any = None) -> float:
         if parsed_file.fileType in [FileType.PPT, FileType.PDF]:
             for page in parsed_file.pages:
                 for elem in page.elements:
@@ -223,7 +225,7 @@ class StructuredExtractionStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: AiCapabilities | None = None,
+        ai_caps: Any = None,
         custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("structured", "开始结构化提取")]
@@ -260,7 +262,7 @@ class TableExtractionStrategy(ConversionStrategy):
         self.description = "识别并提取文档中的表格数据，转换为Markdown表格或JSON，支持合并单元格检测与数值格式化"
         self.supported_types = [FileType.PDF, FileType.PPT, FileType.CSV, FileType.XLS]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: Any = None) -> float:
         if any(page.hasTable for page in parsed_file.pages):
             return 0.95
         if parsed_file.fileType in [FileType.CSV, FileType.XLS]:
@@ -271,7 +273,7 @@ class TableExtractionStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: AiCapabilities | None = None,
+        ai_caps: Any = None,
         custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("table", "开始提取表格数据（增强模式）")]
@@ -690,7 +692,7 @@ class ImageDescriptionStrategy(ConversionStrategy):
         self.description = "将图片转换为详细的文字描述，使文本AI能够理解图片内容"
         self.supported_types = [FileType.IMAGE, FileType.PPT, FileType.PDF]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: Any = None) -> float:
         if parsed_file.fileType == FileType.IMAGE:
             return 0.95
         if any(page.hasImage for page in parsed_file.pages):
@@ -701,14 +703,15 @@ class ImageDescriptionStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: AiCapabilities | None = None,
+        ai_caps: Any = None,
         custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("image_desc", "开始处理图片内容")]
         logger.info("[strategy=image_desc] 开始处理图片内容: pages=%d", len(parsed_file.pages))
 
         # 如果AI支持图片输入，标记为可保留原图
-        ai_supports_images = ai_caps and ai_caps.supports_input(InputType.IMAGE) if ai_caps else False
+        # 无内置 AI 客户端：图片保留与否由调用方模型决定，此处恒按不支持处理。
+        ai_supports_images = False
 
         image_info = []
         for page in parsed_file.pages:
@@ -756,7 +759,7 @@ class OcrStrategy(ConversionStrategy):
         self.description = "识别图片中的文字内容"
         self.supported_types = [FileType.IMAGE, FileType.PDF, FileType.PPT]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: Any = None) -> float:
         if parsed_file.fileType == FileType.IMAGE:
             return 0.9
         if any(page.hasImage for page in parsed_file.pages):
@@ -767,7 +770,7 @@ class OcrStrategy(ConversionStrategy):
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: AiCapabilities | None = None,
+        ai_caps: Any = None,
         custom_prompt: str | None = None,
     ) -> dict[str, Any]:
         logs = [create_processing_log("ocr", "开始OCR文字识别")]
@@ -792,34 +795,32 @@ class OcrStrategy(ConversionStrategy):
         }
 
 
-class AiNativeStrategy(ConversionStrategy):
-    """AI原生策略 - 为支持多模态的AI保留原始媒体"""
+class MediaIndexStrategy(ConversionStrategy):
+    """媒体索引策略 - 保留原始媒体的文本索引（原 AiNativeStrategy，去 AI 探测后更名）"""
 
     def __init__(self):
         super().__init__()
-        self.strategy_id = "ai_native"
-        self.strategy_name = "AI原生格式"
-        self.description = "为支持多模态的AI保留原始媒体文件，同时提取文本索引"
+        self.strategy_id = "media_index"
+        self.strategy_name = "媒体索引格式"
+        self.description = "保留原始媒体文件，同时提取文本索引供模型快速了解结构"
         self.supported_types = [FileType.PDF, FileType.PPT, FileType.IMAGE]
 
-    def can_handle(self, parsed_file: ParsedFile, ai_caps: AiCapabilities | None = None) -> float:
-        if not ai_caps:
-            return 0.1
-        # 如果AI支持图片输入，且文件包含图片，此策略优先级高
-        if ai_caps.supports_multimodal and any(page.hasImage for page in parsed_file.pages):
-            return 0.95
+    def can_handle(self, parsed_file: ParsedFile, ai_caps: Any = None) -> float:
+        # 无内置 AI 客户端：仅当文件含图片时提供中等优先级的索引方案
+        if any(page.hasImage for page in parsed_file.pages):
+            return 0.6
         return 0.1
 
     def convert(
         self,
         parsed_file: ParsedFile,
         output_format: OutputFormat,
-        ai_caps: AiCapabilities | None = None,
+        ai_caps: Any = None,
         custom_prompt: str | None = None,
     ) -> dict[str, Any]:
-        logs = [create_processing_log("ai_native", "生成AI原生格式（保留媒体+文本索引）")]
+        logs = [create_processing_log("media_index", "生成媒体索引（保留媒体+文本索引）")]
         logger.info(
-            "[strategy=ai_native] 生成AI原生格式: file=%s, pages=%d", parsed_file.fileName, parsed_file.pageCount
+            "[strategy=media_index] 生成媒体索引: file=%s, pages=%d", parsed_file.fileName, parsed_file.pageCount
         )
 
         # 提取文本索引
@@ -834,7 +835,7 @@ class AiNativeStrategy(ConversionStrategy):
             }
             text_index.append(page_summary)
 
-        content = f"""# AI原生格式数据
+        content = f"""# 媒体索引格式数据
 
 ## 文件信息
 - 文件名: {parsed_file.fileName}
@@ -850,12 +851,16 @@ class AiNativeStrategy(ConversionStrategy):
 上述索引可用于快速了解文件内容结构。
 """
 
-        logger.info("[strategy=ai_native] 索引生成完成: index_pages=%d", len(text_index))
-        logs.append(create_processing_log("ai_native", f"生成索引，共 {len(text_index)} 页"))
+        logger.info("[strategy=media_index] 索引生成完成: index_pages=%d", len(text_index))
+        logs.append(create_processing_log("media_index", f"生成索引，共 {len(text_index)} 页"))
 
         return {
             "content": content,
-            "structured_data": {"type": "ai_native", "pages": text_index, "recommendation": "保留原始文件直接发送给AI"},
+            "structured_data": {
+                "type": "media_index",
+                "pages": text_index,
+                "recommendation": "保留原始文件直接发送给模型",
+            },
             "confidence": 0.9,
             "logs": logs,
         }
@@ -880,7 +885,7 @@ class StrategyRegistry:
             TableExtractionStrategy(),
             ImageDescriptionStrategy(),
             OcrStrategy(),
-            AiNativeStrategy(),
+            MediaIndexStrategy(),
         ]
         for s in strategies:
             self._strategies[s.strategy_id] = s
@@ -898,7 +903,7 @@ class StrategyRegistry:
         return list(self._strategies.values())
 
     def select_best_strategy(
-        self, parsed_file: ParsedFile, conversion_type: ConversionType, ai_caps: AiCapabilities | None = None
+        self, parsed_file: ParsedFile, conversion_type: ConversionType, ai_caps: Any = None
     ) -> ConversionStrategy:
         """
         选择最佳策略

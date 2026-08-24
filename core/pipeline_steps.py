@@ -5,9 +5,7 @@ Pipeline 步骤实现
 每个 Step 职责单一、可独立测试。
 """
 
-import contextlib
 import logging
-import threading
 import time
 from datetime import datetime
 from typing import Any
@@ -23,7 +21,6 @@ from core.models import (
     ParsedFile,
 )
 from core.utils import create_processing_log, format_output, generate_result_id
-from core.webhook_manager import get_webhook_manager
 
 logger = logging.getLogger(__name__)
 
@@ -180,51 +177,8 @@ class DetectStep:
         )
 
 
-class DiscoverStep:
-    """步骤 4: AI 能力发现 —— 探测目标 AI 端点支持的能力"""
-
-    def __init__(self, ai_discovery):
-        self._discovery = ai_discovery
-
-    def process(self, ctx):
-        if not ctx.target_ai_endpoint or not ctx.target_ai_key:
-            return
-        ctx.logs.append(create_processing_log("ai_discover", "发现目标AI能力..."))
-        logger.info(
-            "[result_id=%s] 开始发现AI能力: endpoint=%s, provider=%s",
-            ctx.result_id,
-            ctx.target_ai_endpoint,
-            ctx.target_ai_provider,
-        )
-        try:
-            ctx.ai_caps = self._discovery.discover(
-                ctx.target_ai_endpoint,
-                ctx.target_ai_key,
-                ctx.target_ai_provider,
-            )
-            logger.info(
-                "[result_id=%s] AI能力发现成功: provider=%s, model=%s, supports=%s, max_tokens=%d",
-                ctx.result_id,
-                ctx.ai_caps.provider,
-                ctx.ai_caps.model,
-                [i.value for i in ctx.ai_caps.supported_inputs],
-                ctx.ai_caps.max_tokens,
-            )
-            ctx.logs.append(
-                create_processing_log(
-                    "ai_discover",
-                    f"AI能力: {ctx.ai_caps.provider}/{ctx.ai_caps.model}, "
-                    f"支持输入: {[i.value for i in ctx.ai_caps.supported_inputs]}, "
-                    f"最大token: {ctx.ai_caps.max_tokens}",
-                )
-            )
-        except Exception as e:
-            logger.warning("[result_id=%s] AI能力发现失败: %s", ctx.result_id, e, exc_info=True)
-            ctx.logs.append(create_processing_log("ai_discover", f"能力发现失败: {e}", "warning"))
-
-
 class ParseStep:
-    """步骤 5: 文件解析 —— 使用插件化解析器解析文件内容"""
+    """步骤 4: 文件解析 —— 使用插件化解析器解析文件内容"""
 
     def __init__(self, pipeline: Any) -> None:  # pipeline 实为 ConversionPipeline，避免循环引用
         self._pipeline = pipeline
@@ -305,7 +259,7 @@ class OcrStep:
             # 从 input_data 获取文件路径进行 OCR
             temp_path = ctx.input_data.save_to_temp()
             try:
-                ocr_result = ocr_engine.extract_text_from_image(temp_path, use_ai=False, apply_postprocess=True)
+                ocr_result = ocr_engine.extract_text_from_image(temp_path, apply_postprocess=True)
             finally:
                 temp_path.unlink(missing_ok=True)
 
@@ -356,13 +310,13 @@ class OcrStep:
 
 
 class DecisionStep:
-    """步骤 6: 决策制定 —— 根据格式和 AI 能力制定转换决策"""
+    """步骤 6: 决策制定 —— 根据格式与解析结果制定转换决策"""
 
     def __init__(self, decision_engine):
         self._engine = decision_engine
 
     def process(self, ctx):
-        ctx.decision = self._engine.make_decision(ctx.detected, ctx.ai_caps, ctx.parsed_file)
+        ctx.decision = self._engine.make_decision(ctx.detected, None, ctx.parsed_file)
         logger.info(
             "[result_id=%s] 转换决策: conversion_needed=%s, target_format=%s, preserve_original=%s, strategies=%s",
             ctx.result_id,
@@ -392,7 +346,6 @@ class ConvertStep:
                 strategy = strategy_registry.select_best_strategy(
                     ctx.parsed_file,
                     ctx.conversion_type,
-                    ctx.ai_caps,
                 )
                 logger.info(
                     "[result_id=%s] 选择策略: strategy_id=%s, strategy_name=%s",
@@ -402,7 +355,7 @@ class ConvertStep:
                 )
                 ctx.logs.append(create_processing_log("convert", f"选择策略: {strategy.strategy_name}"))
 
-                result = strategy.convert(ctx.parsed_file, ctx.output_format, ctx.ai_caps, ctx.custom_prompt)
+                result = strategy.convert(ctx.parsed_file, ctx.output_format, None, ctx.custom_prompt)
                 ctx.logs.extend(result.get("logs", []))
                 ctx.content = result.get("content", "")
                 ctx.structured_data = result.get("structured_data")
@@ -426,50 +379,6 @@ class ConvertStep:
             ctx.confidence = 0.5
             logger.info("[result_id=%s] 无需转换，返回原始数据信息", ctx.result_id)
             ctx.logs.append(create_processing_log("convert", "无需转换，返回原始数据信息"))
-
-
-class EnhanceStep:
-    """步骤 8: AI 增强 —— 使用 AI 提升转换质量（低置信度时触发）"""
-
-    def __init__(self, pipeline: Any) -> None:  # pipeline 实为 ConversionPipeline，避免循环引用
-        self._pipeline = pipeline
-
-    def process(self, ctx):
-        if not ctx.use_ai_enhance:
-            return
-        if not self._pipeline.ai_client:
-            return
-        if ctx.confidence >= 0.9:
-            return
-        if not ctx.parsed_file:
-            return
-
-        ctx.logs.append(create_processing_log("ai_enhance", "尝试AI增强转换..."))
-        logger.info("[result_id=%s] 开始AI增强转换: current_confidence=%.2f", ctx.result_id, ctx.confidence)
-        try:
-            ai_result = self._pipeline.prompt_manager.enhance_convert(
-                parsed_file=ctx.parsed_file,
-                base_content=ctx.content,
-                output_format=ctx.output_format,
-                custom_prompt=ctx.custom_prompt,
-            )
-            if ai_result:
-                ctx.content = ai_result.get("content", ctx.content)
-                if ai_result.get("structured_data"):
-                    ctx.structured_data = ai_result["structured_data"]
-                ctx.confidence = min(ctx.confidence + 0.1, 1.0)
-                logger.info(
-                    "[result_id=%s] AI增强完成: new_confidence=%.2f, content_length=%d",
-                    ctx.result_id,
-                    ctx.confidence,
-                    len(ctx.content),
-                )
-                ctx.logs.append(create_processing_log("ai_enhance", "AI增强完成"))
-            else:
-                logger.warning("[result_id=%s] AI增强未返回结果", ctx.result_id)
-        except Exception as e:
-            logger.warning("[result_id=%s] AI增强失败: %s", ctx.result_id, e, exc_info=True)
-            ctx.logs.append(create_processing_log("ai_enhance", f"AI增强失败: {e}", "warning"))
 
 
 class FormatStep:
@@ -498,7 +407,7 @@ class BuildResultStep:
         )
         ctx.logs.append(create_processing_log("complete", f"转换完成，耗时 {processing_time} 秒"))
 
-        recommendation = self._pipeline.decision_engine.build_recommendation(ctx.decision, ctx.ai_caps)
+        recommendation = self._pipeline.decision_engine.build_recommendation(ctx.decision)
 
         result_data = ConvertResultData(
             resultId=ctx.result_id,
@@ -517,7 +426,6 @@ class BuildResultStep:
             structuredData={
                 **(ctx.structured_data or {}),
                 "conversion_decision": ctx.decision.to_dict(),
-                "ai_capabilities": ctx.ai_caps.to_dict() if ctx.ai_caps else None,
             },
             confidence=ctx.confidence,
             processingLogs=ctx.logs,
@@ -533,51 +441,5 @@ class BuildResultStep:
         ctx.final_response = {
             "result": result_data,
             "decision": ctx.decision.to_dict(),
-            "ai_capabilities": ctx.ai_caps.to_dict() if ctx.ai_caps else None,
             "recommendation": recommendation,
         }
-
-        # 异步触发 Webhook 回调（不阻塞主流程）
-        self._try_fire_webhook(ctx.result_id, ctx.final_response)
-
-    def _try_fire_webhook(self, task_id: str, result: dict[str, Any]) -> None:
-        """尝试触发 Webhook 回调"""
-        try:
-            manager = get_webhook_manager()
-            status = manager.get_status(task_id)
-            if status and status.get("status") == "pending":
-                webhook_url = status.get("callback_url", "")
-                logger.info("[result_id=%s] 触发 Webhook 回调: %s", task_id, webhook_url)
-                # v2.1.0: 在共享 asyncio 事件循环中投递（避免每任务 new event_loop）
-                # 若当前在线程中（如同步 Pipeline 调用），退化到后台线程
-                try:
-                    import asyncio as _asyncio
-
-                    _loop = _asyncio.get_running_loop()
-                    _loop.create_task(manager.deliver(task_id, result))
-                    logger.debug("[result_id=%s] Webhook 已提交到事件循环", task_id)
-                except RuntimeError:
-                    # 没有运行中的事件循环（如同步入口）→ 后台线程投递
-                    threading.Thread(
-                        target=self._run_webhook_delivery,
-                        args=(task_id, result),
-                        daemon=True,
-                    ).start()
-        except Exception:
-            logger.debug("[result_id=%s] Webhook 检测跳过: 未注册或查询失败", task_id)
-
-    @staticmethod
-    def _run_webhook_delivery(task_id: str, result: dict[str, Any]) -> None:
-        """在线程中运行 webhook 投递"""
-        import asyncio as _asyncio
-
-        try:
-            loop = _asyncio.new_event_loop()
-            _asyncio.set_event_loop(loop)
-            manager = get_webhook_manager()
-            loop.run_until_complete(manager.deliver(task_id, result))
-        except Exception as e:
-            logger.error("[result_id=%s] Webhook 投递线程异常: %s", task_id, e)
-        finally:
-            with contextlib.suppress(Exception):
-                loop.close()

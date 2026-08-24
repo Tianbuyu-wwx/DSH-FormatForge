@@ -12,7 +12,7 @@ import pytest
 
 from core.ocr_engine import (
     OcrEngine, OcrResult, OcrPostProcessor,
-    TesseractBackend, PaddleOcrBackend, EasyOcrBackend, AiOcrBackend,
+    TesseractBackend, PaddleOcrBackend, EasyOcrBackend,
     TESSERACT_AVAILABLE, PADDLEOCR_AVAILABLE, EASYOCR_AVAILABLE
 )
 
@@ -111,28 +111,6 @@ class TestEasyOcrBackend:
             text, conf = backend.recognize(Path("/tmp/test.png"))
             assert text == ""
             assert conf == 0.0
-
-
-class TestAiOcrBackend:
-    """AI OCR 后端测试"""
-
-    def test_name(self):
-        backend = AiOcrBackend(None)
-        assert backend.name == "ai"
-
-    def test_recognize_no_client(self):
-        backend = AiOcrBackend(None)
-        text, conf = backend.recognize(Path("/tmp/test.png"))
-        assert text == ""
-        assert conf == 0.0
-
-    def test_recognize_with_mock_client(self):
-        mock_client = MagicMock()
-        mock_client.generate_text.return_value = "识别结果"
-        backend = AiOcrBackend(mock_client)
-        text, conf = backend.recognize(Path("/tmp/test.png"))
-        assert text == "识别结果"
-        assert conf == 0.85
 
 
 class TestOcrEngineInit:

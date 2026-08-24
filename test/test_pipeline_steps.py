@@ -17,8 +17,8 @@ from core.decision_engine import ConversionDecision
 from core.pipeline_steps import (
     _map_format_to_file_type, _extract_summary, _build_raw_content,
     InitStep, InputStep, CacheCheckStep, DetectStep,
-    DiscoverStep, ParseStep, DecisionStep, ConvertStep,
-    EnhanceStep, FormatStep, BuildResultStep,
+    ParseStep, DecisionStep, ConvertStep,
+    FormatStep, BuildResultStep,
 )
 
 
@@ -195,7 +195,7 @@ class TestCacheCheckStep:
     def test_cache_hit_sets_finished(self, basic_ctx, mock_pipeline, input_data):
         basic_ctx.input_data = input_data
         mock_pipeline._try_get_cached.return_value = {
-            "result": "cached", "decision": {}, "ai_capabilities": None,
+            "result": "cached", "decision": {},
             "recommendation": "hit",
         }
 
@@ -242,57 +242,6 @@ class TestDetectStep:
         assert any("检测输入格式" in l.message for l in detect_logs)
         assert any("txt" in l.message.lower() for l in detect_logs)
 
-
-# ═══════════════════════════════════════════════════════════
-# Step 4: DiscoverStep
-# ═══════════════════════════════════════════════════════════
-
-class TestDiscoverStep:
-    def test_skips_when_no_endpoint(self, basic_ctx, mock_ai_discovery):
-        basic_ctx.target_ai_endpoint = None
-        basic_ctx.target_ai_key = None
-
-        DiscoverStep(mock_ai_discovery).process(basic_ctx)
-
-        assert basic_ctx.ai_caps is None
-        mock_ai_discovery.discover.assert_not_called()
-
-    def test_skips_when_no_key(self, basic_ctx, mock_ai_discovery):
-        basic_ctx.target_ai_endpoint = "http://endpoint"
-        basic_ctx.target_ai_key = None
-
-        DiscoverStep(mock_ai_discovery).process(basic_ctx)
-
-        mock_ai_discovery.discover.assert_not_called()
-
-    def test_discovers_ai_capabilities(self, ctx_with_ai, mock_ai_discovery):
-        DiscoverStep(mock_ai_discovery).process(ctx_with_ai)
-
-        assert ctx_with_ai.ai_caps is not None
-        assert ctx_with_ai.ai_caps.provider == "openai"
-        assert ctx_with_ai.ai_caps.model == "gpt-4"
-        mock_ai_discovery.discover.assert_called_once_with(
-            "https://api.example.com/v1", "sk-test-key", "openai",
-        )
-
-    def test_appends_discover_log(self, ctx_with_ai, mock_ai_discovery):
-        DiscoverStep(mock_ai_discovery).process(ctx_with_ai)
-        assert any(l.step == "ai_discover" for l in ctx_with_ai.logs)
-
-    def test_handles_discovery_failure_gracefully(self, ctx_with_ai):
-        failing = MagicMock()
-        failing.discover.side_effect = ConnectionError("timeout")
-
-        DiscoverStep(failing).process(ctx_with_ai)
-
-        assert ctx_with_ai.ai_caps is None
-        assert ctx_with_ai.error is None  # 不应中止流程
-        assert any("warning" == l.level for l in ctx_with_ai.logs if l.step == "ai_discover")
-
-
-# ═══════════════════════════════════════════════════════════
-# Step 5: ParseStep
-# ═══════════════════════════════════════════════════════════
 
 class TestParseStep:
     def test_skips_for_raw_input(self, basic_ctx, mock_pipeline, input_data):
@@ -386,16 +335,16 @@ class TestDecisionStep:
         assert basic_ctx.decision.conversion_needed is True
         mock_decision_engine.make_decision.assert_called_once_with(detected_result, None, None)
 
-    def test_passes_ai_caps_and_parsed_file(self, basic_ctx, mock_decision_engine,
-                                             detected_result, parsed_file):
+    def test_passes_none_caps_and_parsed_file(self, basic_ctx, mock_decision_engine,
+                                                  detected_result, parsed_file):
+        # 插件形态：无 AI 能力探测，make_decision 第二参恒为 None
         basic_ctx.detected = detected_result
-        basic_ctx.ai_caps = MagicMock()
         basic_ctx.parsed_file = parsed_file
 
         DecisionStep(mock_decision_engine).process(basic_ctx)
 
         mock_decision_engine.make_decision.assert_called_once_with(
-            detected_result, basic_ctx.ai_caps, parsed_file,
+            detected_result, None, parsed_file,
         )
 
     def test_appends_decision_log(self, basic_ctx, mock_decision_engine, detected_result):
@@ -470,106 +419,6 @@ class TestConvertStep:
         assert "boom" in basic_ctx.content
 
 
-# ═══════════════════════════════════════════════════════════
-# Step 8: EnhanceStep
-# ═══════════════════════════════════════════════════════════
-
-class TestEnhanceStep:
-    def test_skips_when_enhance_disabled(self, basic_ctx, mock_pipeline):
-        basic_ctx.use_ai_enhance = False
-
-        EnhanceStep(mock_pipeline).process(basic_ctx)
-
-        mock_pipeline.prompt_manager.enhance_convert.assert_not_called()
-
-    def test_skips_when_no_ai_client(self, basic_ctx, mock_pipeline):
-        mock_pipeline.ai_client = None
-
-        EnhanceStep(mock_pipeline).process(basic_ctx)
-
-        mock_pipeline.prompt_manager.enhance_convert.assert_not_called()
-
-    def test_skips_when_confidence_high(self, basic_ctx, mock_pipeline, parsed_file):
-        basic_ctx.confidence = 0.95
-        basic_ctx.parsed_file = parsed_file
-
-        EnhanceStep(mock_pipeline).process(basic_ctx)
-
-        mock_pipeline.prompt_manager.enhance_convert.assert_not_called()
-
-    def test_skips_when_no_parsed_file(self, basic_ctx, mock_pipeline):
-        basic_ctx.confidence = 0.5
-        basic_ctx.parsed_file = None
-
-        EnhanceStep(mock_pipeline).process(basic_ctx)
-
-        mock_pipeline.prompt_manager.enhance_convert.assert_not_called()
-
-    def test_enhances_when_conditions_met(self, basic_ctx, mock_pipeline, parsed_file):
-        basic_ctx.confidence = 0.6
-        basic_ctx.parsed_file = parsed_file
-        basic_ctx.content = "original content"
-        mock_pipeline.prompt_manager.enhance_convert.return_value = {
-            "content": "enhanced content",
-            "structured_data": {"enhanced": True},
-        }
-
-        EnhanceStep(mock_pipeline).process(basic_ctx)
-
-        assert basic_ctx.content == "enhanced content"
-        assert basic_ctx.structured_data == {"enhanced": True}
-        assert basic_ctx.confidence == 0.7  # 0.6 + 0.1
-        assert any(l.step == "ai_enhance" for l in basic_ctx.logs)
-
-    def test_confidence_capped_at_1(self, basic_ctx, mock_pipeline, parsed_file):
-        basic_ctx.confidence = 0.95
-        basic_ctx.parsed_file = parsed_file
-        # confidence < 0.9 but it's 0.95, so it should skip... wait let me check
-        # The condition is: if ctx.confidence >= 0.9: return
-        # So 0.95 >= 0.9 → skip. Let me test 0.89:
-        basic_ctx.confidence = 0.89
-        mock_pipeline.prompt_manager.enhance_convert.return_value = {"content": "x"}
-
-        EnhanceStep(mock_pipeline).process(basic_ctx)
-
-        assert basic_ctx.confidence == 0.99  # 0.89 + 0.1, capped to min(0.99, 1.0)
-
-    def test_enable_confidence_capped_at_1(self, basic_ctx, mock_pipeline, parsed_file):
-        basic_ctx.confidence = 0.95
-        basic_ctx.parsed_file = parsed_file
-
-        # confidence >= 0.9 → skip
-        EnhanceStep(mock_pipeline).process(basic_ctx)
-        assert basic_ctx.confidence == 0.95  # 未变化
-
-    def test_handles_enhance_failure(self, basic_ctx, mock_pipeline, parsed_file):
-        basic_ctx.confidence = 0.3
-        basic_ctx.parsed_file = parsed_file
-        basic_ctx.content = "original"
-        mock_pipeline.prompt_manager.enhance_convert.side_effect = Exception("AI error")
-
-        EnhanceStep(mock_pipeline).process(basic_ctx)
-
-        # 内容不变，仅记录警告
-        assert basic_ctx.content == "original"
-        assert basic_ctx.confidence == 0.3
-        assert any("warning" == l.level for l in basic_ctx.logs if l.step == "ai_enhance")
-
-    def test_noop_when_enhance_returns_none(self, basic_ctx, mock_pipeline, parsed_file):
-        basic_ctx.confidence = 0.4
-        basic_ctx.parsed_file = parsed_file
-        basic_ctx.content = "original"
-        mock_pipeline.prompt_manager.enhance_convert.return_value = None
-
-        EnhanceStep(mock_pipeline).process(basic_ctx)
-
-        assert basic_ctx.content == "original"
-
-
-# ═══════════════════════════════════════════════════════════
-# Step 9: FormatStep
-# ═══════════════════════════════════════════════════════════
-
 class TestFormatStep:
     def test_formats_content(self, basic_ctx):
         basic_ctx.content = "hello"
@@ -607,8 +456,6 @@ class TestBuildResultStep:
         basic_ctx.content = "the content"
         basic_ctx.formatted_content = '{"key": "the content"}'
         basic_ctx.structured_data = {"key": "value"}
-        basic_ctx.ai_caps = MagicMock()
-        basic_ctx.ai_caps.to_dict.return_value = {"provider": "test"}
         basic_ctx.result_id = "cvt_test_123"
 
         BuildResultStep(mock_pipeline).process(basic_ctx)
@@ -624,7 +471,6 @@ class TestBuildResultStep:
         assert basic_ctx.final_response is not None
         assert "result" in basic_ctx.final_response
         assert "decision" in basic_ctx.final_response
-        assert "ai_capabilities" in basic_ctx.final_response
         assert "recommendation" in basic_ctx.final_response
 
         # 验证缓存被调用
@@ -650,7 +496,6 @@ class TestBuildResultStep:
                                        detected_result, decision_convert):
         basic_ctx.input_data = input_data
         basic_ctx.parsed_file = None
-        basic_ctx.ai_caps = None
         basic_ctx.detected = detected_result
         basic_ctx.decision = decision_convert
         basic_ctx.formatted_content = "plain content"

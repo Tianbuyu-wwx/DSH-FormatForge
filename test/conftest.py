@@ -2,18 +2,12 @@
 共享测试 fixtures
 
 为 Pipeline 各 Step 的单元测试提供统一的 mock 对象工厂。
+（插件形态：无 AI 能力探测/增强，相关 fixture 已移除）
 """
-import os
+from datetime import datetime
+from unittest.mock import MagicMock
 
 import pytest
-
-# 必须在首次导入 core.*（config 在导入期读环境变量）之前设置：
-# RateLimitMiddleware 按 client_ip 进程内全局计数（默认 60 次/分钟），全量跑测试时
-# 所有集成测试共享同一 TestClient 来源，累计超限误触发 429，造成跨文件污染。
-# 用 setdefault：外部显式设置的 RATE_LIMIT_ENABLED 仍然优先生效。
-os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
-from datetime import datetime
-from unittest.mock import MagicMock, PropertyMock
 
 from core.models import (
     ConversionType, OutputFormat, FileType, ConvertResultData,
@@ -25,7 +19,7 @@ from core.format_detector import DataFormat, FormatDetectionResult
 from core.decision_engine import ConversionDecision
 
 
-# ════════════════════ PipelineContext ════════════════════
+# ════════════════════ PipelineContext ═══════════════════════
 
 @pytest.fixture
 def basic_ctx():
@@ -34,45 +28,34 @@ def basic_ctx():
         source=b"test data",
         conversion_type=ConversionType.AUTO,
         output_format=OutputFormat.JSON,
-        custom_prompt=None,
-        use_ai_enhance=True,
-        target_ai_endpoint=None,
-        target_ai_key=None,
-        target_ai_provider=None,
     )
 
 
 @pytest.fixture
-def ctx_with_ai():
-    """带有目标 AI 信息的 PipelineContext"""
+def ctx_with_prompt():
+    """带自定义指令的 PipelineContext"""
     return PipelineContext(
         source=b"test data",
         conversion_type=ConversionType.AUTO,
         output_format=OutputFormat.MARKDOWN,
         custom_prompt="请转换为中文",
-        use_ai_enhance=True,
-        target_ai_endpoint="https://api.example.com/v1",
-        target_ai_key="sk-test-key",
-        target_ai_provider="openai",
     )
 
 
+# 兼容旧名：原「关闭增强」场景在插件形态下即默认行为
 @pytest.fixture
 def ctx_no_enhance():
-    """AI 增强关闭的 PipelineContext"""
+    """无自定义指令的文本转换 PipelineContext"""
     return PipelineContext(
         source=b"raw data",
         conversion_type=ConversionType.TEXT,
         output_format=OutputFormat.TEXT,
-        custom_prompt=None,
-        use_ai_enhance=False,
-        target_ai_endpoint=None,
-        target_ai_key=None,
-        target_ai_provider=None,
     )
 
+ctx_with_ai = ctx_no_enhance  # 兼容旧测试引用
 
-# ════════════════════ InputData ════════════════════
+
+# ════════════════════ InputData ═════════════════════════════
 
 @pytest.fixture
 def input_data():
@@ -98,7 +81,7 @@ def file_input_data():
 
 @pytest.fixture
 def url_input_data():
-    """URL 类型 InputData"""
+    """URL 类型 InputData（数据形态仍可用于 ParseStep 测试）"""
     return InputData(
         source_type="url",
         data=b"<html><body>web content</body></html>",
@@ -107,7 +90,7 @@ def url_input_data():
     )
 
 
-# ════════════════════ FormatDetectionResult ════════════════════
+# ════════════════════ FormatDetectionResult ════════════════
 
 @pytest.fixture
 def detected_result():
@@ -131,7 +114,7 @@ def detected_pdf():
     )
 
 
-# ════════════════════ ParsedFile ════════════════════
+# ════════════════════ ParsedFile ════════════════════════════
 
 @pytest.fixture
 def parsed_file():
@@ -201,7 +184,7 @@ def decision_noop():
     )
 
 
-# ════════════════════ Mock Pipeline ════════════════════
+# ════════════════════ Mock Pipeline ═════════════════════════
 
 @pytest.fixture
 def mock_pipeline():
@@ -218,11 +201,7 @@ def mock_pipeline():
 
     # decision_engine
     pipeline.decision_engine = MagicMock()
-    pipeline.decision_engine.build_recommendation.return_value = "请将转换后的文本发送给目标AI。"
-
-    # prompt_manager (用于 EnhanceStep)
-    pipeline.prompt_manager = MagicMock()
-    pipeline.ai_client = MagicMock()
+    pipeline.decision_engine.build_recommendation.return_value = "请将转换后的文本发送给目标模型。"
 
     # 缓存方法
     pipeline._add_to_cache = MagicMock()
@@ -232,7 +211,7 @@ def mock_pipeline():
     return pipeline
 
 
-# ════════════════════ Sub-system Mocks ════════════════════
+# ════════════════════ Sub-system Mocks ══════════════════════
 
 @pytest.fixture
 def mock_input_manager():
@@ -255,21 +234,6 @@ def mock_detector():
 
 
 @pytest.fixture
-def mock_ai_discovery():
-    """模拟 AiDiscovery"""
-    from core.ai_discovery import AiCapabilities
-    discovery = MagicMock()
-    discovery.discover.return_value = AiCapabilities(
-        provider="openai",
-        model="gpt-4",
-        supported_inputs=[],
-        max_tokens=8192,
-        supports_function_calling=True,
-    )
-    return discovery
-
-
-@pytest.fixture
 def mock_decision_engine():
     """模拟 DecisionEngine"""
     engine = MagicMock()
@@ -286,9 +250,9 @@ def mock_decision_engine():
 @pytest.fixture
 def mock_strategy_registry(monkeypatch):
     """模拟 strategy_registry 全局单例"""
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock as _M
 
-    strategy = MagicMock()
+    strategy = _M()
     strategy.strategy_id = "text_extraction"
     strategy.strategy_name = "文本提取"
     strategy.convert.return_value = {
@@ -298,7 +262,7 @@ def mock_strategy_registry(monkeypatch):
         "logs": [],
     }
 
-    reg = MagicMock()
+    reg = _M()
     reg.select_best_strategy.return_value = strategy
 
     import core.pipeline_steps

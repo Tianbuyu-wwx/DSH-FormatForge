@@ -185,37 +185,6 @@ class EasyOcrBackend(BaseOcrBackend):
             return "", 0.0
 
 
-class AiOcrBackend(BaseOcrBackend):
-    """AI 多模态 OCR 后端"""
-
-    def __init__(self, ai_client):
-        self.ai_client = ai_client
-
-    @property
-    def name(self) -> str:
-        return "ai"
-
-    def recognize(self, image_path: Path) -> tuple[str, float]:
-        if not self.ai_client:
-            return "", 0.0
-        try:
-            prompt = """
-请识别这张图片中的所有文字内容，包括：
-1. 标题和正文
-2. 表格中的数据
-3. 图表中的标签和数值
-4. 页眉页脚信息
-
-请按原文格式输出所有识别到的文字，不要添加额外解释。
-如果包含表格，请用 Markdown 表格格式输出。
-"""
-            result = self.ai_client.generate_text(prompt, [str(image_path)])
-            return result.strip(), 0.85
-        except Exception as e:
-            logger.error("AI OCR 失败: %s", e)
-            return "", 0.0
-
-
 class OcrPostProcessor:
     """OCR 后处理器：排版还原"""
 
@@ -344,8 +313,7 @@ class OcrEngine:
     5. AI 多模态识别（MiniMax 等，用于复杂图片）
     """
 
-    def __init__(self, ai_client=None, default_backend: str = "tesseract"):
-        self.ai_client = ai_client
+    def __init__(self, default_backend: str = "tesseract"):
         self.default_backend = default_backend
         self.logger = logging.getLogger("ocr_engine")
 
@@ -361,8 +329,6 @@ class OcrEngine:
             self._backends["paddleocr"] = PaddleOcrBackend()
         if EASYOCR_AVAILABLE:
             self._backends["easyocr"] = EasyOcrBackend()
-        if self.ai_client:
-            self._backends["ai"] = AiOcrBackend(self.ai_client)
 
     def set_default_backend(self, backend: str):
         """设置默认 OCR 后端"""
@@ -378,7 +344,6 @@ class OcrEngine:
     def extract_text_from_pdf(
         self,
         pdf_path: Path,
-        use_ai_for_images: bool = False,
         backend: str | None = None,
         apply_postprocess: bool = True,
     ) -> list[OcrResult]:
@@ -387,7 +352,6 @@ class OcrEngine:
 
         Args:
             pdf_path: PDF 文件路径
-            use_ai_for_images: 是否使用 AI 识别图片中的文字
             backend: 指定 OCR 后端，None 使用默认
             apply_postprocess: 是否应用后处理
 
@@ -410,13 +374,11 @@ class OcrEngine:
                     )
                 else:
                     self.logger.info("第 %d 页无文字层，尝试 OCR", page_idx)
-                    ocr_text = self._ocr_page_images(page, page_idx, use_ai=use_ai_for_images, backend=ocr_backend)
+                    ocr_text = self._ocr_page_images(page, page_idx, backend=ocr_backend)
                     if apply_postprocess and ocr_text:
                         ocr_text = OcrPostProcessor.process(ocr_text)
 
                     method = ocr_backend.name if ocr_backend else "none"
-                    if use_ai_for_images and self.ai_client:
-                        method = "ai"
 
                     results.append(
                         OcrResult(
@@ -426,9 +388,7 @@ class OcrEngine:
 
         return results
 
-    def _ocr_page_images(
-        self, page, page_number: int, use_ai: bool = False, backend: BaseOcrBackend | None = None
-    ) -> str:
+    def _ocr_page_images(self, page, page_number: int, backend: BaseOcrBackend | None = None) -> str:
         """对页面的图片进行 OCR"""
         texts = []
 
@@ -439,9 +399,7 @@ class OcrEngine:
                 temp_path = Path(tmp.name)
             page_image.save(str(temp_path), format="PNG")
 
-            if use_ai and self.ai_client and "ai" in self._backends:
-                text, _ = self._backends["ai"].recognize(temp_path)
-            elif backend:
+            if backend:
                 text, _ = backend.recognize(temp_path)
             else:
                 text = ""
@@ -458,14 +416,14 @@ class OcrEngine:
         return "\n".join(texts)
 
     def extract_text_from_image(
-        self, image_path: Path, use_ai: bool = False, backend: str | None = None, apply_postprocess: bool = True
+        self, image_path: Path, backend: str | None = None, apply_postprocess: bool = True
     ) -> OcrResult:
         """
         从图片中提取文字
 
         Args:
             image_path: 图片路径
-            use_ai: 是否使用 AI 识别
+            backend: 指定 OCR 后端
             backend: 指定 OCR 后端
             apply_postprocess: 是否应用后处理
 
@@ -476,9 +434,7 @@ class OcrEngine:
             raise ImportError("Pillow 库未安装")
 
         ocr_backend = None
-        if use_ai and self.ai_client and "ai" in self._backends:
-            ocr_backend = self._backends["ai"]
-        elif backend and backend in self._backends:
+        if backend and backend in self._backends:
             ocr_backend = self._backends[backend]
         elif self.default_backend in self._backends:
             ocr_backend = self._backends[self.default_backend]
@@ -496,15 +452,13 @@ class OcrEngine:
         )
 
     def batch_ocr(
-        self, image_paths: list[Path], use_ai: bool = False, backend: str | None = None, apply_postprocess: bool = True
+        self, image_paths: list[Path], backend: str | None = None, apply_postprocess: bool = True
     ) -> list[OcrResult]:
         """批量 OCR 识别"""
         results = []
         for idx, path in enumerate(image_paths, 1):
             self.logger.info("OCR 处理: %s (%d/%d)", path.name, idx, len(image_paths))
-            result = self.extract_text_from_image(
-                path, use_ai=use_ai, backend=backend, apply_postprocess=apply_postprocess
-            )
+            result = self.extract_text_from_image(path, backend=backend, apply_postprocess=apply_postprocess)
             result.page_number = idx
             results.append(result)
         return results
@@ -520,7 +474,6 @@ class OcrEngine:
             "tesseract": TESSERACT_AVAILABLE,
             "paddleocr": PADDLEOCR_AVAILABLE,
             "easyocr": EASYOCR_AVAILABLE,
-            "ai_client": self.ai_client is not None,
             "available_backends": self.get_available_backends(),
             "default_backend": self.default_backend,
             "available": self.is_available(),
