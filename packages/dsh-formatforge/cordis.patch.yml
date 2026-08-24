@@ -1,0 +1,6 @@
+# dsh-formatforge — DSH bundle profile patch.
+# Activates this plugin via:
+#   dsh plugin --profile <profile> add ./packages/dsh-formatforge
+- insert:
+    - id: dsh-formatforge
+      name: 'dsh-formatforge'

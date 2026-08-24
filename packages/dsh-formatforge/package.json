@@ -1,0 +1,44 @@
+{
+  "name": "@tianbuyu-wwx/dsh-formatforge",
+  "version": "0.1.0",
+  "description": "FormatForge for DeepSeek Harness: forge any file format (pdf/docx/xlsx/pptx/eml/toml/...) into AI-readable structured data. Thin bundle that spawns the local Python CLI (python -m formatforge) and returns protocol JSON; enhancement is delegated to the current session model via enhance hints.",
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.mjs",
+    "cordis.patch.yml",
+    "skills",
+    "services",
+    "tools"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "dsh-bundle",
+    "cordis",
+    "deepseek-harness",
+    "formatforge",
+    "file-conversion",
+    "document-parsing"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "os": [
+    "win32",
+    "darwin",
+    "linux"
+  ],
+  "dependencies": {},
+  "peerDependenciesMeta": {},
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
