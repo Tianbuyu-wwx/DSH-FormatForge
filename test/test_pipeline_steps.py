@@ -371,7 +371,11 @@ class TestConvertStep:
     def test_noop_when_no_parsed_file(self, basic_ctx, mock_strategy_registry, input_data, detected_result, decision_convert):
         basic_ctx.parsed_file = None
         basic_ctx.decision = decision_convert
-        basic_ctx.input_data = input_data
+        # 非 raw 来源且无 parsed_file（如 stream/url 解析失败）→ 保留原「原始数据说明」行为
+        basic_ctx.input_data = InputData(
+            source_type="stream", data=input_data.data, filename=input_data.filename,
+            mime_type=input_data.mime_type, metadata={},
+        )
         basic_ctx.detected = detected_result
 
         ConvertStep().process(basic_ctx)
@@ -379,6 +383,20 @@ class TestConvertStep:
         assert "# 原始数据" in basic_ctx.content
         assert basic_ctx.structured_data == {"raw_data": True, "size": basic_ctx.input_data.size}
         assert basic_ctx.confidence == 0.5
+
+    def test_raw_text_passthrough_when_no_parsed_file(self, basic_ctx, mock_strategy_registry, input_data, detected_result, decision_convert):
+        """raw 文本输入（stdin）→ 文本直接透传为 content，confidence=1.0"""
+        basic_ctx.parsed_file = None
+        basic_ctx.decision = decision_convert
+        basic_ctx.input_data = input_data  # conftest 默认即 source_type="raw"
+        basic_ctx.detected = detected_result
+        basic_ctx.output_format = OutputFormat.TEXT
+
+        ConvertStep().process(basic_ctx)
+
+        assert "Hello World" in basic_ctx.content
+        assert "# 原始数据" not in basic_ctx.content
+        assert basic_ctx.confidence == 1.0
 
     def test_noop_when_conversion_not_needed(self, basic_ctx, mock_strategy_registry, parsed_file, decision_noop, input_data, detected_result):
         basic_ctx.parsed_file = parsed_file

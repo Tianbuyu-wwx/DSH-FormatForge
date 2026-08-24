@@ -373,6 +373,16 @@ class ConvertStep:
                 ctx.content = f"转换失败: {e}"
                 ctx.structured_data = None
                 ctx.confidence = 0.0
+        elif ctx.input_data.source_type == "raw" and not ctx.parsed_file:
+            # raw 文本输入（stdin/--stdin-text）：文本本身就是内容，直接透传。
+            # （此前走 _build_raw_content 输出「无需转换」说明页，CLI 拿不到正文。）
+            data = ctx.input_data.data
+            text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else str(data)
+            ctx.content = format_output(text, ctx.output_format, None)
+            ctx.structured_data = {"raw_data": True, "size": ctx.input_data.size}
+            ctx.confidence = 1.0
+            logger.info("[result_id=%s] raw 文本输入，直接透传 (%d 字符)", ctx.result_id, len(text))
+            ctx.logs.append(create_processing_log("convert", f"raw 文本输入，直接透传 ({len(text)} 字符)"))
         else:
             ctx.content = _build_raw_content(ctx.input_data, ctx.detected)
             ctx.structured_data = {"raw_data": True, "size": ctx.input_data.size}

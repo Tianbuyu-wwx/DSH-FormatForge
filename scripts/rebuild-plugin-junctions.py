@@ -6,9 +6,10 @@
 # They are environment-specific artifacts (gitignored) and get wiped by git clean /
 # pnpm reinstalls — rerun this script then:
 #   python scripts/rebuild-plugin-junctions.py
+import _winapi
+import contextlib
 import os
 import sys
-import _winapi
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUR_BASE = os.path.join(REPO, "packages", "dsh-formatforge", "node_modules", "@deepseek-ai")
@@ -40,10 +41,8 @@ def main() -> int:
             print(f"[MISS] no resolvable source for {name}; check dsh web install")
             ok = False
             continue
-        try:
+        with contextlib.suppress(OSError):
             os.rmdir(dst)
-        except OSError:
-            pass
         _winapi.CreateJunction(src, dst)
         good = os.path.isfile(os.path.join(dst, "package.json"))
         print(f"[{'OK' if good else 'FAIL'}] {name} -> {src}")
