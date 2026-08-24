@@ -249,6 +249,62 @@ dispatch_probe {"skill":"ff_translate"} → e2e: dispatch_task 转真实 pdf
 - ci.yml：删 frontend job；smoke 改 CLI 样本矩阵 e2e；新增 node --test job。
 - 发布选项：GitHub 改名后的 repo / npm `@tianbuyu-wwx/dsh-formatforge` / 仅本机 link。
 
+---
+
+## 11. Phase 5 — 文件投递：让 dsh 对话「吃」文件（2026-08-24 立项）
+
+**问题**：dsh 对话无法直接附加 PDF/DOCX/PPTX 等二进制文件（`read` 只能读文本，读二进制全是乱码）。
+**决策**：层 1 + 层 2 本轮实现；层 3 仅留占位。
+已拍板：会话通知默认**开**；inbox 位置**固定** `~/.dsh/formatforge/inbox/`；层 3 占位不实现。
+
+### 11.1 层 1 · 路径约定强化（零新代码）
+
+- SKILL.md 增加硬规则：「用户消息中出现指向存在的本地文件的绝对路径时，
+  若格式可转换，必须先 `ff_translate` 再回答；禁止用 read 读二进制格式」。
+- `ff_translate` 增强：支持 `paths` 数组（多文件）与简单 glob（如 `*.pdf`）、
+  新增 `max_chars` 参数做内容分页（配合 render 截断提示）。
+
+### 11.2 层 2 · Inbox 投递箱 + 自动转换（主交付）
+
+```
+~/.dsh/formatforge/inbox/
+  └── report.pdf            ← 用户拖入（资源管理器/cp/另存为均可）
+      → fs watcher 触发自动转换
+      ├── report.ff.json    ← 完整协议 JSON
+      └── report.ff.md      ← 纯内容版（可直接阅读）
+```
+
+组件：
+1. `services/inbox-watcher.mjs` —— chokidar/fs.watch 轮询 inbox；
+   文件稳定（size 两次采样不变）后触发转换；复用 ContentHashCache 语义去重
+   （同内容文件跳过，产物已存在且 mtime 较新也跳过）；转换后原文件保留不删。
+2. **会话通知（默认开，吸取 hermes-link v0.2.1 教训只注轻量摘要）**：
+   转换完成 → 向每个活跃 dsh 会话 append 一条通知事件：
+   `[FormatForge] report.pdf 已锻好 (parser=pdf, confidence=0.95, 4 页)。
+    结果: .../report.ff.md 。输入"继续"即可基于该文件提问。`
+   只含文件名+元数据+结果路径，**不含全文**（防跨项目上下文污染）；
+   `FF_INBOX_NOTIFY=false` 可关。surfaceOp 用字符串 `'append'`（bootfix #2 契约）。
+3. 失败处理：转换失败写 `<name>.ff.error.txt`（含 kind/message），同样发轻量通知；
+   不重试（用户重新拖入即手动重试）。
+4. 大小/类型 clamp 与 ff_translate 一致（FF_MAX_BYTES；不支持格式直接报 unsupported_format）。
+
+### 11.3 层 3 · HTTP 上传端点 + UI 注入【占位，暂不实现】
+
+设计备忘（未来若做）：`POST /formatforge/upload`（multipart，扩展名白名单）
+→ 落 inbox → 复用层 2 流程；新增 `ff_result(id, offset)` 工具分页取内容；
+UI 拖拽区仿 dshmarket DOM 注入——但 dsh 无官方 UI 扩展 API，宿主升级易碎，
+等官方扩展点出现再立项。
+
+### 11.4 验收
+
+1. 拖一个 DOCX 进 inbox → ≤10s 出现 `.ff.json/.ff.md`，活跃会话收到一条通知。
+2. 同一文件重复拖入 → 跳过（去重生效），不发重复通知。
+3. 拖入 `.exe` → `.ff.error.txt` 写 unsupported_format，通知带错误 kind。
+4. `FF_INBOX_NOTIFY=false` 时一切照常但不注入会话。
+5. 既有 e2e（ff_translate 直连路径）不回归。
+
+---
+
 ## 9. 风险与回滚
 
 | 风险 | 对策 |
