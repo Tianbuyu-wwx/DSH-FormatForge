@@ -1,6 +1,8 @@
 # PLUGIN_PLAN.md — DSH-FormatForge 封装为 DeepSeek Harness 插件
 
-> 状态：**已确认开工**（2026-08-24 定名 + 决策四项落定）
+> 状态：**Phase 0–6 全部完成**（2026-08-25）
+> 交付：插件 v0.3.2（npm `@tianbuyu-wwx/dsh-formatforge`）· CI 7/7 绿 · tag `v0.3.2`
+> 能力：拖拽直投 / 路径对话 / CLI 三通道 · inbox 自动锻造 · 会话轻量通知 · enhance 会话模型增强
 > 项目新名：**DSH-FormatForge**（原名 Data-Format-Translator / AI 数据转换器）
 > 起草：Hermes · 基线：main @ `6610ef1`（CI 全绿：7/7 jobs success）
 
