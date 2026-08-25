@@ -145,6 +145,7 @@ class PageContent(BaseModel):
     rawText: str
     hasImage: bool = False
     hasTable: bool = False
+    metadata: dict[str, Any] | None = Field(default=None, description="页级元数据（E2：furniture 剔除统计等）")
 
 
 class ParsedFile(BaseModel):
