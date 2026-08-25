@@ -106,7 +106,17 @@ def cmd_translate(args: argparse.Namespace) -> int:
     result = response.get("result")
     if result is None:
         err = ctx.error or "未知错误"
+        # E2: pages 表达式错误 → 精确的 bad_request；其余按解析失败处理
+        if "pages 参数格式错误" in str(err):
+            return _fail("bad_request", str(err), code=ErrorCode.BAD_REQUEST)
         return _fail("parse_failed" if ctx.error else "internal", str(err))
+    # E2: 管线吞错后仍产出 error 结果对象（convertedContent=错误消息）——识别 pages 错误
+    if (
+        result.structuredData
+        and result.structuredData.get("error")
+        and "pages 参数格式错误" in str(result.convertedContent)
+    ):
+        return _fail("bad_request", result.convertedContent, code=ErrorCode.BAD_REQUEST)
 
     data: dict[str, Any] = {
         "content": result.convertedContent,

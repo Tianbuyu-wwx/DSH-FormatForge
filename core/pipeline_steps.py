@@ -205,10 +205,15 @@ class ParseStep:
                     "[result_id=%s] 映射文件类型: %s -> %s", ctx.result_id, ctx.detected.format.value, file_type
                 )
                 file_parser = FileParser(UPLOAD_DIR)
-                # E2: PDF 页选择/家具剔除/双栏选项随 ctx 传入解析器
+                # E2: PDF 页选择/家具剔除/双栏选项随 ctx 传入解析器；
+                # pages 表达式非法属用户输入错误，先本地校验以便精确报错
                 pdf_options = None
                 if getattr(ctx, "pages", None):
-                    pdf_options = {"pages": ctx.pages}
+                    from core.pdf_enhance import parse_pages_spec
+
+                    selected_pages = parse_pages_spec(ctx.pages)  # 非法时抛 ValueError
+                    if selected_pages:
+                        pdf_options = {"pages": ctx.pages}
                 ctx.parsed_file = file_parser.parse_file(temp_path, file_type, pdf_options)
                 logger.info(
                     "[result_id=%s] 文件解析完成: pages=%d, file_type=%s, parse_id=%s",
@@ -226,9 +231,11 @@ class ParseStep:
                 temp_path.unlink(missing_ok=True)
                 logger.debug("[result_id=%s] 临时文件已清理", ctx.result_id)
         except ValueError as e:
-            # E2: pages 表达式非法等用户输入错误 —— 直接以 bad_request 失败，不静默降级
+            # E2: pages 表达式非法等用户输入错误 —— 以协议错误上抛（bad_request）
             logger.warning("[result_id=%s] 解析参数错误: %s", ctx.result_id, e)
-            raise
+            if "pages 参数格式错误" in str(e):
+                raise
+            ctx.logs.append(create_processing_log("parse", f"解析失败: {e}", "warning"))
         except Exception as e:
             logger.warning("[result_id=%s] 文件解析失败: %s", ctx.result_id, e, exc_info=True)
             ctx.logs.append(create_processing_log("parse", f"解析失败: {e}", "warning"))
