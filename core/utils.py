@@ -83,6 +83,38 @@ def build_parse_response_data(result_data: ConvertResultData) -> dict[str, Any]:
     }
 
 
+def smart_truncate(text: str, max_chars: int, start: int = 0) -> tuple[str, int | None]:
+    """结构化截断（EVOLUTION_PLAN E1）：优先段落边界 > 行边界 > 硬切。
+
+    返回 (chunk, next_offset)；next_offset 为 None 表示已到末尾。
+    保证不把表格行/列表项从中间切断（除非单行超长才硬切）。
+    """
+    if start >= len(text):
+        return "", None
+    window_end = min(start + max_chars, len(text))
+    if window_end == len(text):
+        return text[start:], None
+
+    window = text[start:window_end]
+    # 1) 段落边界（\n\n）——找窗口内最后一个；切点落在段落分隔符之后
+    cut = window.rfind("\n\n")
+    # 2) 行边界——整行切割保证表格行/列表项完整性
+    if cut < max_chars // 2:
+        cut = window.rfind("\n")
+    if cut <= 0:
+        # 单行超长：硬切
+        chunk = window
+        nxt = start + window_end
+    else:
+        chunk = window[:cut]
+        nxt = start + cut + 1  # 跳过切掉的换行符
+        # 段落切割时把第二个换行也消费掉，下一页从新段落首字符开始
+        if nxt < len(text) and text[nxt] == "\n":
+            nxt += 1
+    next_offset: int | None = nxt if nxt < len(text) else None
+    return chunk, next_offset
+
+
 def format_output(content: str, output_format: Any, structured_data: dict | None = None) -> str:
     """根据输出格式格式化内容"""
     from core.models import OutputFormat

@@ -128,12 +128,12 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
         }
         targets = [...new Set(targets)]
         if (targets.length === 0) {
-          return { ok: false, code: -1, error: { kind: 'not_found', message: `没有可用文件。${errors.join('; ')}` } }
+          return { ok: false, code: -1, error: { kind: 'file_not_found', message: `没有可用文件。${errors.join('; ')}` } }
         }
         for (const t of targets.slice(0, 20)) {
           const check = validateLocalFile(t, maxBytes)
           if (!check.ok) {
-            return { ok: false, code: -1, error: { kind: 'not_found', message: check.reason } }
+            return { ok: false, code: -1, error: { kind: 'file_not_found', message: check.reason } }
           }
         }
         if (targets.length > 20) {
@@ -165,11 +165,20 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
           const fullLen = joined.length
           let truncated = false
           if (fullLen > startOff + cap) {
-            joined = joined.slice(startOff, startOff + cap)
+            // E1: 结构化截断——优先段落边界 > 行边界 > 硬切（与 core/utils.py smart_truncate 镜像）
+            const windowEnd = startOff + cap
+            let cut = joined.lastIndexOf('\n\n', windowEnd)
+            if (cut < startOff + cap / 2) cut = joined.lastIndexOf('\n', windowEnd)
+            if (cut <= startOff) {
+              joined = joined.slice(startOff, windowEnd)
+            } else {
+              joined = joined.slice(startOff, cut)
+            }
             truncated = true
           } else if (startOff > 0) {
             joined = joined.slice(startOff)
           }
+          const nextOffset = truncated ? Math.max(startOff + 1, joined.length + startOff + 1) : undefined
           return {
             ok: true,
             code: 200,
@@ -180,7 +189,7 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
                 parser: 'multi',
                 file_count: targets.length,
                 total_chars: fullLen,
-                next_offset: truncated ? startOff + cap : undefined,
+                next_offset: truncated ? nextOffset : undefined,
                 elapsed_ms: 0,
               },
               truncated,

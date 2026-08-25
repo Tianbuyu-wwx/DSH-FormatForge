@@ -191,6 +191,7 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
     busy = true
     try {
       ensureDir()
+      enforceRetention()
       const stable = scanStable()
       for (const item of stable) {
         await processOne(item)
@@ -199,6 +200,52 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
       log(`[ff-inbox] tick error: ${e.message}`)
     } finally {
       busy = false
+    }
+  }
+
+  // ─── E5: TTL 与容量管理（LRU 按 mtime；删除动作合并为一条通知） ───
+  const TTL_MS = Number(process.env.FF_INBOX_TTL_DAYS ?? 7) * 86_400_000
+  const MAX_BYTES = Number(process.env.FF_INBOX_MAX_MB ?? 500) * 1024 * 1024
+
+  function enforceRetention() {
+    if (TTL_MS <= 0 && MAX_BYTES <= 0) return
+    let entries = []
+    try {
+      entries = listFiles().map((name) => {
+        const full = join(inbox, name)
+        const st = statSync(full)
+        return { name, full, mtime: st.mtimeMs, size: st.size }
+      })
+    } catch { return }
+
+    const doomed = new Set()
+    const now = Date.now()
+    if (TTL_MS > 0) {
+      for (const e of entries) if (now - e.mtime > TTL_MS) doomed.add(e.name)
+    }
+    // 容量：按 mtime 从旧到新删，直到总量 ≤ MAX_BYTES（排除已判 TTL 过期的）
+    if (MAX_BYTES > 0) {
+      let total = entries.reduce((s, e) => s + (doomed.has(e.name) ? 0 : e.size), 0)
+      for (const e of [...entries].sort((a, b) => a.mtime - b.mtime)) {
+        if (total <= MAX_BYTES) break
+        if (doomed.has(e.name)) continue
+        doomed.add(e.name)
+        total -= e.size
+      }
+    }
+    if (doomed.size === 0) return
+
+    const removed = []
+    for (const name of doomed) {
+      try {
+        unlinkSync(join(inbox, name))
+        removed.push(name)
+        doneAt.delete(name)
+      } catch { /* 已被并发删除等场景 */ }
+    }
+    if (removed.length > 0) {
+      log(`[ff-inbox] retention: removed ${removed.length} file(s)`)
+      onDone?.({ file: removed.join(', '), ok: true, retention: true, count: removed.length })
     }
   }
 

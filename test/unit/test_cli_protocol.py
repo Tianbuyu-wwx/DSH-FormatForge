@@ -89,14 +89,14 @@ class TestTranslateErrors:
         payload, code = run_cli("translate", "/no/such/file.docx")
         assert payload["ok"] is False
         err = payload["error"]
-        assert err["kind"] == "not_found"
+        assert err["kind"] == "file_not_found"
         assert err["message"]
         assert code == 2
 
     def test_directory_rejected(self):
         payload, code = run_cli("translate", str(REPO_ROOT / "test"))
         assert payload["ok"] is False
-        assert payload["error"]["kind"] == "not_found"
+        assert payload["error"]["kind"] == "file_not_found"
         assert code == 2
 
 

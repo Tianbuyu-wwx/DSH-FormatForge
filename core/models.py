@@ -327,6 +327,9 @@ class ConvertResultData(BaseModel):
     convertedContent: str = Field(description="AI转换后的内容")
     structuredData: dict[str, Any] | None = Field(default=None, description="结构化数据")
     confidence: float = Field(default=0.0, description="转换置信度 0.0-1.0")
+    enhance: dict[str, Any] | None = Field(
+        default=None, description="会话模型增强提示（image_only/low_confidence/table_sparse）"
+    )
     processingLogs: list[ProcessingLog]
     createdAt: datetime
 

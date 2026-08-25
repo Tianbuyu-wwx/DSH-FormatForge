@@ -22,15 +22,16 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 EXIT_OK = 0
-EXIT_USAGE = 2
-EXIT_PARSE_FAILED = 3
-EXIT_LIMIT = 4
 
-_KIND_EXIT = {
-    "not_found": EXIT_USAGE,
-    "unsupported_format": EXIT_PARSE_FAILED,
-    "parse_failed": EXIT_PARSE_FAILED,
-    "too_large": EXIT_LIMIT,
+# M4: 错误码协议固化（core/errors.py 为唯一权威；旧 kind 字符串映射到新枚举）
+from core.errors import ErrorCode, exit_code_of  # noqa: E402
+
+_LEGACY_KIND = {
+    "not_found": ErrorCode.FILE_NOT_FOUND,
+    "is_directory": ErrorCode.IS_DIRECTORY,
+    "unsupported_format": ErrorCode.UNSUPPORTED_FORMAT,
+    "parse_failed": ErrorCode.PARSE_FAILED,
+    "too_large": ErrorCode.TOO_LARGE,
 }
 
 
@@ -40,50 +41,13 @@ def _emit(payload: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def _fail(kind: str, message: str) -> int:
-    _emit({"ok": False, "code": 4000 + _KIND_EXIT.get(kind, EXIT_USAGE), "error": {"kind": kind, "message": message}})
-    return _KIND_EXIT.get(kind, EXIT_USAGE)
-
-
-def _build_enhance_hint(parsed_file: Any, confidence: float) -> dict[str, Any] | None:
-    """按 PLUGIN_PLAN §6 判定是否需要调用方模型增强，返回 enhance 字段或 None。"""
-    if not parsed_file:
-        return None
-
-    pages = getattr(parsed_file, "pages", []) or []
-    total = len(pages)
-    if total == 0:
-        return None
-
-    # image_only：多数页无文字层（扫描件）
-    textless = sum(1 for p in pages if not (getattr(p, "rawText", "") or "").strip())
-    if textless / total >= 0.5:
-        return {
-            "needed": True,
-            "reason": "image_only",
-            "hint": f"{textless}/{total} 页无文字层（疑似扫描件）。请基于 OCR 文本/图片描述重建结构并补齐表格。",
-        }
-
-    if confidence < 0.5:
-        return {
-            "needed": True,
-            "reason": "low_confidence",
-            "hint": f"转换置信度仅 {confidence:.2f}。请检查内容完整性并修复明显的解析噪声。",
-        }
-
-    # table_sparse：检测到表格但抽取内容稀疏
-    has_table = any(getattr(p, "hasTable", False) for p in pages)
-    table_cells = sum(
-        1 for p in pages for e in (getattr(p, "elements", []) or []) if getattr(e, "elementType", "") == "table"
-    )
-    if has_table and table_cells == 0:
-        return {
-            "needed": True,
-            "reason": "table_sparse",
-            "hint": "检测到表格但未抽取到结构化单元格。请从原始文本重建 Markdown 表格。",
-        }
-
-    return None
+def _fail(kind: str, message: str, *, code: ErrorCode | None = None) -> int:
+    """失败出口。kind 为旧字符串兼容参数；优先用 code 枚举。"""
+    ec = code or _LEGACY_KIND.get(kind, ErrorCode.INTERNAL)
+    exit_code = exit_code_of(ec)
+    err = {"kind": ec.value, "message": message}
+    _emit({"ok": False, "code": 4000 + exit_code, "error": err})
+    return exit_code
 
 
 def cmd_translate(args: argparse.Namespace) -> int:
@@ -170,9 +134,9 @@ def cmd_translate(args: argparse.Namespace) -> int:
         except Exception as e:  # 质量报告失败不影响主结果
             print(f"[formatforge] 质量报告生成失败: {e}", file=sys.stderr)
 
-    enhance = _build_enhance_hint(ctx.parsed_file, result.confidence)
-    if enhance and not args.no_enhance_hint:
-        data["enhance"] = enhance
+    # M1: enhance 由管线层统一产出（BuildResultStep），CLI 只透传
+    if not args.no_enhance_hint and getattr(result, "enhance", None):
+        data["enhance"] = result.enhance
 
     _emit({"ok": True, "code": 200, "data": data})
     return EXIT_OK
@@ -228,11 +192,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    result_code: int = EXIT_USAGE
+    result_code: int = exit_code_of(ErrorCode.BAD_REQUEST)
     try:
         result_code = int(args.func(args))
     except SystemExit as e:
-        result_code = int(e.code or 0) if isinstance(e.code, (int, str)) else EXIT_USAGE
+        result_code = int(e.code or 0) if isinstance(e.code, (int, str)) else exit_code_of(ErrorCode.BAD_REQUEST)
     except BrokenPipeError:
         return EXIT_OK
     except Exception as e:  # 兜底：任何未捕获异常都以协议 JSON 报告

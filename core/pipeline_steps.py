@@ -419,6 +419,11 @@ class BuildResultStep:
 
         recommendation = self._pipeline.decision_engine.build_recommendation(ctx.decision)
 
+        # M1: enhance 判定下沉管线层 —— CLI/ff_translate/inbox 三通道统一产出
+        from core.enhance import build_enhance_hint
+
+        hint = build_enhance_hint(ctx.parsed_file, ctx.confidence)
+
         result_data = ConvertResultData(
             resultId=ctx.result_id,
             parseId=ctx.parsed_file.parseId if ctx.parsed_file else "",
@@ -438,6 +443,7 @@ class BuildResultStep:
                 "conversion_decision": ctx.decision.to_dict(),
             },
             confidence=ctx.confidence,
+            enhance=hint.to_dict() if hint else None,
             processingLogs=ctx.logs,
             createdAt=datetime.now(),
         )

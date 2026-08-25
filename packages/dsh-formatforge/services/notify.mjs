@@ -68,6 +68,13 @@ export function makeNotifier({ log = () => {} } = {}) {
 
   /** Build the standard one-liner for a finished conversion. */
   function buildNotice(result) {
+    // E5: retention 清理通知（批量合并为一条）
+    if (result.retention) {
+      return (
+        `[FormatForge] 收件箱清理：已按 TTL/容量策略移除 ${result.count} 个过期文件` +
+        `（FF_INBOX_TTL_DAYS / FF_INBOX_MAX_MB 可配）。`
+      )
+    }
     if (result.ok) {
       const enh = result.enhanceReason ? `；⚠ enhance=${result.enhanceReason}` : ''
       return (
