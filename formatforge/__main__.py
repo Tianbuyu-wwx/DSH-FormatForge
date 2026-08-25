@@ -128,6 +128,7 @@ def cmd_translate(args: argparse.Namespace) -> int:
                 file_size=result.fileInfo.fileSize if result.fileInfo else 0,
                 file_type=result.fileInfo.fileType.value if result.fileInfo else "unknown",
                 structured_data=result.structuredData,
+                parsed_file=ctx.parsed_file,
             )
             # analyze() 返回 self（QualityReport 实例），协议 JSON 需要 dict。
             data["quality"] = analyzed.to_dict() if hasattr(analyzed, "to_dict") else analyzed

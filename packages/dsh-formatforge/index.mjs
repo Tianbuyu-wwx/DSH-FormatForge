@@ -16,12 +16,13 @@ import { dirname, join } from 'node:path'
 import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import { createTranslateTool } from './tools/translate.mjs'
 import { createFormatsTool } from './tools/formats.mjs'
+import { createResultTool } from './tools/result.mjs'
 import { findRepoRoot, resolvePython, DEFAULT_TIMEOUT_MS } from './services/python-runner.mjs'
 import { createInboxWatcher, inboxDir } from './services/inbox-watcher.mjs'
 import { registerUploadRoute } from './http/upload.mjs'
 import { makeNotifier } from './services/notify.mjs'
 
-const VERSION = '0.4.0'
+const VERSION = '0.5.0'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const pluginDir = join(here)
@@ -72,7 +73,8 @@ export function apply(ctx) {
     if (ctx.tools && ctx.tools.register) {
       ctx.tools.register(createTranslateTool({ repoRoot, maxBytes: maxBytesFromEnv(), timeoutMs: timeoutFromEnv(), log }))
       ctx.tools.register(createFormatsTool({ repoRoot, log }))
-      console.log(`[dsh-formatforge v${VERSION}] tools registered: ff_translate, ff_formats`)
+      ctx.tools.register(createResultTool({ log }))
+      console.log(`[dsh-formatforge v${VERSION}] tools registered: ff_translate, ff_formats, ff_result`)
     } else {
       console.warn(`[dsh-formatforge v${VERSION}] ctx.tools not available; tools not registered`)
     }

@@ -13,6 +13,19 @@ when_to_use: |
     image_desc/ocr，默认 auto）、quality（附质量报告）、prompt（自定义指令）。
   - `ff_formats` — 列出支持的输入格式、输出格式与转换策略。
 
+  ## 质量自愈（E4）
+
+  ff_translate 带 `quality: true` 时返回 `quality.actions[]`。若某条 action 带
+  `retry_with`（如 `{"encoding":"gbk"}` 或 `{"conversion_type":"table"}`），
+  **直接把这些参数并入重调 ff_translate 的参数**再回答；不要把 actions 原文丢给用户。
+
+  ## 收件箱产物消费（N1）
+
+  会话收到「[FormatForge] 收件箱文件已锻好」通知后：
+  - 要列全部产物 → `ff_result {list:true}`
+  - 取某份内容 → `ff_result {id:"<通知中的 id 或文件名>"}`
+  - 内容被截断时按提示带 `offset` 翻页
+
   ## 使用时机
 
   - 用户给出一个本地文件路径并要求「读取/转换/解析/提取内容」。

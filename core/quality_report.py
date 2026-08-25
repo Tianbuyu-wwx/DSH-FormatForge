@@ -19,6 +19,8 @@ class QualityReport:
         self.scores: dict[str, float] = {}
         self.warnings: list[str] = []
         self.suggestions: list[str] = []
+        self.actions: list[dict[str, Any]] = []
+        self._last_parsed_file: Any = None
 
     # ==================== 评分维度 ====================
 
@@ -261,17 +263,22 @@ class QualityReport:
         file_size: int = 0,
         file_type: str = "unknown",
         structured_data: dict[str, Any] | None = None,
+        parsed_file: Any = None,
     ):
-        """执行完整质量分析"""
+        """执行完整质量分析（E4：末尾推导可操作化 actions）"""
         self.scores = {}
         self.warnings = []
         self.suggestions = []
+        self.actions = []
+        self._last_parsed_file = parsed_file
 
         self.scores["text_coverage"] = self._score_text_coverage(content, file_size, file_type)
         self.scores["encoding_confidence"] = self._score_encoding_confidence(content)
         self.scores["structure_preservation"] = self._score_structure_preservation(content)
         self.scores["table_accuracy"] = self._score_table_accuracy(content, structured_data)
         self.scores["content_completeness"] = self._score_content_completeness(content)
+
+        self._build_actions(content, file_type)
 
         return self
 
@@ -371,11 +378,76 @@ class QualityReport:
     # ==================== 序列化 ====================
 
     def to_dict(self) -> dict[str, Any]:
-        """返回完整报告为字典"""
+        """返回完整报告为字典（E4：含可操作化动作 actions）"""
         return {
             "overall_score": self.overall_score,
             "grade": self.grade,
             "scores": dict(self.scores),
             "warnings": list(self.warnings),
             "suggestions": list(self.suggestions),
+            "actions": list(self.actions),
         }
+
+    # ==================== E4: 可操作化动作 ====================
+
+    def add_action(self, code: str, message: str, suggestion: str, retry_with: dict[str, Any] | None = None) -> None:
+        """记录一条可执行的质量改进动作。
+
+        code        动作类别（encoding/coverage/table/pages…）
+        message     人读描述
+        suggestion  建议动作文字
+        retry_with  可直接透传给 ff_translate 的重试参数（如 {"encoding":"gbk"}）
+        """
+        action: dict[str, Any] = {"code": code, "message": message, "suggestion": suggestion}
+        if retry_with:
+            action["retry_with"] = retry_with
+        self.actions.append(action)
+
+    def _build_actions(self, content: str, file_type: str) -> None:
+        """从既有 warnings/scores 推导结构化动作（不重复发通知）。"""
+        import re
+
+        replacement_count = content.count("\ufffd") if content else 0
+        if replacement_count > 0:
+            self.add_action(
+                "encoding",
+                f"检测到 {replacement_count} 个替换字符 (U+FFFD)",
+                "尝试用 GBK 编码重新解析该文件",
+                retry_with={"encoding": "gbk"},
+            )
+
+        mojibake_count = (
+            sum(len(re.findall(p, content)) for p in (r"Ã[©®\x81-\xbf]", r"â[\x80-\xbf]")) if content else 0
+        )
+        if mojibake_count > 0 and replacement_count == 0:
+            self.add_action(
+                "encoding",
+                f"检测到 {mojibake_count} 个疑似乱码模式",
+                "确认源文件编码后以正确编码重转",
+                retry_with={"encoding": "latin-1"},
+            )
+
+        coverage = self.scores.get("text_coverage")
+        if coverage is not None and coverage < 50:
+            self.add_action(
+                "coverage",
+                "文本覆盖率较低，内容可能不完整",
+                "若为扫描件请启用 OCR；否则检查文件完整性",
+                retry_with={"conversion_type": "ocr"},
+            )
+
+        has_table = (
+            getattr(self._last_parsed_file, "hasTable", False) if getattr(self, "_last_parsed_file", None) else False
+        )
+        table_sparse = (
+            any(getattr(p, "hasTable", False) for p in getattr(self._last_parsed_file, "pages", []) or [])
+            if self._last_parsed_file
+            else False
+        )
+        if table_sparse or (has_table and coverage is not None and coverage < 60):
+            self.add_action(
+                "table",
+                "检测到表格但结构化抽取可能稀疏",
+                "用表格抽取策略重转以获得 Markdown 表格",
+                retry_with={"conversion_type": "table"},
+            )

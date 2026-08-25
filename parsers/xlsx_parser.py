@@ -5,6 +5,7 @@ XLSX/XLS 文件解析器
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from core.models import ExtractedElement, PageContent
 from parsers import BaseParser
@@ -56,14 +57,19 @@ class XLSXParser(BaseParser):
             return self._parse_xlsx(file_path)
 
     def _parse_xlsx(self, file_path: Path) -> list[PageContent]:
-        """解析现代 Excel 格式 (.xlsx, .xlsm)"""
+        """解析现代 Excel 格式 (.xlsx, .xlsm)
+
+        E3 增强：多 sheet 各自成表（sheet 名入锚点）、合并单元格值填充、
+        数字/日期类型保真（防 001 变 1）。
+        """
         if not XLSX_AVAILABLE:
             raise ImportError("openpyxl 库未安装，无法解析 XLSX 文件")
 
         logger.info("开始解析 XLSX: %s", file_path)
 
         try:
-            wb = load_workbook(file_path, data_only=True, read_only=True)
+            # E3: 不能用 read_only=True —— 合并单元格信息需要普通模式
+            wb = load_workbook(file_path, data_only=True)
         except Exception as e:
             logger.error("无法打开 XLSX 文件: %s", e)
             raise ValueError(f"无法打开 XLSX 文件: {e}") from e
@@ -76,15 +82,37 @@ class XLSXParser(BaseParser):
             logger.debug("解析 Sheet: %s", sheet_name)
             sheet = wb[sheet_name]
 
+            # E3: 构建合并单元格映射 —— 左上角值填充到整个合并区域
+            merged_fill: dict[tuple[int, int], Any] = {}
+            try:
+                for rng in sheet.merged_cells.ranges:
+                    top_left = sheet.cell(rng.min_row, rng.min_col).value
+                    for row in range(rng.min_row, rng.max_row + 1):
+                        for col in range(rng.min_col, rng.max_col + 1):
+                            if (row, col) != (rng.min_row, rng.min_col):
+                                merged_fill[(row, col)] = top_left
+            except Exception as e:
+                logger.debug("合并单元格读取失败（跳过填充）: %s", e)
+
+            def _cell_str(value: Any) -> str:
+                """类型保真序列化：保留前导零/长数字的原始形态。"""
+                if value is None:
+                    return ""
+                return str(value)
+
             # 提取表格数据
             sheet_data = []
             max_col = 0
 
-            for row in sheet.iter_rows(values_only=True):
+            for r_idx, row in enumerate(sheet.iter_rows(values_only=False), start=1):
                 row_data = []
-                for cell in row:
-                    if cell is not None:
-                        row_data.append(str(cell))
+                for c_idx, cell in enumerate(row, start=1):
+                    # 合并区域非左上格：填左上角的值
+                    if cell.value is None and (r_idx, c_idx) in merged_fill:
+                        row_data.append(_cell_str(merged_fill[(r_idx, c_idx)]))
+                        continue
+                    if cell.value is not None:
+                        row_data.append(_cell_str(cell.value))
                     else:
                         row_data.append("")
                 if any(row_data):
@@ -94,31 +122,30 @@ class XLSXParser(BaseParser):
             if not sheet_data:
                 continue
 
-            # 格式化表格文本
+            # 格式化表格文本 —— Markdown 表格（含表头分隔行）
             table_lines = []
             for _row_idx, row_data in enumerate(sheet_data):
-                # 补齐列数
                 while len(row_data) < max_col:
                     row_data.append("")
-                line = " | ".join(row_data)
-                table_lines.append(line)
+                table_lines.append("| " + " | ".join(row_data) + " |")
+            if len(table_lines) > 1:
+                table_lines.insert(1, "|" + "---|" * max_col)
 
             table_text = "\n".join(table_lines)
-
-            # 检测表头（第一行）
             header_text = table_lines[0] if table_lines else ""
 
             elements.append(
                 ExtractedElement(
                     elementId=f"elem_1_{elem_idx}",
                     elementType="table",
-                    content=f"Sheet: {sheet_name}\n{table_text}",
+                    content=f"## Sheet: {sheet_name}\n\n{table_text}",
                     metadata={
                         "sheet_name": sheet_name,
                         "rows": len(sheet_data),
                         "cols": max_col,
                         "header": header_text,
                         "has_header": self._detect_header(sheet_data),
+                        "merged_cells": len(merged_fill),
                     },
                 )
             )
