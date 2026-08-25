@@ -82,7 +82,7 @@ git tag -a v2.1.0-ci-green 6610ef1 -m "Web 版终态：CI 7/7 绿"
 git push origin v2.1.0-ci-green
 
 # 3.2 （可选，需用户点头）GitHub 仓库同步改名——git 自动重定向旧 URL
-gh repo edit Tianbuyu-wwx/Data-Format-Translator --new-name DSH-FormatForge
+gh repo edit Tianbuyu-wwx/DSH-FormatForge --new-name DSH-FormatForge
 ```
 
 ## 3.5 Phase 0.5 — 本地目录迁移（⚠️ 需要用户协助）

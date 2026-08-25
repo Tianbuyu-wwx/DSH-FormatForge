@@ -224,13 +224,14 @@ class FileParser:
         random_suffix = uuid.uuid4().hex[:6]
         return f"parse{timestamp}{random_suffix}"
 
-    def parse_file(self, file_path: Path, file_type: str) -> ParsedFile:
+    def parse_file(self, file_path: Path, file_type: str, pdf_options: dict | None = None) -> ParsedFile:
         """
         解析文件 - 使用插件化注册表
 
         Args:
             file_path: 文件路径
             file_type: 文件类型
+            pdf_options: PDF 解析器选项（E2：pages/drop_furniture/two_column/use_ocr 等）
 
         Returns:
             ParsedFile: 解析后的文件数据
@@ -323,7 +324,11 @@ class FileParser:
         if plugin_parser:
             logger.info("使用插件解析器: %s", type(plugin_parser).__name__)
             try:
-                pages = plugin_parser.parse(file_path)
+                pages = (
+                    plugin_parser.parse(file_path, **(pdf_options or {}))
+                    if pdf_options
+                    else plugin_parser.parse(file_path)
+                )
                 logger.info("解析完成: parser=%s, pages=%d", type(plugin_parser).__name__, len(pages))
             except Exception as e:
                 logger.error("插件解析器执行失败: %s, error=%s", type(plugin_parser).__name__, e, exc_info=True)

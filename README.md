@@ -3,7 +3,7 @@
 **把任意文件拖进 DeepSeek Harness，立刻变成 AI 能读懂的数据。**
 
 [![Version](https://img.shields.io/npm/v/@tianbuyu-wwx/dsh-formatforge)](https://www.npmjs.com/package/@tianbuyu-wwx/dsh-formatforge)
-[![CI](https://github.com/Tianbuyu-wwx/Data-Format-Translator/actions/workflows/ci.yml/badge.svg)](https://github.com/Tianbuyu-wwx/Data-Format-Translator/actions/workflows/ci.yml)
+[![CI](https://github.com/Tianbuyu-wwx/DSH-FormatForge/actions/workflows/ci.yml/badge.svg)](https://github.com/Tianbuyu-wwx/DSH-FormatForge/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
 [![Node](https://img.shields.io/badge/Node-22%2B-green)](https://nodejs.org)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
@@ -48,7 +48,7 @@ npm 包是插件壳。还需要一份可运行的 Python 内核（本仓库）�
 
 ```bash
 # 给法 A：clone 本仓库并安装内核（推荐，含全部解析器依赖）
-git clone https://github.com/Tianbuyu-wwx/Data-Format-Translator.git DSH-FormatForge
+git clone https://github.com/Tianbuyu-wwx/DSH-FormatForge.git DSH-FormatForge
 cd DSH-FormatForge
 pip install -e .
 # 告诉插件内核在哪（或用 FF_PYTHON 指向任一已装依赖的解释器）
@@ -61,7 +61,7 @@ setx FF_PYTHON "C:\path\to\your\python.exe"
 ### 方式二：从源码安装（开发）
 
 ```bash
-git clone https://github.com/Tianbuyu-wwx/Data-Format-Translator.git DSH-FormatForge
+git clone https://github.com/Tianbuyu-wwx/DSH-FormatForge.git DSH-FormatForge
 cd DSH-FormatForge
 pip install -e .
 

@@ -50,12 +50,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Tianbuyu-wwx/Data-Format-Translator.git",
+    "url": "git+https://github.com/Tianbuyu-wwx/DSH-FormatForge.git",
     "directory": "packages/dsh-formatforge"
   },
-  "homepage": "https://github.com/Tianbuyu-wwx/Data-Format-Translator/tree/main/packages/dsh-formatforge",
+  "homepage": "https://github.com/Tianbuyu-wwx/DSH-FormatForge/tree/main/packages/dsh-formatforge",
   "bugs": {
-    "url": "https://github.com/Tianbuyu-wwx/Data-Format-Translator/issues"
+    "url": "https://github.com/Tianbuyu-wwx/DSH-FormatForge/issues"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-tools": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",

@@ -97,6 +97,7 @@ def cmd_translate(args: argparse.Namespace) -> int:
         source=source,
         conversion_type=conversion_type,
         output_format=output_format,
+        pages=getattr(args, "pages", None),
         custom_prompt=args.prompt,
     )
     response = pipeline.run(ctx)
@@ -178,6 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_tr.add_argument("--type", default="auto", choices=["auto", "text", "structured", "table", "image_desc", "ocr"])
     p_tr.add_argument("--prompt", default=None, help="自定义转换指令")
     p_tr.add_argument("--quality", action="store_true", help="附带质量报告")
+    p_tr.add_argument("--pages", default=None, help="PDF 页选择，如 1-3,7（仅 PDF 生效）")
     p_tr.add_argument("--no-enhance-hint", action="store_true", help="禁用 enhance 提示字段")
     p_tr.set_defaults(func=cmd_translate)
 

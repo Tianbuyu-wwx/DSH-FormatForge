@@ -205,7 +205,11 @@ class ParseStep:
                     "[result_id=%s] 映射文件类型: %s -> %s", ctx.result_id, ctx.detected.format.value, file_type
                 )
                 file_parser = FileParser(UPLOAD_DIR)
-                ctx.parsed_file = file_parser.parse_file(temp_path, file_type)
+                # E2: PDF 页选择/家具剔除/双栏选项随 ctx 传入解析器
+                pdf_options = None
+                if getattr(ctx, "pages", None):
+                    pdf_options = {"pages": ctx.pages}
+                ctx.parsed_file = file_parser.parse_file(temp_path, file_type, pdf_options)
                 logger.info(
                     "[result_id=%s] 文件解析完成: pages=%d, file_type=%s, parse_id=%s",
                     ctx.result_id,
@@ -221,6 +225,10 @@ class ParseStep:
             finally:
                 temp_path.unlink(missing_ok=True)
                 logger.debug("[result_id=%s] 临时文件已清理", ctx.result_id)
+        except ValueError as e:
+            # E2: pages 表达式非法等用户输入错误 —— 直接以 bad_request 失败，不静默降级
+            logger.warning("[result_id=%s] 解析参数错误: %s", ctx.result_id, e)
+            raise
         except Exception as e:
             logger.warning("[result_id=%s] 文件解析失败: %s", ctx.result_id, e, exc_info=True)
             ctx.logs.append(create_processing_log("parse", f"解析失败: {e}", "warning"))

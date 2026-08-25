@@ -60,7 +60,14 @@ class PDFParser(BaseParser):
         return [b"%PDF"]
 
     def parse(
-        self, file_path: Path, use_ocr: bool = False, ocr_backend: str | None = None, ocr_min_confidence: float = 0.5
+        self,
+        file_path: Path,
+        use_ocr: bool = False,
+        ocr_backend: str | None = None,
+        ocr_min_confidence: float = 0.5,
+        pages: str | None = None,
+        drop_furniture: bool = True,
+        two_column: bool = True,
     ) -> list[PageContent]:
         """
         解析 PDF 文件
@@ -68,13 +75,25 @@ class PDFParser(BaseParser):
         Args:
             file_path: PDF 文件路径
             use_ocr: 是否对纯图片页使用 OCR
-            ocr_backend: 指定 OCR 后端（tesseract/paddleocr/easyocr/ai）
+            ocr_backend: 指定 OCR 后端（tesseract/paddleocr/easyocr）
             ocr_min_confidence: OCR 最小置信度阈值
+            pages: 页选择表达式，如 "1-3,7"（1-based；None=全部）
+            drop_furniture: 剔除跨页重复的页眉/页脚行（E2）
+            two_column: 启用双栏阅读序还原（E2）
         """
-        return list(self.parse_stream(file_path, use_ocr, ocr_backend, ocr_min_confidence))
+        return list(
+            self.parse_stream(file_path, use_ocr, ocr_backend, ocr_min_confidence, pages, drop_furniture, two_column)
+        )
 
     def parse_stream(
-        self, file_path: Path, use_ocr: bool = False, ocr_backend: str | None = None, ocr_min_confidence: float = 0.5
+        self,
+        file_path: Path,
+        use_ocr: bool = False,
+        ocr_backend: str | None = None,
+        ocr_min_confidence: float = 0.5,
+        pages: str | None = None,
+        drop_furniture: bool = True,
+        two_column: bool = True,
     ) -> Generator[PageContent, None, None]:
         """
         流式解析 PDF 文件，逐页生成（减少内存占用）
@@ -84,23 +103,109 @@ class PDFParser(BaseParser):
             use_ocr: 是否对纯图片页使用 OCR
             ocr_backend: 指定 OCR 后端
             ocr_min_confidence: OCR 最小置信度阈值
+            pages: 页选择表达式 "1-3,7"（1-based；None=全部）
+            drop_furniture: 剔除页眉/页脚
+            two_column: 双栏阅读序还原
 
         Yields:
             PageContent: 每一页的内容
         """
-        logger.info("开始流式解析 PDF: %s (OCR=%s, backend=%s)", file_path, use_ocr, ocr_backend)
+        selected = self._parse_page_selection(pages)
+        logger.info(
+            "开始流式解析 PDF: %s (OCR=%s, backend=%s, pages=%s, furniture=%s)",
+            file_path,
+            use_ocr,
+            ocr_backend,
+            pages or "all",
+            not drop_furniture,
+        )
 
         try:
             with pdfplumber.open(str(file_path)) as pdf:
                 total_pages = len(pdf.pages)
                 logger.info("PDF 共 %d 页", total_pages)
 
+                # E2-2: 先扫全书的页首/尾候选行（跨页重复 ≥60% 才判为 furniture）
+                furniture = self._detect_furniture(pdf) if drop_furniture else set()
+
                 for idx, page in enumerate(pdf.pages, 1):
-                    yield self._parse_page(page, idx, total_pages, use_ocr, ocr_backend, ocr_min_confidence)
+                    if selected and idx not in selected:
+                        continue
+                    yield self._parse_page(
+                        page, idx, total_pages, use_ocr, ocr_backend, ocr_min_confidence, furniture, two_column
+                    )
 
         except Exception as e:
             logger.error("PDF 解析失败: %s", e)
             raise ValueError(f"PDF 解析失败: {e}") from e
+
+    @staticmethod
+    def _parse_page_selection(pages: str | None) -> set[int] | None:
+        """解析 "1-3,7" 形式的页选择表达式为 1-based 页号集合。"""
+        if not pages or not pages.strip():
+            return None
+        selected: set[int] = set()
+        for part in pages.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                lo_s, hi_s = part.split("-", 1)
+                lo, hi = int(lo_s), int(hi_s)
+                if lo < 1 or hi < lo:
+                    raise ValueError(f"非法页范围: {part}")
+                selected.update(range(lo, hi + 1))
+            else:
+                n = int(part)
+                if n < 1:
+                    raise ValueError(f"非法页号: {part}")
+                selected.add(n)
+        return selected or None
+
+    #: furniture 判定：某行文本在全书出现于页首/尾的比例阈值
+    _FURNITURE_RATIO = 0.6
+    #: 只检查每页前/后 N 行
+    _FURNITURE_EDGE_LINES = 3
+
+    def _detect_furniture(self, pdf) -> set[str]:
+        """扫描全书，返回判定为页眉/页脚的文本行集合。
+
+        判定：出现在 ≥60% 页面的前 3 行或后 3 行中的相同文本行。
+        单页文档不启用（无统计意义）。
+        """
+        from collections import Counter
+
+        try:
+            total = len(pdf.pages)
+            if total < 3:
+                return set()
+            counter: Counter[str] = Counter()
+            for page in pdf.pages:
+                text = (page.extract_text() or "").strip()
+                if not text:
+                    continue
+                lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+                edges = lines[: self._FURNITURE_EDGE_LINES] + lines[-self._FURNITURE_EDGE_LINES :]
+                for ln in set(edges):
+                    counter[ln] += 1
+            threshold = max(total * self._FURNITURE_RATIO, 2)
+            found = {ln for ln, n in counter.items() if n >= threshold}
+            if found:
+                logger.info("[furniture] 检测到 %d 条页眉/页脚行", len(found))
+            return found
+        except Exception as e:
+            logger.debug("furniture 检测失败（忽略）: %s", e)
+            return set()
+
+    @staticmethod
+    def _strip_furniture(text: str, furniture: set[str]) -> tuple[str, int]:
+        """从页面文本中剔除 furniture 行，返回 (新文本, 剔除行数)。"""
+        if not text or not furniture:
+            return text, 0
+        lines = text.splitlines()
+        kept = [ln for ln in lines if ln.strip() not in furniture]
+        removed = len(lines) - len(kept)
+        return "\n".join(kept).strip("\n"), removed
 
     def _parse_page(
         self,
@@ -110,9 +215,21 @@ class PDFParser(BaseParser):
         use_ocr: bool = False,
         ocr_backend: str | None = None,
         ocr_min_confidence: float = 0.5,
+        furniture: set[str] | None = None,
+        two_column: bool = True,
     ) -> PageContent:
         """解析单页 PDF，支持 OCR 识别纯图片页和混合页"""
         text = page.extract_text() or ""
+
+        # E2-3: 双栏阅读序还原 —— 页宽>高且词框呈左右两簇时按栏拼接
+        if two_column and self._looks_two_column(page):
+            text = self._reorder_two_column(page)
+
+        # E2-2: 剔除页眉/页脚行
+        furniture_removed = 0
+        if furniture:
+            text, furniture_removed = self._strip_furniture(text, furniture)
+
         elements = []
         ocr_used = False
         ocr_confidence = 0.0
@@ -193,9 +310,71 @@ class PDFParser(BaseParser):
             ocr_confidence,
         )
 
-        return PageContent(
+        page_content = PageContent(
             pageNumber=page_number, elements=elements, rawText=text, hasImage=has_image, hasTable=has_table
         )
+        # E2-2: furniture 剔除统计挂到页元数据（供质量报告引用）
+        if furniture_removed > 0:
+            page_content.metadata = {"furniture_removed": furniture_removed}
+        return page_content
+
+    # ==================== E2-3: 双栏阅读序 ====================
+
+    #: 双栏判定：页面宽高比下限
+    _TWO_COL_ASPECT = 1.0
+    #: 中缝空白带宽度（相对页宽）
+    _GUTTER_RATIO = 0.04
+
+    def _looks_two_column(self, page) -> bool:
+        """检测页面是否为双栏排版：宽>高 + 词框 x 分布呈左右两簇且中缝清晰。"""
+        try:
+            w, h = float(page.width), float(page.height)
+            if h == 0 or w / h < self._TWO_COL_ASPECT:
+                return False
+            words = page.extract_words() or []
+            if len(words) < 30:
+                return False
+            gutter_lo = w * (0.5 - self._GUTTER_RATIO)
+            gutter_hi = w * (0.5 + self._GUTTER_RATIO)
+            crossing = [wd for wd in words if wd["x0"] < gutter_hi and wd["x1"] > gutter_lo]
+            left = [wd for wd in words if wd["x1"] <= gutter_lo]
+            right = [wd for wd in words if wd["x0"] >= gutter_hi]
+            total = len(words)
+            return len(crossing) / total < 0.05 and len(left) > total * 0.25 and len(right) > total * 0.25
+        except Exception as e:
+            logger.debug("双栏检测失败（按单栏处理）: %s", e)
+            return False
+
+    def _reorder_two_column(self, page) -> str:
+        """按左栏全部行 → 右栏全部行的顺序重建文本。"""
+        try:
+            w = float(page.width)
+            gutter_lo = w * (0.5 - self._GUTTER_RATIO)
+            gutter_hi = w * (0.5 + self._GUTTER_RATIO)
+            words = page.extract_words() or []
+
+            def cluster_text(side_words):
+                lines_by_top: dict[float, list[tuple[float, str]]] = {}
+                for wd in side_words:
+                    key = round(wd["top"] / 3) * 3  # 3pt 容差聚行
+                    lines_by_top.setdefault(key, []).append((float(wd["x0"]), str(wd["text"])))
+                out = []
+                for key in sorted(lines_by_top):
+                    line = " ".join(t for _, t in sorted(lines_by_top[key]))
+                    if line.strip():
+                        out.append(line.strip())
+                return out
+
+            left = [wd for wd in words if wd["x1"] <= gutter_hi]
+            right = [wd for wd in words if wd["x0"] >= gutter_lo]
+            full = [wd for wd in words if wd["x0"] < gutter_hi and wd["x1"] > gutter_lo]
+            # 跨中缝的整行元素（如标题）保持原顺序放在最前
+            head_lines = cluster_text(full)
+            body = cluster_text(left) + cluster_text(right)
+            return "\n".join(head_lines + body)
+        except Exception as e:
+            logger.debug("双栏重排失败（回退原文本）: %s", e)
+            return page.extract_text() or ""
 
     def _should_use_ocr(self, text: str, has_image: bool, use_ocr: bool) -> bool:
         """

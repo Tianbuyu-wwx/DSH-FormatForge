@@ -29,12 +29,15 @@ class PipelineContext:
         conversion_type: ConversionType,
         output_format: OutputFormat,
         custom_prompt: str | None = None,
+        pages: str | None = None,
     ):
         # 输入参数
         self.source = source
         self.conversion_type = conversion_type
         self.output_format = output_format
         self.custom_prompt = custom_prompt
+        # E2: PDF 页选择表达式（"1-3,7"）；非 PDF 输入忽略
+        self.pages = pages
 
         # 步骤产出
         self.result_id: str = ""
