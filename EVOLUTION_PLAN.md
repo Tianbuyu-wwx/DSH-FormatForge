@@ -1,6 +1,6 @@
 # EVOLUTION_PLAN.md — DSH-FormatForge 功能演进方案
 
-> 状态：**执行中** —— 第一批已完成（2026-08-25，v0.4.0 已发 npm + GitHub tag）
+> 状态：**执行中** —— 第一、二批已完成（2026-08-25，v0.4.0 / v0.5.0 已发 npm + GitHub tag）
 > 拍板：四批认可；N2 不做；每批结束 push GitHub（main + tag）
 > 基线：v0.3.3 · 444 tests · CI 7/7 · npm `@tianbuyu-wwx/dsh-formatforge` · awesome-list PR #3113（gate 全绿）
 > 现状盘点数据全部来自实机测量（2026-08-25），非估算。
