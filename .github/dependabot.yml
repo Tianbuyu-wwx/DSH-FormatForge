@@ -1,0 +1,23 @@
+# Dependabot — EVOLUTION_PLAN M3（pip + npm + actions 三生态，月频降低噪音）
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels: ["deps-python"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/packages/dsh-formatforge"
+    schedule:
+      interval: "monthly"
+    labels: ["deps-node"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels: ["deps-actions"]
+    open-pull-requests-limit: 3

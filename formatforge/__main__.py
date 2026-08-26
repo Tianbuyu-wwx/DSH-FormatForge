@@ -35,6 +35,9 @@ _LEGACY_KIND = {
 }
 
 
+from formatforge.batch import cmd_batch  # noqa: E402  (须在 sys.path 注入之后)
+
+
 def _emit(payload: dict[str, Any]) -> None:
     """stdout 唯一出口：单行协议 JSON"""
     sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -50,10 +53,114 @@ def _fail(kind: str, message: str, *, code: ErrorCode | None = None) -> int:
     return exit_code
 
 
-def cmd_translate(args: argparse.Namespace) -> int:
+def translate_file_data(
+    source: Path | str,
+    fmt: str = "json",
+    conversion_type: str = "auto",
+    quality: bool = False,
+    pages: str | None = None,
+    prompt: str | None = None,
+) -> tuple[dict[str, Any] | dict[str, str], int]:
+    """单文件转换核心（N3 batch 复用）。
+
+    source 可为 Path（文件）或 str（stdin 原始文本）。
+    返回 (data, exit_code)：
+      成功 → data 为协议 data 字段 dict（content/meta/quality?/enhance?），exit_code=0
+      失败 → data 为 {"kind","message"}，exit_code 非 0
+    """
     from core.config import settings
     from core.models import ConversionType, OutputFormat
     from core.pipeline import ConversionPipeline, PipelineContext
+
+    if isinstance(source, str):
+        pass  # stdin 文本直接走 RawDataAdapter
+    else:
+        if not source.exists():
+            return {"kind": "file_not_found", "message": f"文件不存在: {source}"}, 2
+        if not source.is_file():
+            return {"kind": "is_directory", "message": f"路径不是文件: {source}"}, 2
+        size = source.stat().st_size
+        if size > settings.FF_MAX_BYTES:
+            return {"kind": "too_large", "message": f"文件 {size} 字节超过上限 {settings.FF_MAX_BYTES}"}, 6
+
+    type_map = {
+        "auto": ConversionType.AUTO,
+        "text": ConversionType.TEXT,
+        "structured": ConversionType.STRUCTURED,
+        "table": ConversionType.TABLE,
+        "image_desc": ConversionType.IMAGE_DESC,
+        "ocr": ConversionType.OCR,
+    }
+    fmt_map = {
+        "json": OutputFormat.JSON,
+        "markdown": OutputFormat.MARKDOWN,
+        "html": OutputFormat.HTML,
+        "text": OutputFormat.TEXT,
+    }
+    pipeline = ConversionPipeline(enable_content_cache=False)
+    ctx = PipelineContext(
+        source=source,
+        conversion_type=type_map[conversion_type],
+        output_format=fmt_map[fmt],
+        pages=pages,
+        custom_prompt=prompt,
+    )
+    response = pipeline.run(ctx)
+    result = response.get("result")
+    if result is None:
+        err = ctx.error or "未知错误"
+        if "pages 参数格式错误" in str(err):
+            return {"kind": "bad_request", "message": str(err)}, 7
+        return {"kind": "parse_failed", "message": str(err)}, 4
+    if (
+        result.structuredData
+        and result.structuredData.get("error")
+        and "pages 参数格式错误" in str(result.convertedContent)
+    ):
+        return {"kind": "bad_request", "message": result.convertedContent}, 7
+
+    data: dict[str, Any] = {
+        "content": result.convertedContent,
+        "format": fmt,
+        "meta": {
+            "parser": result.fileInfo.fileType.value if result.fileInfo else "unknown",
+            "file_size": result.fileInfo.fileSize if result.fileInfo else 0,
+            "result_id": result.resultId,
+            "confidence": result.confidence,
+        },
+    }
+    assert isinstance(data["meta"], dict)
+    if quality:
+        try:
+            from core.quality_report import QualityReport
+
+            report = QualityReport()
+            analyzed = report.analyze(
+                content=result.convertedContent,
+                file_size=result.fileInfo.fileSize if result.fileInfo else 0,
+                file_type=result.fileInfo.fileType.value if result.fileInfo else "unknown",
+                structured_data=result.structuredData,
+                parsed_file=ctx.parsed_file,
+            )
+            data["quality"] = analyzed.to_dict() if hasattr(analyzed, "to_dict") else analyzed
+        except Exception as e:
+            print(f"[formatforge] 质量报告生成失败: {e}", file=sys.stderr)
+    if not getattr(_current_args(), "no_enhance_hint", False) and getattr(result, "enhance", None):
+        data["enhance"] = result.enhance
+    return data, 0
+
+
+_CURRENT_ARGS: argparse.Namespace | None = None
+
+
+def _current_args() -> argparse.Namespace:
+    return _CURRENT_ARGS or argparse.Namespace(no_enhance_hint=False)
+
+
+def cmd_translate(args: argparse.Namespace) -> int:
+    global _CURRENT_ARGS
+    _CURRENT_ARGS = args
+    from core.config import settings
 
     source: Any
 
@@ -72,84 +179,22 @@ def cmd_translate(args: argparse.Namespace) -> int:
             return _fail("too_large", f"文件 {size} 字节超过上限 {settings.FF_MAX_BYTES}")
         source = path
 
-    type_map = {
-        "auto": ConversionType.AUTO,
-        "text": ConversionType.TEXT,
-        "structured": ConversionType.STRUCTURED,
-        "table": ConversionType.TABLE,
-        "image_desc": ConversionType.IMAGE_DESC,
-        "ocr": ConversionType.OCR,
-    }
-    fmt_map = {
-        "json": OutputFormat.JSON,
-        "markdown": OutputFormat.MARKDOWN,
-        "html": OutputFormat.HTML,
-        "text": OutputFormat.TEXT,
-    }
-
-    conversion_type = type_map[args.type]
-    output_format = fmt_map[args.format]
-
     started = time.time()
-    # CLI 一次性进程：关闭内容哈希缓存（磁盘缓存会让 enhance 提示等派生数据过期失效）
-    pipeline = ConversionPipeline(enable_content_cache=False)
-    ctx = PipelineContext(
+    data, exit_code = translate_file_data(
         source=source,
-        conversion_type=conversion_type,
-        output_format=output_format,
+        fmt=args.format,
+        conversion_type=args.type,
+        quality=args.quality,
         pages=getattr(args, "pages", None),
-        custom_prompt=args.prompt,
+        prompt=args.prompt,
     )
-    response = pipeline.run(ctx)
     elapsed_ms = int((time.time() - started) * 1000)
+    if exit_code != 0:
+        return _fail(str(data.get("kind", "internal")), str(data.get("message", data)))
 
-    result = response.get("result")
-    if result is None:
-        err = ctx.error or "未知错误"
-        # E2: pages 表达式错误 → 精确的 bad_request；其余按解析失败处理
-        if "pages 参数格式错误" in str(err):
-            return _fail("bad_request", str(err), code=ErrorCode.BAD_REQUEST)
-        return _fail("parse_failed" if ctx.error else "internal", str(err))
-    # E2: 管线吞错后仍产出 error 结果对象（convertedContent=错误消息）——识别 pages 错误
-    if (
-        result.structuredData
-        and result.structuredData.get("error")
-        and "pages 参数格式错误" in str(result.convertedContent)
-    ):
-        return _fail("bad_request", result.convertedContent, code=ErrorCode.BAD_REQUEST)
-
-    data: dict[str, Any] = {
-        "content": result.convertedContent,
-        "format": args.format,
-        "meta": {
-            "parser": result.fileInfo.fileType.value if result.fileInfo else "unknown",
-            "file_size": result.fileInfo.fileSize if result.fileInfo else 0,
-            "result_id": result.resultId,
-            "confidence": result.confidence,
-            "elapsed_ms": elapsed_ms,
-        },
-    }
-    if args.quality:
-        try:
-            from core.quality_report import QualityReport
-
-            report = QualityReport()
-            analyzed = report.analyze(
-                content=result.convertedContent,
-                file_size=result.fileInfo.fileSize if result.fileInfo else 0,
-                file_type=result.fileInfo.fileType.value if result.fileInfo else "unknown",
-                structured_data=result.structuredData,
-                parsed_file=ctx.parsed_file,
-            )
-            # analyze() 返回 self（QualityReport 实例），协议 JSON 需要 dict。
-            data["quality"] = analyzed.to_dict() if hasattr(analyzed, "to_dict") else analyzed
-        except Exception as e:  # 质量报告失败不影响主结果
-            print(f"[formatforge] 质量报告生成失败: {e}", file=sys.stderr)
-
-    # M1: enhance 由管线层统一产出（BuildResultStep），CLI 只透传
-    if not args.no_enhance_hint and getattr(result, "enhance", None):
-        data["enhance"] = result.enhance
-
+    meta = data.get("meta")
+    if isinstance(meta, dict):
+        meta["elapsed_ms"] = elapsed_ms
     _emit({"ok": True, "code": 200, "data": data})
     return EXIT_OK
 
@@ -178,6 +223,49 @@ def cmd_version(_args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_translate_main(
+    path: Path, to_format: str, conv_type: str, timeout_s: int, pages: str | None = None
+) -> tuple[str, dict[str, Any]]:
+    """供 batch 复用的单文件转换入口：返回 (content, meta)。异常向上抛。"""
+    from core.models import ConversionType, OutputFormat
+    from core.pipeline import ConversionPipeline, PipelineContext
+
+    type_map = {
+        "auto": ConversionType.AUTO,
+        "text": ConversionType.TEXT,
+        "structured": ConversionType.STRUCTURED,
+        "table": ConversionType.TABLE,
+        "image_desc": ConversionType.IMAGE_DESC,
+        "ocr": ConversionType.OCR,
+    }
+    fmt_map = {
+        "json": OutputFormat.JSON,
+        "markdown": OutputFormat.MARKDOWN,
+        "html": OutputFormat.HTML,
+        "text": OutputFormat.TEXT,
+    }
+    started = time.time()
+    pipeline = ConversionPipeline(enable_content_cache=False)
+    ctx = PipelineContext(
+        source=path,
+        conversion_type=type_map.get(conv_type, ConversionType.AUTO),
+        output_format=fmt_map[to_format],
+        pages=pages,
+    )
+    response = pipeline.run(ctx)
+    result = response.get("result")
+    if result is None:
+        raise ValueError(str(ctx.error or "未知错误"))
+    meta = {
+        "parser": result.fileInfo.fileType.value if result.fileInfo else "unknown",
+        "file_size": result.fileInfo.fileSize if result.fileInfo else 0,
+        "result_id": result.resultId,
+        "confidence": result.confidence,
+        "elapsed_ms": int((time.time() - started) * 1000),
+    }
+    return result.convertedContent, meta
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="formatforge", description="把任意格式锻造成 AI 可读数据")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -192,6 +280,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_tr.add_argument("--pages", default=None, help="PDF 页选择，如 1-3,7（仅 PDF 生效）")
     p_tr.add_argument("--no-enhance-hint", action="store_true", help="禁用 enhance 提示字段")
     p_tr.set_defaults(func=cmd_translate)
+
+    # ── batch（EVOLUTION N3）──
+    p_b = sub.add_parser("batch", help="批量转换目录或 glob 匹配的文件")
+    p_b.add_argument("source", help="目录路径或 glob 模式（如 docs/*.pdf）")
+    p_b.add_argument("--to", dest="format", default="markdown", choices=["json", "markdown", "html", "text"])
+    p_b.add_argument("--out", default="ff-out", help="产物输出目录（默认 ./ff-out）")
+    p_b.add_argument("--type", default="auto", choices=["auto", "text", "structured", "table", "image_desc", "ocr"])
+    p_b.add_argument("--workers", type=int, default=4, help="并发线程数（默认 4）")
+    p_b.add_argument("--recursive", action="store_true", help="递归子目录")
+    p_b.add_argument("--quality", action="store_true", help="结果附 enhance 提示")
+    p_b.add_argument("--pages", default=None, help="PDF 页选择，如 1-3,7（仅 PDF 生效）")
+    p_b.add_argument("--force", action="store_true", help="忽略已有产物强制重转")
+    p_b.set_defaults(func=cmd_batch)
 
     p_fm = sub.add_parser("formats", help="列出支持的格式")
     p_fm.set_defaults(func=cmd_formats)
