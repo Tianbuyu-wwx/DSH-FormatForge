@@ -157,7 +157,7 @@ node packages/dsh-formatforge/test-local.mjs      # stub 环境 e2e（需本机 
 node packages/dsh-formatforge/test-inbox.mjs      # inbox watcher e2e
 ```
 
-设计文档与实施记录见 [PLUGIN_PLAN.md](PLUGIN_PLAN.md)。
+设计文档：[PLUGIN_PLAN.md](PLUGIN_PLAN.md)（插件化实施）· [EVOLUTION_PLAN.md](EVOLUTION_PLAN.md)（v0.4–v0.7 演进）· [ROADMAP.md](ROADMAP.md)（后续计划）
 
 ## 已知限制
 
