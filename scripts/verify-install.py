@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -105,15 +106,10 @@ def check_inbox_smoke() -> str:
         md = inbox / f"{marker}.ff.md"
         if md.exists():
             # 清理冒烟产物
-            for suffix in (".ff.md", ".ff.json"):
-                try:
-                    (inbox / f"{marker}{suffix}").unlink()
-                except OSError:
-                    pass
-            try:
+            with contextlib.suppress(OSError):
+                (inbox / f"{marker}.ff.md").unlink()
+                (inbox / f"{marker}.ff.json").unlink()
                 src.unlink()
-            except OSError:
-                pass
             return "watcher 30s 内完成锻造（产物已清理）"
         time.sleep(2)
     raise AssertionError("30s 内 watcher 没有产出 .ff.md（inbox watcher 未运行？）")
