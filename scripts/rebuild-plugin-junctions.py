@@ -8,6 +8,7 @@
 #   python scripts/rebuild-plugin-junctions.py
 import _winapi
 import contextlib
+import glob
 import os
 import sys
 
@@ -15,16 +16,22 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUR_BASE = os.path.join(REPO, "packages", "dsh-formatforge", "node_modules", "@deepseek-ai")
 PROFILE = os.path.expandvars(r"%USERPROFILE%\.dsh\profiles\web\node_modules")
 
-SOURCES = [
-    # preferred: hermes-link already ships verified junctions to the npx cache
-    os.path.join(PROFILE, "dsh-hermes-link", "node_modules", "@deepseek-ai"),
-    # fallback: profile-level hoisted copies (if pnpm layout changes)
-    os.path.join(PROFILE, "@deepseek-ai"),
-]
+
+def discover_sources() -> list[str]:
+    sources = [
+        # preferred: hermes-link already ships verified junctions to the npx cache
+        os.path.join(PROFILE, "dsh-hermes-link", "node_modules", "@deepseek-ai"),
+        # fallback: profile-level hoisted copies (if pnpm layout changes)
+        os.path.join(PROFILE, "@deepseek-ai"),
+        # fallback (2026-08-27): 宿主重装后 hermes-link 的 npx 缓存会被清，
+        # 但新拉的 dsh web 自带含 @deepseek-ai 依赖的新 npx cache 目录
+        *sorted(glob.glob(os.path.expandvars(r"%LOCALAPPDATA%\npm-cache\_npx\*\node_modules\@deepseek-ai"))),
+    ]
+    return [s for s in sources if os.path.isdir(s)]
 
 
 def find_source(name: str) -> str | None:
-    for base in SOURCES:
+    for base in discover_sources():
         cand = os.path.join(base, name)
         if os.path.isdir(cand) and os.path.isfile(os.path.join(cand, "package.json")):
             return cand

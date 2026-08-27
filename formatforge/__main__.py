@@ -219,7 +219,9 @@ def cmd_formats(_args: argparse.Namespace) -> int:
 
 
 def cmd_version(_args: argparse.Namespace) -> int:
-    _emit({"ok": True, "code": 200, "data": {"name": "dsh-formatforge", "version": "3.0.0-plugin"}})
+    from formatforge.__version__ import __version__
+
+    _emit({"ok": True, "code": 200, "data": {"name": "dsh-formatforge", "version": __version__}})
     return EXIT_OK
 
 

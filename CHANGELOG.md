@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-27 — 上榜落地（R1 快赢）
+
+### Added
+- storefront 截图：assets/ 三张 dsh web 实拍（拖拽 toast / 收件箱产物 / 会话通知），按新约定在 `packages/dsh-formatforge/screenshots.json` 声明，README 嵌图
+- GitHub issue 模板：bug report（强制附 verify-install.py 输出栏）+ feature request
+
+### Changed
+- 版本号统一：单一来源 `formatforge/__version__.py`（0.7.1），pyproject 动态读取，CLI `version` 命令同步（清除 3.0.0 历史漂移）；npm 包 0.7.0 → 0.7.1
+- `scripts/rebuild-plugin-junctions.py`：候选源加入 npx cache 自动发现（宿主重装清缓存后可自愈）
+- `scripts/take-screenshots.py`：修复 WS 握手空 query 尾巴（500 拒握手）与 8 字节掩码两处 bug；CDP 改用 Chrome For Testing daemon(:9222)——Edge 新配 profile 会强装扩展+首启弹窗，不可用
+
+> 注：v0.3–v0.7 的插件化演进未记入本文件（见 EVOLUTION_PLAN.md / git log），自本版恢复维护。
+
 ## [2.1.0] - 2026-07-13 — DFT 1.5 安全硬化
 
 ### Added

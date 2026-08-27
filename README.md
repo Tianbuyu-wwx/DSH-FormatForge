@@ -27,6 +27,10 @@ dsh 的 `read` 工具读 PDF/DOCX 这类二进制是乱码；官方附件通道�
 
 也可以不走拖拽：在对话里粘贴本地路径（`E:\docs\report.docx`），agent 会按约定先调用 `ff_translate` 再回答。
 
+![拖拽锻造 toast](assets/screenshot-drop.png)
+![FormatForge 收件箱产物](assets/screenshot-inbox.png)
+![会话锻造完成通知](assets/screenshot-notice.png)
+
 ## 安装
 
 ### 前置

@@ -14,7 +14,7 @@
 | 质量体系 | 5 维评分 + grade + enhance 三触发 + actions（retry_with 可自愈） |
 | PDF 深度 | pages 选择 / furniture 剔除 / 双栏阅读序 |
 | 工程面 | 488 tests · CI 7/7 · mypy 44 文件 0 错 · dependabot 三生态 · verify-install 自检 |
-| 分发 | npm `@tianbuyu-wwx/dsh-formatforge` · awesome-list PR #3113（gate 绿，待 review） |
+| 分发 | npm `@tianbuyu-wwx/dsh-formatforge`（v0.7.1） · awesome-list PR #3113 已合并（2026-08-26）· storefront 截图已声明 |
 
 ---
 
@@ -24,9 +24,9 @@
 
 | 项 | 内容 | 触发/工作量 |
 |---|---|---|
-| R1.1 合并跟进 | 维护者 review 意见响应（描述措辞/分类微调） | 随缘 · <1h/轮 |
-| R1.2 README 截图 | dsh-market storefront 展示截图（data/screenshots.json，GitHub 托管 1-8 张）：拖拽 toast、通知、ff_result 列表 | 合并后 · ~2h |
-| R1.3 issue 模板 | bug report（附 verify-install 输出栏）+ feature request 模板 | 合并后 · ~1h |
+| R1.1 合并跟进 ✅ | 已合并（2026-08-26）；后续仅剩维护者意见响应 | 随缘 · <1h/轮 |
+| R1.2 README 截图 ✅ | 已完成（v0.7.1）：assets/ 三张 dsh web 实拍（拖拽 toast / 收件箱 / 通知）+ 按新约定在包内 screenshots.json 声明 + README 嵌图 | — |
+| R1.3 issue 模板 ✅ | 已完成（v0.7.1）：bug report 强制附 verify-install 输出栏 + feature request | — |
 | R1.4 首批用户支持 | 观察安装类 issue → 反哺 verify-install 的修法提示库 | 持续 |
 
 **验收**：上榜 + storefront 有截图 + issue 模板就位。

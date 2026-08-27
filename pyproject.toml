@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsh-formatforge"
-version = "3.0.0"
 description = "FormatForge - 把任意文件格式锻造成 AI 可读的结构化数据（dsh 插件内核）"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+# 版本单一来源：formatforge/__version__.py（npm 侧 package.json 手动同步）
+dynamic = ["version"]
 dependencies = [
     # === 数据模型 ===
     "pydantic>=2.6.0,<3.0",
@@ -68,6 +69,9 @@ all = [
 # frontend/（前端项目）、test/ 等误判为顶层包导致 editable 构建失败。
 include = ["core*", "parsers*", "formatforge*"]
 
+[tool.setuptools.dynamic]
+version = { attr = "formatforge.__version__.__version__" }
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
@@ -93,6 +97,8 @@ formatforge = "formatforge.__main__:main"
 
 # test/ 目录全部放宽（fixture / 性能样板 / 防御性导入多）
 "test/**/*.py" = ["B", "SIM", "N"]
+# 内嵌 JS 注入模板串（拖拽 toast / 收件箱卡片的 DOM+CSS），不可换行
+"scripts/take-screenshots.py" = ["E501"]
 
 [tool.ruff.lint.flake8-bugbear]
 # 默认参数中允许 FastAPI 工厂调用（与 per-file-ignores 互补）
