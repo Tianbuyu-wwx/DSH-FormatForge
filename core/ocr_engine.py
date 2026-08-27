@@ -59,6 +59,14 @@ try:
 except ImportError:
     EASYOCR_AVAILABLE = False
 
+try:
+    from rapidocr_onnxruntime import RapidOCR
+
+    RAPIDOCR_AVAILABLE = True
+except ImportError:
+    RapidOCR = None
+    RAPIDOCR_AVAILABLE = False
+
 
 @dataclass
 class OcrResult:
@@ -182,6 +190,87 @@ class EasyOcrBackend(BaseOcrBackend):
             return "\n".join(lines), avg_conf
         except Exception as e:
             logger.error("EasyOCR 识别失败: %s", e)
+            return "", 0.0
+
+
+class RapidOcrBackend(BaseOcrBackend):
+    """RapidOCR (ONNX Runtime) 后端 —— Windows CPU 首选，中文效果好，带真实逐行置信度。
+
+    兼容两代调用协议：
+    - 旧（≤1.3.x，实测装到的版本）：engine(path) → ([[box, text, conf], ...], elapse)
+    - 新（1.4.x+）：engine.predict(path) → [[{"rec_text", "rec_score", ...}], ...]
+    """
+
+    _ENGINE: Any = None  # 模型加载慢（首次 ~10s），进程级单例
+
+    def __init__(self) -> None:
+        self._ocr: Any = None
+
+    @property
+    def name(self) -> str:
+        return "rapidocr"
+
+    def _get_ocr(self) -> Any:
+        if self._ocr is None:
+            if RapidOcrBackend._ENGINE is None:
+                RapidOcrBackend._ENGINE = RapidOCR()
+            self._ocr = RapidOcrBackend._ENGINE
+        return self._ocr
+
+    @staticmethod
+    def _parse_lines(items: Any) -> tuple[list[str], float]:
+        """把一代 [[box,(text,conf)]/[box,text,conf]] 或二代 [{rec_text,...}] 统一为 (行文本列表, 平均置信度)。"""
+        lines: list[str] = []
+        total = 0.0
+        n = 0
+        for it in items or []:
+            text, conf = "", 0.0
+            if isinstance(it, dict):  # 新 API
+                text = str(it.get("rec_text", ""))
+                conf = float(it.get("rec_score", 0.0))
+            elif isinstance(it, (list, tuple)) and len(it) >= 2:
+                payload = it[1]
+                if isinstance(payload, (list, tuple)) and len(payload) >= 2:  # [box, (text, conf)]
+                    text, conf = str(payload[0]), float(payload[1])
+                else:  # [box, text, conf]
+                    text, conf = str(payload), float(it[2]) if len(it) > 2 else 0.0
+            if text.strip():
+                lines.append(text)
+                total += conf
+                n += 1
+        return lines, (total / n if n else 0.0)
+
+    def recognize(self, image_path: Path) -> tuple[str, float]:
+        if not RAPIDOCR_AVAILABLE:
+            return "", 0.0
+        try:
+            engine = self._get_ocr()
+            if hasattr(engine, "predict"):  # 新 API
+                result = engine.predict(str(image_path))
+                items = result[0] if isinstance(result, (list, tuple)) and result else []
+            else:  # 旧 API：直接调用，返回 (result, elapse)
+                result, _elapse = engine(str(image_path))
+                items = result or []
+
+            # pdfplumber 整页贴图是调色板 PNG（mode=P），本引擎图像加载器不认 → 返回 None。
+            # 转 RGB 后用 PIL 对象重试一次。
+            if not items:
+                from PIL import Image
+
+                with Image.open(image_path) as im:
+                    if im.mode != "RGB":
+                        rgb = im.convert("RGB")
+                        if hasattr(engine, "predict"):
+                            result = engine.predict(rgb)
+                            items = result[0] if isinstance(result, (list, tuple)) and result else []
+                        else:
+                            result, _elapse = engine(rgb)
+                            items = result or []
+
+            lines, avg_conf = self._parse_lines(items)
+            return "\n".join(lines), round(avg_conf, 4)
+        except Exception as e:
+            logger.error("RapidOCR 识别失败: %s", e)
             return "", 0.0
 
 
@@ -313,20 +402,28 @@ class OcrEngine:
     5. AI 多模态识别（MiniMax 等，用于复杂图片）
     """
 
-    def __init__(self, default_backend: str = "tesseract"):
-        self.default_backend = default_backend
+    #: 后端注册优先级：RapidOCR（真置信度、中文优）> PaddleOCR > Tesseract > EasyOCR
+    _PRIORITY = ("rapidocr", "paddleocr", "tesseract", "easyocr")
+
+    def __init__(self, default_backend: str | None = None):
         self.logger = logging.getLogger("ocr_engine")
 
         # 初始化后端
         self._backends: dict[str, BaseOcrBackend] = {}
         self._init_backends()
+        self.default_backend = default_backend or self._PRIORITY[0]
+        # 默认引擎不可用时，自动回落到第一个可用的
+        if default_backend is None and self._backends:
+            self.default_backend = next(b for b in self._PRIORITY if b in self._backends)
 
     def _init_backends(self):
         """初始化所有可用的 OCR 后端"""
-        if TESSERACT_AVAILABLE:
-            self._backends["tesseract"] = TesseractBackend()
+        if RAPIDOCR_AVAILABLE:
+            self._backends["rapidocr"] = RapidOcrBackend()
         if PADDLEOCR_AVAILABLE:
             self._backends["paddleocr"] = PaddleOcrBackend()
+        if TESSERACT_AVAILABLE:
+            self._backends["tesseract"] = TesseractBackend()
         if EASYOCR_AVAILABLE:
             self._backends["easyocr"] = EasyOcrBackend()
 

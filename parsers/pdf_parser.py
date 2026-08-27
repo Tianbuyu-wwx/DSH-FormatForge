@@ -128,13 +128,33 @@ class PDFParser(BaseParser):
                 # E2-2: 先扫全书的页首/尾候选行（跨页重复 ≥60% 才判为 furniture）
                 furniture = self._detect_furniture(pdf) if drop_furniture else set()
 
+                out_pages: list[PageContent] = []
                 for idx, page in enumerate(pdf.pages, 1):
                     if selected and idx not in selected:
                         continue
-                    yield self._parse_page(
-                        page, idx, total_pages, use_ocr, ocr_backend, ocr_min_confidence, furniture, two_column
+                    out_pages.append(
+                        self._parse_page(
+                            page, idx, total_pages, use_ocr, ocr_backend, ocr_min_confidence, furniture, two_column
+                        )
                     )
 
+                # R2.3: 结构保真标注（标题层级/列表嵌套/目录锚点），管线唯一入口
+                if out_pages:
+                    from core.structure_fidelity import annotate
+
+                    stats = annotate(out_pages)
+                    if stats.get("headings") or stats.get("toc_entries"):
+                        logger.info("[structure] 标注完成: %s", stats)
+
+                # R2.2: 表格语义（None=合并覆盖填充 / 空单元格保留 / 数值列右对齐 / 跨页续接）
+                if out_pages and any(p.hasTable for p in out_pages):
+                    from core.table_semantics import upgrade_table_elements
+
+                    tstats = upgrade_table_elements(out_pages)
+                    if tstats.get("normalized"):
+                        logger.info("[table-semantics] %s", tstats)
+
+                yield from out_pages
         except Exception as e:
             logger.error("PDF 解析失败: %s", e)
             raise ValueError(f"PDF 解析失败: {e}") from e
@@ -267,7 +287,13 @@ class PDFParser(BaseParser):
                         "第 %d 页 OCR 置信度 %.2f 低于阈值 %.2f，跳过", page_number, ocr_confidence, ocr_min_confidence
                     )
 
-        # 将文本按行分割为元素
+        # 将文本按行分割为元素（R2.3: 附带字号/加粗/行首x0元数据供结构保真判定）
+        from core.structure_fidelity import line_font_stats
+
+        font_by_line: dict[str, tuple[float, bool, float]] = {}
+        for st in line_font_stats(page):
+            font_by_line.setdefault(st["text"], (st["size"], st["bold"], st["x0"]))
+
         lines = text.strip().split("\n")
         for line_idx, line in enumerate(lines):
             if line.strip():
@@ -277,6 +303,9 @@ class PDFParser(BaseParser):
                     metadata["ocr"] = True
                     metadata["ocr_confidence"] = ocr_confidence
                     metadata["ocr_backend"] = ocr_backend or "default"
+                font_info = font_by_line.get(self._norm_line(line))
+                if font_info:
+                    metadata["font_size"], metadata["bold"], metadata["line_x0"] = font_info
                 elements.append(
                     ExtractedElement(
                         elementId=f"elem_{page_number}_{line_idx}",
@@ -286,7 +315,7 @@ class PDFParser(BaseParser):
                     )
                 )
 
-        # 如果有表格，添加表格元素
+        # 如果有表格，添加表格元素（R2.2: 原始 grid 随 metadata 携带，供表格语义层使用）
         if tables:
             for table_idx, table in enumerate(tables):
                 table_text = self._format_table(table)
@@ -295,7 +324,13 @@ class PDFParser(BaseParser):
                         elementId=f"elem_{page_number}_table_{table_idx}",
                         elementType="table",
                         content=table_text,
-                        metadata={"table_index": table_idx, "rows": len(table), "cols": len(table[0]) if table else 0},
+                        metadata={
+                            "table_index": table_idx,
+                            "rows": len(table),
+                            "cols": len(table[0]) if table else 0,
+                            "page": page_number,
+                            "grid": table,
+                        },
                     )
                 )
 
@@ -500,6 +535,13 @@ class PDFParser(BaseParser):
             return False
         except Exception:
             return False
+
+    @staticmethod
+    def _norm_line(line: str) -> str:
+        """与 structure_fidelity.line_font_stats 对齐的行规范化（多空白折叠）。"""
+        import re
+
+        return re.sub(r"\s+", " ", (line or "").strip())
 
     def _detect_element_type(self, text: str) -> str:
         """检测文本元素类型"""

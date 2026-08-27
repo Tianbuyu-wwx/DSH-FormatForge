@@ -124,10 +124,23 @@ class FileParser:
 
     def _register_default_parsers(self):
         """注册默认解析器"""
-        # 注册 PDF 解析器
+        # 注册 PDF 解析器（R2.1: 按 OCR_ENABLED 开关挂 OCR 引擎——此前从未接线，
+        # use_ocr 参数虽透传但 engine 恒为 None，扫描件 OCR 形同虚设）
         if PDF_PARSER_AVAILABLE:
-            self.registry.register(PDFParser())
-            logger.info("已注册 PDF 解析器")
+            ocr_engine = None
+            try:
+                from core.config import settings
+                from core.ocr_engine import OcrEngine
+
+                if settings.OCR_ENABLED:
+                    ocr_engine = OcrEngine()
+                    if not ocr_engine.is_available():
+                        ocr_engine = None
+            except Exception as e:  # noqa: BLE001 — OCR 引擎失败不阻断解析器注册
+                logger.warning("OCR 引擎初始化失败，扫描件回退 enhance 提示: %s", e)
+                ocr_engine = None
+            self.registry.register(PDFParser(ocr_engine=ocr_engine))
+            logger.info("已注册 PDF 解析器 (ocr_engine=%s)", type(ocr_engine).__name__ if ocr_engine else "None")
 
         # 注册 DOCX 解析器
         if DOCX_PARSER_AVAILABLE:

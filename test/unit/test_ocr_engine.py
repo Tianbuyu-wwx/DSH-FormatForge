@@ -117,15 +117,23 @@ class TestOcrEngineInit:
     """OCR 引擎初始化测试"""
 
     def test_init_default(self):
-        with patch('core.ocr_engine.TESSERACT_AVAILABLE', True):
+        # R2.1: 默认引擎按优先级选第一个可用（本机装了 rapidocr 时不再是 tesseract）
+        with patch("core.ocr_engine.TESSERACT_AVAILABLE", True), patch("core.ocr_engine.RAPIDOCR_AVAILABLE", False), patch(
+            "core.ocr_engine.PADDLEOCR_AVAILABLE", False
+        ):
             engine = OcrEngine()
             assert engine.default_backend == "tesseract"
             assert "tesseract" in engine.get_available_backends()
 
+        # rapidocr 优先于 tesseract
+        with patch("core.ocr_engine.TESSERACT_AVAILABLE", True), patch("core.ocr_engine.RAPIDOCR_AVAILABLE", True):
+            engine = OcrEngine()
+            assert engine.default_backend == "rapidocr"
+
     def test_init_no_backends(self):
-        with patch('core.ocr_engine.TESSERACT_AVAILABLE', False), \
-             patch('core.ocr_engine.PADDLEOCR_AVAILABLE', False), \
-             patch('core.ocr_engine.EASYOCR_AVAILABLE', False):
+        with patch("core.ocr_engine.TESSERACT_AVAILABLE", False), patch("core.ocr_engine.PADDLEOCR_AVAILABLE", False), patch(
+            "core.ocr_engine.EASYOCR_AVAILABLE", False
+        ), patch("core.ocr_engine.RAPIDOCR_AVAILABLE", False):
             engine = OcrEngine()
             assert engine.get_available_backends() == []
             assert engine.is_available() is False
@@ -143,7 +151,9 @@ class TestOcrEngineInit:
             engine.set_default_backend("invalid")
 
     def test_get_status(self):
-        with patch('core.ocr_engine.TESSERACT_AVAILABLE', True):
+        with patch("core.ocr_engine.TESSERACT_AVAILABLE", True), patch("core.ocr_engine.RAPIDOCR_AVAILABLE", False), patch(
+            "core.ocr_engine.PADDLEOCR_AVAILABLE", False
+        ):
             engine = OcrEngine()
             status = engine.get_status()
             assert "tesseract" in status

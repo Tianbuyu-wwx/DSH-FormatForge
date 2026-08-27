@@ -176,6 +176,32 @@ class TextExtractionStrategy(ConversionStrategy):
         logs = [create_processing_log("text_extract", "开始提取纯文本")]
         logger.info("[strategy=text_extract] 开始提取纯文本: pages=%d", len(parsed_file.pages))
 
+        # R2.3: markdown 输出 + 解析层已产出结构标注 → 按层级渲染（标题/列表/目录锚点）
+        if output_format == OutputFormat.MARKDOWN:
+            has_structure = any(
+                (e.metadata or {}).get("heading_level")
+                or (e.metadata or {}).get("toc")
+                or (e.metadata or {}).get("list_level")
+                for page in parsed_file.pages
+                for e in page.elements
+            )
+            if has_structure:
+                from core.structure_fidelity import render_markdown
+
+                content = render_markdown(parsed_file.pages)
+                logger.info("[strategy=text_extract] 结构化 markdown 渲染: chars=%d", len(content))
+                logs.append(create_processing_log("text_extract", f"结构保真渲染完成，共 {len(content)} 字符"))
+                return {
+                    "content": content,
+                    "structured_data": {
+                        "pages": len(parsed_file.pages),
+                        "total_chars": len(content),
+                        "structured": True,
+                    },
+                    "confidence": 0.92,
+                    "logs": logs,
+                }
+
         parts = []
         for page in parsed_file.pages:
             text = self._fix_encoding(page.rawText)

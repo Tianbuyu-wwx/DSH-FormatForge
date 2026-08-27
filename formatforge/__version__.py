@@ -6,4 +6,4 @@ npm 侧 packages/dsh-formatforge/package.json 无法动态读取 Python，
 发布时需手动保持一致（两处同值）。
 """
 
-__version__ = "0.7.1"
+__version__ = "0.8.0"

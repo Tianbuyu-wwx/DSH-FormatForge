@@ -1,0 +1,116 @@
+{
+  "ocr_off": {
+    "mode": "ocr_off",
+    "samples": 5,
+    "triggered": 1,
+    "rows": [
+      {
+        "case": "scanned_4p",
+        "pages": 5,
+        "chars": 6,
+        "enhance": "image_only",
+        "hint": "4/5 页无文字层（疑似扫描件）。请基于 OCR 文本/图片描述重建结构并补齐表格。",
+        "quality": 62.3,
+        "ocr_elements": 0,
+        "note": "image_only→OCR 接线后应出正文"
+      },
+      {
+        "case": "watermark_3p",
+        "pages": 3,
+        "chars": 108,
+        "enhance": null,
+        "hint": "",
+        "quality": 60.5,
+        "ocr_elements": 0,
+        "note": "不应误判 image_only；OCR 合并不得复制正文"
+      },
+      {
+        "case": "table_cross_2p",
+        "pages": 2,
+        "chars": 114,
+        "enhance": null,
+        "hint": "",
+        "quality": 62.7,
+        "ocr_elements": 0,
+        "note": "table 触发可接受；R2.2 后应续接合并"
+      },
+      {
+        "case": "table_merged",
+        "pages": 1,
+        "chars": 65,
+        "enhance": null,
+        "hint": "",
+        "quality": 61.8,
+        "ocr_elements": 0,
+        "note": "table 触发可接受；R2.2 后空/合并单元格语义化"
+      },
+      {
+        "case": "structure_3p",
+        "pages": 3,
+        "chars": 454,
+        "enhance": null,
+        "hint": "",
+        "quality": 73.1,
+        "ocr_elements": 0,
+        "note": "不应触发；R2.3 后标题层级应还原"
+      }
+    ]
+  },
+  "ocr_on": {
+    "mode": "ocr_on",
+    "samples": 5,
+    "triggered": 0,
+    "rows": [
+      {
+        "case": "scanned_4p",
+        "pages": 5,
+        "chars": 213,
+        "enhance": null,
+        "hint": "",
+        "quality": 60.5,
+        "ocr_elements": 6,
+        "note": "image_only→OCR 接线后应出正文"
+      },
+      {
+        "case": "watermark_3p",
+        "pages": 3,
+        "chars": 108,
+        "enhance": null,
+        "hint": "",
+        "quality": 60.5,
+        "ocr_elements": 0,
+        "note": "不应误判 image_only；OCR 合并不得复制正文"
+      },
+      {
+        "case": "table_cross_2p",
+        "pages": 2,
+        "chars": 114,
+        "enhance": null,
+        "hint": "",
+        "quality": 62.7,
+        "ocr_elements": 0,
+        "note": "table 触发可接受；R2.2 后应续接合并"
+      },
+      {
+        "case": "table_merged",
+        "pages": 1,
+        "chars": 65,
+        "enhance": null,
+        "hint": "",
+        "quality": 61.8,
+        "ocr_elements": 0,
+        "note": "table 触发可接受；R2.2 后空/合并单元格语义化"
+      },
+      {
+        "case": "structure_3p",
+        "pages": 3,
+        "chars": 454,
+        "enhance": null,
+        "hint": "",
+        "quality": 73.1,
+        "ocr_elements": 0,
+        "note": "不应触发；R2.3 后标题层级应还原"
+      }
+    ]
+  }
+}

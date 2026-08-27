@@ -1,20 +1,20 @@
 # ROADMAP.md — DSH-FormatForge 后续开发计划
 
-> 起草：2026-08-26 · 基线：v0.7.0（EVOLUTION_PLAN 四批全部交付）
+> 起草：2026-08-26 · 基线：v0.7.0（EVOLUTION_PLAN 四批全部交付）· R2 已完成：v0.8.0（2026-08-27）
 > 定位延续：dsh 插件 · 「文件 → AI 可读数据」锻造层 · 无内置 AI 客户端 · 模型增强永远属于会话模型
 
 ---
 
-## 0. 现状快照（v0.7.0）
+## 0. 现状快照（v0.8.0）
 
 | 维度 | 状态 |
 |---|---|
 | 输入格式 | 34 种；输出 json/markdown/html/text |
 | 入口通道 | 网页拖拽（upload→inbox→watcher）/ 对话工具 ×3（ff_translate/ff_formats/ff_result）/ CLI（translate/formats/version/batch） |
-| 质量体系 | 5 维评分 + grade + enhance 三触发 + actions（retry_with 可自愈） |
-| PDF 深度 | pages 选择 / furniture 剔除 / 双栏阅读序 |
-| 工程面 | 488 tests · CI 7/7 · mypy 44 文件 0 错 · dependabot 三生态 · verify-install 自检 |
-| 分发 | npm `@tianbuyu-wwx/dsh-formatforge`（v0.7.1） · awesome-list PR #3113 已合并（2026-08-26）· storefront 截图已声明 |
+| 质量体系 | 5 维评分 + grade + enhance 三触发 + actions（retry_with 可自愈）；R2.1 起 OCR 管线贯通（RapidOCR 真置信度） |
+| PDF 深度 | pages 选择 / furniture 剔除 / 双栏阅读序 / **R2.3 标题层级+列表嵌套+目录锚点** / **R2.2 表格语义（合并/跨页/对齐）** |
+| 工程面 | 509 tests · CI 7/7 · mypy 47 文件 0 错 · golden fixture 机制 · dependabot 三生态 · verify-install 自检 |
+| 分发 | npm `@tianbuyu-wwx/dsh-formatforge`（v0.8.0） · awesome-list 已收录 · storefront 截图已声明 |
 
 ---
 
@@ -31,17 +31,17 @@
 
 **验收**：上榜 + storefront 有截图 + issue 模板就位。
 
-## 2. R2 · 解析质量纵深（主动迭代，~3 天）
+## 2. R2 · 解析质量纵深（✅ 已完成 → v0.8.0，2026-08-27）
 
 **目标**：把「能转」推进到「转得准」，聚焦真实使用中失败率最高的场景。
 
-| 项 | 内容 | 工作量 |
+| 项 | 内容 | 状态 |
 |---|---|---|
-| R2.1 扫描件 OCR 管线强化 | image_only enhance 触发后的 OCR 质量评估（置信度逐页标注）；paddleocr 中文场景调优；OCR 结果与文字层合并策略去重 | ~1 天 |
-| R2.2 表格语义还原 | 跨页表格续接（表头重复识别与合并）；数字列对齐；空单元格 vs 合并单元格语义区分 | ~1 天 |
-| R2.3 长文档结构保真 | 标题层级还原（字号/加粗 → h1-h4）；列表嵌套层级；目录页识别并生成锚点 | ~1 天 |
+| R2.1 扫描件 OCR 管线强化 ✅ | OCR 引擎实际接线（原 pipeline 断线）；RapidOCR 后端（真实逐行置信度）；调色板 PNG 自愈；文字层合并去重 | v0.8.0 |
+| R2.2 表格语义还原 ✅ | 跨页表格续接合并；数值列右对齐；None=合并覆盖 vs ''=真空单元格语义区分 | v0.8.0 |
+| R2.3 长文档结构保真 ✅ | 字号/加粗 → h1-h4；x0 几何聚类 → 列表嵌套；目录页 → 锚点；OCR 行不误判 | v0.8.0 |
 
-**验收**：每项配 golden fixture（真实样本 + 期望输出快照）；table_sparse/image_only enhance 触发率较 v0.7.0 下降 ≥30%。
+**验收结果**：golden 语料 enhance 触发率 20% → 0%（目标 ≥30% 下降，实际 100%）；golden fixture 机制随批引入（16 项新测试）。
 
 ## 3. R3 · Agent 协作面增强（~2 天）
 

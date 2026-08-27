@@ -130,6 +130,10 @@ def translate_file_data(
         },
     }
     assert isinstance(data["meta"], dict)
+    # R2.3: 结构保真标记透传（markdown 层级渲染发生时为 True）
+    sd = getattr(result, "structuredData", None)
+    if isinstance(sd, dict) and sd.get("structured"):
+        data["meta"]["structured"] = True
     if quality:
         try:
             from core.quality_report import QualityReport
