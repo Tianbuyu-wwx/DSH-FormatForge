@@ -1,6 +1,6 @@
 ---
 name: dsh-formatforge
-description: FormatForge — 把任意文件格式锻造成 AI 可读的结构化数据。Use when the user asks to convert/parse/extract a local file (pdf/docx/xlsx/pptx/eml/msg/epub/toml/yaml/csv/md/html/svg/image/archive) into text, JSON or Markdown; to read a document's content; or to check which formats are supported. Tools: ff_translate (convert), ff_formats (list supported formats). When the result carries data.enhance.needed=true, YOU are expected to complete the enhancement using the hint — do not call external APIs.
+description: FormatForge — 把任意文件格式锻造成 AI 可读的结构化数据。Use when the user asks to convert/parse/extract a local file (pdf/docx/xlsx/pptx/eml/msg/epub/toml/yaml/csv/md/html/svg/image/archive) into text, JSON or Markdown; to read a document's content; to batch-fetch multiple FormatForge results; or to check which formats are supported. Tools: ff_translate (convert), ff_formats (list supported formats), ff_result (fetch past results from inbox by id or batch). When the result carries data.enhance.needed=true, YOU are expected to complete the enhancement using the hint — do not call external APIs.
 when_to_use: |
   # FormatForge（格式锻炉）
 
@@ -10,21 +10,32 @@ when_to_use: |
 
   - `ff_translate` — 转换。参数：path（本地绝对路径）或 text（原始文本，二选一）、
     format（json/markdown/html/text，默认 json）、type（auto/text/structured/table/
-    image_desc/ocr，默认 auto）、quality（附质量报告）、prompt（自定义指令）。
+    image_desc/ocr，默认 auto，**R3.1：auto 模式下自动附带 quality + 返回头 200 字预览**）、
+    quality（附质量报告）、prompt（自定义指令）、pages（PDF 页选择 `1-3,7`）、
+    encoding（TXT 类编码覆写如 `gbk`/`latin-1`，**R3.3：自愈重试链路接通了**）。
   - `ff_formats` — 列出支持的输入格式、输出格式与转换策略。
+  - `ff_result` — 收件箱取回。参数：id（单 id）/ ids（批量 `id1,id2,...`，**R3.2 ≤20**）/
+    list（列全部）；max_chars（默认 2000）、offset（仅单 id 生效）；**R3.4 schema -33.3%**。
 
-  ## 质量自愈（E4）
+  ## 质量自愈（E4 / R3.3）
 
-  ff_translate 带 `quality: true` 时返回 `quality.actions[]`。若某条 action 带
-  `retry_with`（如 `{"encoding":"gbk"}` 或 `{"conversion_type":"table"}`），
-  **直接把这些参数并入重调 ff_translate 的参数**再回答；不要把 actions 原文丢给用户。
+  ff_translate 带 `quality: true`（**R3.1 auto 模式自动开**）时返回 `quality.actions[]`。
+  若某条 action 带 `retry_with`（如 `{"encoding":"gbk"}` 或 `{"conversion_type":"ocr"}`），
+  **直接把这些参数并入 ff_translate 的同名参数重调**再回答；不要把 actions 原文丢给用户。
 
-  ## 收件箱产物消费（N1）
+  | retry_with key | 重调方式 |
+  |---|---|
+  | `encoding` | `ff_translate {path, encoding:"<value>"}`（TXT 类编码错误） |
+  | `conversion_type` | `ff_translate {path, type:"<value>"}`（如 `ocr` 兜底扫描件） |
+  | `prompt` | `ff_translate {path, prompt:"<value>"}`（结构化重建） |
+
+  ## 收件箱产物消费（N1 / R3.2）
 
   会话收到「[FormatForge] 收件箱文件已锻好」通知后：
   - 要列全部产物 → `ff_result {list:true}`
-  - 取某份内容 → `ff_result {id:"<通知中的 id 或文件名>"}`
-  - 内容被截断时按提示带 `offset` 翻页
+  - 取某份内容 → `ff_result {id:"<通知中的 id>"}`（通知文末附 `- 结果 id：xxx`）
+  - **批量取多份** → `ff_result {ids:"id1,id2,id3"}`（R3.2：一次拿多产物，≤20）
+  - 内容被截断时按提示带 `offset` 翻页（仅单 id 生效）
 
   ## 使用时机
 
@@ -35,6 +46,7 @@ when_to_use: |
     内容超长用 max_chars/offset 分页读取。
   - 用户粘贴一段结构化文本（TOML/YAML/CSV/JSON...）希望整理为 JSON 或 Markdown。
   - 用户询问某格式是否支持 → 先调 `ff_formats`。
+  - 通知里说"收件箱文件已锻好"+ 多个 id 时 → 用 `ff_result {ids:...}` 批量取回。
 
   ## 约定
 
@@ -49,6 +61,8 @@ when_to_use: |
        - reason=table_sparse  → 有表格但未抽到单元格。从原文重建 Markdown 表格。
      此时由你（当前会话模型）按 hint 直接完成增强后回答用户；不要调用外部 API。
   4. 大输出会在 render 层截断到 2 万字符；需要更多可分页（先转 markdown 再分段读取）。
+  5. **R3.1 头部预览**：长 markdown/json 输出附 `body.slice(0, 200)` 预览，
+     帮助判断质量/相关性后再决定翻页。
 
   ## 环境
 
@@ -59,5 +73,9 @@ when_to_use: |
 # dsh-formatforge
 
 FormatForge 的 DSH 插件壳：把 `python -m formatforge` CLI 包装为原生工具
-`ff_translate` / `ff_formats`。Python 内核负责 30+ 格式解析与策略选择；
+`ff_translate` / `ff_formats` / `ff_result`。Python 内核负责 30+ 格式解析与策略选择；
 模型增强通过 enhance 协议交给当前会话完成。
+
+**版本**：v0.9.0（2026-08-28）—— R3 协作面：智能默认 / 批量取回 / 自愈闭环 / schema 瘦身。
+**变更点**：见 CHANGELOG v0.9.0 节（retry_with.encoding 接通 CLI、auto 自动带 quality、
+ff_result ids 数组批量、schema -33.3%）。

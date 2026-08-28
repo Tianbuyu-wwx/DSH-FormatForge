@@ -7,6 +7,25 @@
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-28 — R3 协作面护栏补丁
+
+### Added
+- SKILL.md 同步 R3 用法：ff_result 三工具说明、`--encoding` 参数、retry_with 重调对照表、
+  R3.1 auto 智能默认提示、R3.2 ids 批量取回、R3.4 schema -33.3% 标注
+- CLI 协议护栏 `TestR3SmartDefault`：auto 模式自动开启 quality（无需 --quality）+ meta.quality_auto 契约字段
+- CLI 协议护栏 `TestR3EncodingRetry`：`--encoding gbk` 透传解码 + retry_with 闭环
+- CLI 协议护栏 `TestR3MarkdownStructureField`：meta.structured 字段守住
+- test-inbox.mjs R3.2 断言：onDone payload.resultId 必须以 `cvt` 开头
+
+### Changed
+- `formatforge/__main__.py` cmd_translate 入口：R3.1 智能默认（auto 模式自动 want_quality=True）+
+  meta.quality_auto 标记字段（让会话模型知道 quality 是自动开启的）
+- `packages/dsh-formatforge/test-inbox.mjs` 关掉 TTL（`FF_INBOX_TTL_DAYS=999`）—— fixture mtime
+  古老会被 retention 误判过期；测试只验 R3.2 行为不测 retention
+
+### Fixed
+- v0.9.0 时 SKILL.md 描述仅列两工具（缺 ff_result）；R3.2 ids 数组用法无文档
+
 ## [0.9.0] - 2026-08-28 — R3 协作面
 
 ### Added

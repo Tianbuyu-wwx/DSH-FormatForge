@@ -186,11 +186,13 @@ def cmd_translate(args: argparse.Namespace) -> int:
         source = path
 
     started = time.time()
+    # R3.1 智能默认：auto 模式自动附带 quality（与 JS ff_translate 行为一致）
+    want_quality = args.quality or args.type in ("auto", None)
     data, exit_code = translate_file_data(
         source=source,
         fmt=args.format,
         conversion_type=args.type,
-        quality=args.quality,
+        quality=want_quality,
         pages=getattr(args, "pages", None),
         prompt=args.prompt,
         encoding=getattr(args, "encoding", None),
@@ -202,6 +204,8 @@ def cmd_translate(args: argparse.Namespace) -> int:
     meta = data.get("meta")
     if isinstance(meta, dict):
         meta["elapsed_ms"] = elapsed_ms
+        # R3.1 契约字段：标记 quality 是否自动开启（与会话模型对齐）
+        meta["quality_auto"] = want_quality and not args.quality
     _emit({"ok": True, "code": 200, "data": data})
     return EXIT_OK
 

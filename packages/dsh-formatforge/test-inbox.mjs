@@ -15,6 +15,7 @@ const repoRoot = 'E:/项目/DSH-FormatForge'
 const testHome = join(tmpdir(), `ffinbox-test-${Date.now()}`)
 process.env.FF_HOME = testHome
 process.env.FF_INBOX_NOTIFY = 'true'
+process.env.FF_INBOX_TTL_DAYS = '999'  // 关闭 TTL：fixture mtime 古老会被 retention 判过期
 
 mkdirSync(join(testHome, 'inbox'), { recursive: true })
 
@@ -50,6 +51,12 @@ if (existsSync(mdPath)) {
   console.log('md head:', md.slice(0, 60).replace(/\n/g, '\\n'))
 }
 console.log('events so far:', events.length)
+console.log('last event:', JSON.stringify(events[events.length - 1]))
+
+// R3.2: onDone payload 必须含 resultId（会话模型据此 ff_result 取回）
+const translated = events.find((e) => e.file === 'sample.txt' && e.ok === true)
+const hasResultId = translated && typeof translated.resultId === 'string' && translated.resultId.startsWith('cvt')
+console.log('R3.2 onDone.resultId present:', hasResultId, '(id=', translated?.resultId, ')')
 
 // 场景2：重复拷贝同内容不同名 → 应各自转换（名字不同）；同名覆盖 mtime 变 → 也重转
 // 场景3：不支持的扩展名 → error 文件
