@@ -30,6 +30,7 @@ class PipelineContext:
         output_format: OutputFormat,
         custom_prompt: str | None = None,
         pages: str | None = None,
+        encoding: str | None = None,
     ):
         # 输入参数
         self.source = source
@@ -38,6 +39,8 @@ class PipelineContext:
         self.custom_prompt = custom_prompt
         # E2: PDF 页选择表达式（"1-3,7"）；非 PDF 输入忽略
         self.pages = pages
+        # R3.3: 文本编码覆写（自愈重试用；None=自动检测）
+        self.encoding = encoding
 
         # 步骤产出
         self.result_id: str = ""

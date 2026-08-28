@@ -77,10 +77,11 @@ export function makeNotifier({ log = () => {} } = {}) {
     }
     if (result.ok) {
       const enh = result.enhanceReason ? `；⚠ enhance=${result.enhanceReason}` : ''
+      const idLine = result.resultId ? `\n- 结果 id：${result.resultId}（用 ff_result {id:"${result.resultId}"} 直接取回）` : ''
       return (
         `[FormatForge] 收件箱文件已锻好：${result.file} ` +
         `(parser=${result.parser || '?'}, confidence=${result.confidence ?? '?'}${enh})。\n` +
-        `结果文件：\n- 完整协议 JSON：${result.jsonPath}\n- 可读内容：${result.mdPath}\n` +
+        `结果文件：\n- 完整协议 JSON：${result.jsonPath}\n- 可读内容：${result.mdPath}${idLine}\n` +
         `用户接下来很可能基于该文件提问——如需原文请用 ff_translate（路径见上）或直接读取 .ff.md。`
       )
     }

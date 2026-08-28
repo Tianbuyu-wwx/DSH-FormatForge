@@ -1,0 +1,5 @@
+
+self-heal success: 3/3 = 100% (target ≥80%)
+  [PASS] mojibake_gbk_as_latin1 round1 score=72（无可重试 action；若 enhance/正常则不算失败）
+  [PASS] image_only_scan    round1 score=57 → retry_with={'conversion_type': 'ocr'} → round2 score=58 improved=True healed=True
+  [PASS] scanned_r2         round1 score=57 → retry_with={'conversion_type': 'ocr'} → round2 score=58 improved=True healed=True

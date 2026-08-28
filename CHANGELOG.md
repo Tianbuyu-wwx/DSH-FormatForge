@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-28 — R3 协作面
+
+### Added
+- R3.1 ff_translate 智能默认：`--type auto` 自动附带 `--quality`（低置信自动产出 actions），render 加 200 字头部预览
+- R3.2 ff_result 批量取回：新增 `ids` 数组参数一次多产物 + 通知附 `resultId`（inbox 消息末尾 `- 结果 id：xxx`）
+- R3.3 自愈闭环实测：CLI `--encoding` 透传（gbk/latin-1）+ ConvertStep 优先 conversion_needed 兜底 + raw 文本透传以让 quality 扫 FFFD/mojibake
+- R3.4 工具描述瘦身：schema 体积 2951 → 1969 chars（削减 33.3%，目标 ≥30%）
+- `scripts/measure_r3_selfheal.py` — 自愈闭环实测脚本（3 劣化样本集）
+- `test/fixtures/golden/r3_selfheal.json` — R3.3 验收快照（self-heal 3/3 = 100%）
+
+### Changed
+- 协议：`ff_result` 批量响应 `data.batch=true / count / ok_count / results[]`
+- 通知：FormatForge inbox watcher 携带 `resultId` 给 result.mjs 直接取回
+- `core/pipeline_steps.ConvertStep.process()` 重构：优先级 decision→parsed→data→fallback
+- `parsers/txt_parser.TXTParser.parse()` 支持 `encoding` 覆写（自愈重试路径）
+- `formatforge/__main__.py`：新增 `--encoding` 参数透传 + CLI `quality` 默认在 auto 模式自动开启
+- 测试：test_ocr_engine 三处跟随新默认引擎；test_pipeline_steps 增加 raw 透传覆盖
+
 ## [0.8.0] - 2026-08-27 — R2 解析质量纵深
 
 ### Added

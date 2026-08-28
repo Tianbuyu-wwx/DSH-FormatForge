@@ -17,63 +17,26 @@ const HARD_CONTENT_CAP = 60_000
 export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
   return defineTool({
     name: 'ff_translate',
-    description:
-      'FormatForge: 把本地文件或原始文本锻造成 AI 可读的结构化数据。' +
-      '支持 pdf/docx/xlsx/pptx/eml/msg/epub/toml/yaml/json/csv/md/html/svg/图片/压缩包等 30+ 格式。' +
-      '只接受已存在的本地文件路径（远程内容请先用 pwsh 下载）。' +
-      '支持多文件（paths 数组，可含 * 通配）与 max_chars 分页。' +
-      '当返回 data.enhance.needed=true 时，请按 enhance.hint 用你自己的能力基于 content 完成增强，不要再次调用外部 API。',
+    description: '把本地文件/文本转成 AI 可读数据（30+ 格式）。返回 enhance.needed=true 时按 hint 自行增强，勿调外部 API。',
     parameters: {
-      path: { type: 'string', description: '本地文件路径（单个）。与 paths/text 三选一。' },
-      paths: {
-        type: 'string',
-        description:
-          '多个本地路径，逗号分隔；每段可含 * 或 ** 通配（如 D:/docs/*.pdf、D:/docs/**/*.docx）。与 path/text 三选一。',
-      },
-      text: { type: 'string', description: '原始文本内容（stdin 模式）。' },
-      format: { type: 'string', enum: OUTPUT_FORMATS, default: 'json', description: '输出格式，默认 json。' },
-      type: {
-        type: 'string',
-        enum: CONVERSION_TYPES,
-        default: 'auto',
-        description: '转换策略：auto 自动选择；text 纯文本提取；structured 结构化抽取；table 表格抽取；image_desc 图片描述；ocr OCR 识别。',
-      },
-      prompt: { type: 'string', description: '可选：自定义转换指令（透传给策略层）。' },
-      quality: { type: 'boolean', default: false, description: '附带质量报告（评分/警告/建议）。' },
-      max_chars: {
-        type: 'integer',
-        description: '返回内容的最大字符数（分页用）。超长时结果带 truncated=true 与 next_offset。',
-      },
-      offset: { type: 'integer', default: 0, description: '内容起始偏移（配合 max_chars 翻页）。' },
+      path: { type: 'string', description: '本地路径。与 paths/text 三选一。' },
+      paths: { type: 'string', description: '多路径逗号分隔，可含 */** 通配。' },
+      text: { type: 'string', description: '原始文本（stdin）。' },
+      format: { type: 'string', enum: OUTPUT_FORMATS, default: 'json' },
+      type: { type: 'string', enum: CONVERSION_TYPES, default: 'auto' },
+      quality: { type: 'boolean', default: false, description: '附质量报告（低置信自动附带）。' },
+      max_chars: { type: 'integer', description: '分页大小。' },
+      offset: { type: 'integer', default: 0 },
     },
     output: {
       schema: {
         type: 'object',
-        additionalProperties: false,
+        additionalProperties: true,
         properties: {
           ok: { type: 'boolean', required: true },
           code: { type: 'integer' },
-          data: {
-            type: 'object',
-            additionalProperties: true,
-            properties: {
-              content: { type: 'string' },
-              format: { type: 'string' },
-              meta: { type: 'object', additionalProperties: true },
-              quality: { type: 'object', additionalProperties: true },
-              enhance: { type: 'object', additionalProperties: true },
-              truncated: { type: 'boolean' },
-              next_offset: { type: 'integer' },
-            },
-          },
-          error: {
-            type: 'object',
-            additionalProperties: true,
-            properties: {
-              kind: { type: 'string' },
-              message: { type: 'string' },
-            },
-          },
+          data: { type: 'object', additionalProperties: true },
+          error: { type: 'object', additionalProperties: true },
         },
       },
       render(_args, value) {
@@ -84,6 +47,11 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
         const meta = data.meta || {}
         const head = `FormatForge 完成 (parser=${meta.parser || '?'}, ${meta.file_size ?? '?'}B, confidence=${meta.confidence ?? '?'})`
         let body = typeof data.content === 'string' ? data.content : JSON.stringify(data.content)
+        // R3.1: 长 markdown/json 内容带 200 字头部预览，模型可先判断质量/相关性再决定翻页
+        let preview = ''
+        if (body.length > 2_000 && (data.format === 'markdown' || data.format === 'json')) {
+          preview = `\n\n[头部预览]\n${body.slice(0, 200)}…`
+        }
         if (body.length > 20_000) body = body.slice(0, 20_000) + `\n…[render 截断，共 ${body.length} 字符]`
         const enhance = data.enhance && data.enhance.needed
           ? `\n\n[enhance:${data.enhance.reason}] ${data.enhance.hint}`
@@ -91,7 +59,7 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
         const pageNote = data.truncated
           ? `\n\n[已按 max_chars 分页：本页到 offset=${(meta.next_offset ?? 0)}；继续读取请带 offset=${meta.next_offset}]`
           : ''
-        return [{ type: 'text', text: `${head}\n\n${body}${enhance}${pageNote}` }]
+        return [{ type: 'text', text: `${head}\n\n${body}${preview}${enhance}${pageNote}` }]
       },
     },
     async execute(args) {
@@ -105,8 +73,11 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
 
       const cliArgs = ['translate', '--format', args.format || 'json']
       cliArgs.push('--type', args.type || 'auto')
-      if (args.quality) cliArgs.push('--quality')
       if (args.prompt) cliArgs.push('--prompt', String(args.prompt))
+      // R3.1 智能默认：quality 由模型显式传入，或 auto 模式下自动附带
+      // （低置信/劣化场景在结果里自动出现 quality.actions，供自愈闭环消费）
+      const wantQuality = args.quality === true || (args.quality === undefined && (args.type || 'auto') === 'auto')
+      if (wantQuality) cliArgs.push('--quality')
 
       // 解析目标文件列表（path 单个 / paths 多个+glob）
       let targets = []

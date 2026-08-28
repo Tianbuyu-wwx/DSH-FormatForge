@@ -99,6 +99,8 @@ formatforge = "formatforge.__main__:main"
 "test/**/*.py" = ["B", "SIM", "N"]
 # 内嵌 JS 注入模板串（拖拽 toast / 收件箱卡片的 DOM+CSS），不可换行
 "scripts/take-screenshots.py" = ["E501"]
+# R3.3 自愈实测脚本（测量仪表，非生产代码）
+"scripts/measure_r3_selfheal.py" = ["SIM"]
 
 [tool.ruff.lint.flake8-bugbear]
 # 默认参数中允许 FastAPI 工厂调用（与 per-file-ignores 互补）

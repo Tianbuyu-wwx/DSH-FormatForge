@@ -169,6 +169,7 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
       onDone?.({
         file: name,
         ok: true,
+        resultId: meta.result_id || null,
         parser: meta.parser,
         confidence: meta.confidence,
         pages: undefined,

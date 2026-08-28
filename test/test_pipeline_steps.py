@@ -369,9 +369,25 @@ class TestConvertStep:
         assert basic_ctx.confidence == 0.85
 
     def test_noop_when_no_parsed_file(self, basic_ctx, mock_strategy_registry, input_data, detected_result, decision_convert):
+        """data 为空字节时回退「原始数据说明」分支。"""
         basic_ctx.parsed_file = None
         basic_ctx.decision = decision_convert
-        # 非 raw 来源且无 parsed_file（如 stream/url 解析失败）→ 保留原「原始数据说明」行为
+        basic_ctx.input_data = InputData(
+            source_type="stream", data=b"", filename=input_data.filename,
+            mime_type=input_data.mime_type, metadata={},
+        )
+        basic_ctx.detected = detected_result
+
+        ConvertStep().process(basic_ctx)
+
+        assert "# 原始数据" in basic_ctx.content
+        assert basic_ctx.structured_data == {"raw_data": True, "size": 0}
+        assert basic_ctx.confidence == 0.5
+
+    def test_text_passthrough_when_no_parsed_file(self, basic_ctx, mock_strategy_registry, input_data, detected_result, decision_convert):
+        """R3.3: data 非空时无论来源类型都走文本透传（quality 才能扫 FFFD/mojibake）。"""
+        basic_ctx.parsed_file = None
+        basic_ctx.decision = decision_convert
         basic_ctx.input_data = InputData(
             source_type="stream", data=input_data.data, filename=input_data.filename,
             mime_type=input_data.mime_type, metadata={},
@@ -380,9 +396,8 @@ class TestConvertStep:
 
         ConvertStep().process(basic_ctx)
 
-        assert "# 原始数据" in basic_ctx.content
-        assert basic_ctx.structured_data == {"raw_data": True, "size": basic_ctx.input_data.size}
-        assert basic_ctx.confidence == 0.5
+        assert basic_ctx.confidence == 1.0
+        assert basic_ctx.content == "Hello World"  # conftest fixture data=b"Hello World"
 
     def test_raw_text_passthrough_when_no_parsed_file(self, basic_ctx, mock_strategy_registry, input_data, detected_result, decision_convert):
         """raw 文本输入（stdin）→ 文本直接透传为 content，confidence=1.0"""

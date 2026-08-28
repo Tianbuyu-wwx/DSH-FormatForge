@@ -34,11 +34,13 @@ class TXTParser(BaseParser):
         # 纯文本无固定魔数，通过扩展名识别
         return []
 
-    def parse(self, file_path: Path) -> list[PageContent]:
-        """解析 TXT 文件"""
-        return list(self.parse_stream(file_path))
+    def parse(self, file_path: Path, encoding: str | None = None) -> list[PageContent]:
+        """解析 TXT 文件（R3.3: encoding 覆写供自愈重试）"""
+        return list(self.parse_stream(file_path, encoding=encoding))
 
-    def parse_stream(self, file_path: Path, chunk_size: int = 8192) -> Generator[PageContent, None, None]:
+    def parse_stream(
+        self, file_path: Path, chunk_size: int = 8192, encoding: str | None = None
+    ) -> Generator[PageContent, None, None]:
         """
         流式解析 TXT 文件，按段落生成（减少大文件内存占用）
 
@@ -52,8 +54,8 @@ class TXTParser(BaseParser):
         file_path = Path(file_path)
         logger.info("开始流式解析 TXT: %s", file_path)
 
-        # 检测文件编码
-        encoding = self._detect_encoding(file_path)
+        # 检测文件编码（R3.3: 显式覆写优先——自愈重试路径）
+        encoding = encoding or self._detect_encoding(file_path)
         logger.debug("检测到编码: %s", encoding)
 
         elements = []

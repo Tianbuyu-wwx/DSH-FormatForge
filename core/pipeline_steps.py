@@ -214,6 +214,10 @@ class ParseStep:
                     selected_pages = parse_pages_spec(ctx.pages)  # 非法时抛 ValueError
                     if selected_pages:
                         pdf_options = {"pages": ctx.pages}
+                # R3.3: 自愈重试的编码覆写（TXT 解析器消费；其他解析器忽略）
+                enc = getattr(ctx, "encoding", None)
+                if enc:
+                    pdf_options = {**(pdf_options or {}), "encoding": enc}
                 ctx.parsed_file = file_parser.parse_file(temp_path, file_type, pdf_options)
                 logger.info(
                     "[result_id=%s] 文件解析完成: pages=%d, file_type=%s, parse_id=%s",
@@ -354,19 +358,19 @@ class ConvertStep:
     """步骤 7: 策略转换 —— 选择最佳策略并执行"""
 
     def process(self, ctx):
+        # R3.3 优先兜底：conversion_needed=False → 永远回退「无需转换」说明页
+        if ctx.decision and not ctx.decision.conversion_needed:
+            ctx.content = _build_raw_content(ctx.input_data, ctx.detected)
+            ctx.structured_data = {"raw_data": True, "size": ctx.input_data.size}
+            ctx.confidence = 0.5
+            ctx.logs.append(create_processing_log("convert", "无需转换，返回原始数据信息"))
+            return
         if ctx.parsed_file and ctx.decision.conversion_needed:
             ctx.logs.append(create_processing_log("convert", "执行数据转换..."))
-            logger.info("[result_id=%s] 开始执行转换策略...", ctx.result_id)
             try:
                 strategy = strategy_registry.select_best_strategy(
                     ctx.parsed_file,
                     ctx.conversion_type,
-                )
-                logger.info(
-                    "[result_id=%s] 选择策略: strategy_id=%s, strategy_name=%s",
-                    ctx.result_id,
-                    strategy.strategy_id,
-                    strategy.strategy_name,
                 )
                 ctx.logs.append(create_processing_log("convert", f"选择策略: {strategy.strategy_name}"))
 
@@ -375,34 +379,23 @@ class ConvertStep:
                 ctx.content = result.get("content", "")
                 ctx.structured_data = result.get("structured_data")
                 ctx.confidence = result.get("confidence", 0.0)
-                logger.info(
-                    "[result_id=%s] 策略转换完成: content_length=%d, confidence=%.2f",
-                    ctx.result_id,
-                    len(ctx.content),
-                    ctx.confidence,
-                )
                 ctx.logs.append(create_processing_log("convert", f"转换完成，置信度: {ctx.confidence:.2f}"))
             except Exception as e:
-                logger.error("[result_id=%s] 转换失败: %s", ctx.result_id, e, exc_info=True)
                 ctx.logs.append(create_processing_log("convert", f"转换失败: {e}", "error"))
                 ctx.content = f"转换失败: {e}"
                 ctx.structured_data = None
                 ctx.confidence = 0.0
-        elif ctx.input_data.source_type == "raw" and not ctx.parsed_file:
-            # raw 文本输入（stdin/--stdin-text）：文本本身就是内容，直接透传。
-            # （此前走 _build_raw_content 输出「无需转换」说明页，CLI 拿不到正文。）
+        elif ctx.input_data.data and len(ctx.input_data.data) > 0 and not ctx.parsed_file:
             data = ctx.input_data.data
             text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else str(data)
-            ctx.content = format_output(text, ctx.output_format, None)
-            ctx.structured_data = {"raw_data": True, "size": ctx.input_data.size}
+            ctx.content = text
+            ctx.structured_data = None
             ctx.confidence = 1.0
-            logger.info("[result_id=%s] raw 文本输入，直接透传 (%d 字符)", ctx.result_id, len(text))
             ctx.logs.append(create_processing_log("convert", f"raw 文本输入，直接透传 ({len(text)} 字符)"))
         else:
             ctx.content = _build_raw_content(ctx.input_data, ctx.detected)
             ctx.structured_data = {"raw_data": True, "size": ctx.input_data.size}
             ctx.confidence = 0.5
-            logger.info("[result_id=%s] 无需转换，返回原始数据信息", ctx.result_id)
             ctx.logs.append(create_processing_log("convert", "无需转换，返回原始数据信息"))
 
 

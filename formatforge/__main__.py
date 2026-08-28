@@ -60,6 +60,7 @@ def translate_file_data(
     quality: bool = False,
     pages: str | None = None,
     prompt: str | None = None,
+    encoding: str | None = None,
 ) -> tuple[dict[str, Any] | dict[str, str], int]:
     """单文件转换核心（N3 batch 复用）。
 
@@ -104,6 +105,7 @@ def translate_file_data(
         output_format=fmt_map[fmt],
         pages=pages,
         custom_prompt=prompt,
+        encoding=encoding,
     )
     response = pipeline.run(ctx)
     result = response.get("result")
@@ -191,6 +193,7 @@ def cmd_translate(args: argparse.Namespace) -> int:
         quality=args.quality,
         pages=getattr(args, "pages", None),
         prompt=args.prompt,
+        encoding=getattr(args, "encoding", None),
     )
     elapsed_ms = int((time.time() - started) * 1000)
     if exit_code != 0:
@@ -284,6 +287,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_tr.add_argument("--prompt", default=None, help="自定义转换指令")
     p_tr.add_argument("--quality", action="store_true", help="附带质量报告")
     p_tr.add_argument("--pages", default=None, help="PDF 页选择，如 1-3,7（仅 PDF 生效）")
+    p_tr.add_argument("--encoding", default=None, help="文本编码覆写（如 gbk/latin-1，仅 TXT 类生效；自愈重试用）")
     p_tr.add_argument("--no-enhance-hint", action="store_true", help="禁用 enhance 提示字段")
     p_tr.set_defaults(func=cmd_translate)
 

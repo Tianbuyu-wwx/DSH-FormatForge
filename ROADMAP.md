@@ -5,16 +5,17 @@
 
 ---
 
-## 0. 现状快照（v0.8.0）
+## 0. 现状快照（v0.9.0）
 
 | 维度 | 状态 |
 |---|---|
 | 输入格式 | 34 种；输出 json/markdown/html/text |
-| 入口通道 | 网页拖拽（upload→inbox→watcher）/ 对话工具 ×3（ff_translate/ff_formats/ff_result）/ CLI（translate/formats/version/batch） |
-| 质量体系 | 5 维评分 + grade + enhance 三触发 + actions（retry_with 可自愈）；R2.1 起 OCR 管线贯通（RapidOCR 真置信度） |
+| 入口通道 | 网页拖拽（upload→inbox→watcher）/ 对话工具 ×3（ff_translate/ff_formats/ff_result）/ CLI（translate/formats/version/batch，**新增 --encoding 透传**） |
+| 质量体系 | 5 维评分 + grade + enhance 三触发 + actions（retry_with 可自愈）；**R3.3 encoding/ocr retry_with 真可重调**（CLI 接通） |
 | PDF 深度 | pages 选择 / furniture 剔除 / 双栏阅读序 / **R2.3 标题层级+列表嵌套+目录锚点** / **R2.2 表格语义（合并/跨页/对齐）** |
-| 工程面 | 509 tests · CI 7/7 · mypy 47 文件 0 错 · golden fixture 机制 · dependabot 三生态 · verify-install 自检 |
-| 分发 | npm `@tianbuyu-wwx/dsh-formatforge`（v0.8.0） · awesome-list 已收录 · storefront 截图已声明 |
+| 协作面 | **R3.1 智能默认**（auto 自动带 quality + 200 字头部预览） · **R3.2 ff_result 批量 ids** · **R3.4 schema -33.3%** |
+| 工程面 | **510 tests** · CI 7/7 · mypy 47 文件 0 错 · golden fixture 机制（R2 16 项 + R3 自愈 3 项） · dependabot 三生态 · verify-install 自检 |
+| 分发 | npm `@tianbuyu-wwx/dsh-formatforge`（v0.9.0） · awesome-list 已收录 · storefront 截图已声明 |
 
 ---
 
@@ -43,18 +44,22 @@
 
 **验收结果**：golden 语料 enhance 触发率 20% → 0%（目标 ≥30% 下降，实际 100%）；golden fixture 机制随批引入（16 项新测试）。
 
-## 3. R3 · Agent 协作面增强（~2 天）
+## 3. R3 · Agent 协作面增强（✅ 已完成 → v0.9.0，2026-08-28）
 
 **目标**：让会话模型更省力地用好 FormatForge——减少往返、提高一次成功率。
 
-| 项 | 内容 | 工作量 |
-|---|---|---|
-| R3.1 ff_translate 智能默认 | 按检测格式自动带 quality（低置信格式自动开）；返回头 200 字预览帮模型先判断再决定翻页 | ~半天 |
-| R3.2 ff_result 批量取回 | `ids` 数组参数一次取多产物（各带 max_chars）；inbox 通知直接附 id | ~半天 |
-| R3.3 SKILL.md 自愈闭环实测 | 构造劣化样本集，验证「actions→retry_with→重调」链路在真实 dsh 会话中的成功率，按结果修提示词 | ~1 天 |
-| R3.4 工具描述 token 瘦身 | 三工具 description 精简（当前 ff_translate 描述较长），省会话上下文 | ~2h |
+| 项 | 内容 | 工作量 | 状态 |
+|---|---|---|---|
+| R3.1 ff_translate 智能默认 | 按检测格式自动带 quality（低置信格式自动开）；返回头 200 字预览帮模型先判断再决定翻页 | ~半天 | ✅ |
+| R3.2 ff_result 批量取回 | `ids` 数组参数一次取多产物（各带 max_chars）；inbox 通知直接附 id | ~半天 | ✅ |
+| R3.3 SKILL.md 自愈闭环实测 | 构造劣化样本集，验证「actions→retry_with→重调」链路在真实 dsh 会话中的成功率，按结果修提示词 | ~1 天 | ✅ **3/3=100%** |
+| R3.4 工具描述 token 瘦身 | 三工具 description 精简（当前 ff_translate 描述较长），省会话上下文 | ~2h | ✅ **-33.3%** |
 
-**验收**：劣化样本集一次成功率 ≥80%；三工具 schema 体积减 30%。
+**验收**：劣化样本集一次成功率 ≥80%（实测 100%，目标超额）；三工具 schema 体积减 30%（实测 -33.3%，达标）。
+
+**R3.3 抓出的真链路断点**（已修）：
+- `quality.actions.retry_with.encoding` 此前是空头支票——CLI 根本不收 `--encoding` 标志。补：CLI → PipelineContext.encoding → ParseStep.txt_options → TXTParser.parse(encoding=) 覆写
+- stdin/raw 文本的质量报告从未扫正文（format_output 把数据打成 `{"raw_data":true}` 包装，FFFD/mojibake 全吞）。修：ConvertStep 在无 parsed_file 但有 data 时走 raw 文本透传，让 quality 实时扫出
 
 ## 4. R4 · 观望池升级评估（数据驱动，不预设）
 
