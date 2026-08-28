@@ -354,6 +354,12 @@ class TableExtractionStrategy(ConversionStrategy):
             md_output_parts.append(md_table)
 
             # 结构化数据
+            # B1/v0.11.0: 推断 schema + 前 N 行预览
+            headers_list = formatted_rows[0] if formatted_rows else []
+            data_only = formatted_rows[1:] if len(formatted_rows) > 1 else []
+            schema = self._infer_table_schema(formatted_rows, headers_list)
+            preview = self._preview_table_rows(formatted_rows, n=5)
+
             structured_tables.append(
                 {
                     "table_index": idx,
@@ -363,8 +369,10 @@ class TableExtractionStrategy(ConversionStrategy):
                     "cols": len(formatted_rows[0]) if formatted_rows else 0,
                     "has_header": table["metadata"].get("has_header", False),
                     "merged_cells": merged_info["merged_count"],
-                    "headers": formatted_rows[0] if formatted_rows else [],
-                    "data": formatted_rows,
+                    "headers": headers_list,
+                    "schema": schema,  # B1: [{name, type}, ...]
+                    "preview_rows": preview,  # B1: 前 5 行
+                    "data": data_only,
                 }
             )
             total_rows += len(formatted_rows)
@@ -383,12 +391,21 @@ class TableExtractionStrategy(ConversionStrategy):
             )
         )
 
+        # B1/v0.11.0: schema 汇总（全部表的列名+类型合并去重）
+        schema_summary: list[dict[str, str]] = []
+        for t in structured_tables:
+            for col in t.get("schema", []):
+                if col not in schema_summary:
+                    schema_summary.append(col)
+
         return {
             "content": content,
             "structured_data": {
                 "tables_found": len(structured_tables),
                 "total_rows": total_rows,
                 "merged_cells": total_merged,
+                "schema": schema_summary,  # B1: 顶层 schema（合并去重）
+                "preview_rows": [t["preview_rows"] for t in structured_tables],  # B1: 每表前 5 行
                 "tables": structured_tables,
             },
             "confidence": 0.85 if structured_tables else 0.3,
@@ -467,6 +484,58 @@ class TableExtractionStrategy(ConversionStrategy):
     # ═══════════════════════════════════════════
     # 合并单元格检测
     # ═══════════════════════════════════════════
+
+    # ═══════════════════════════════════════════
+    # B1: schema 推断 + 前 N 行预览（v0.11.0）
+    # ═══════════════════════════════════════════
+
+    # 类型判定正则（按从窄到宽顺序）
+    _INT_RE = __import__("re").compile(r"^-?\d+$")
+    _FLOAT_RE = __import__("re").compile(r"^-?\d+\.\d+$")
+    _DATE_RE = __import__("re").compile(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}$")
+    _BOOL_TRUE = {"true", "yes", "y", "1"}
+    _BOOL_FALSE = {"false", "no", "n", "0"}
+
+    def _infer_cell_type(self, samples: list[str]) -> str:
+        """根据样本推断列类型（int / float / date / bool / string）。
+        整数/浮点合并判定：先看每个值是否纯数字串，再看是否至少有一个含小数点。
+        """
+        non_empty = [s for s in samples if s.strip()]
+        if not non_empty:
+            return "string"
+        # 数字判定（合并 int/float）
+        all_numeric = all(self._INT_RE.match(s) or self._FLOAT_RE.match(s) for s in non_empty)
+        if all_numeric:
+            has_decimal = any(self._FLOAT_RE.match(s) for s in non_empty)
+            return "float" if has_decimal else "integer"
+        if all(self._DATE_RE.match(s) for s in non_empty):
+            return "date"
+        lower = [s.lower() for s in non_empty]
+        if all(s in self._BOOL_TRUE or s in self._BOOL_FALSE for s in lower):
+            return "boolean"
+        return "string"
+
+    def _infer_table_schema(
+        self, rows: list[list[str]], headers: list[str], max_sample: int = 20
+    ) -> list[dict[str, str]]:
+        """推断整表的 schema。rows 二维数组；headers 列名列表。
+
+        返回 [{name, type}]；type ∈ integer/float/date/boolean/string。"""
+        if not rows or not headers:
+            return []
+        # 数据行（除 header）
+        data_rows = rows[1:] if rows else []
+        sample = data_rows[:max_sample]
+        schema: list[dict[str, str]] = []
+        for col_idx, col_name in enumerate(headers):
+            col_samples = [r[col_idx] if col_idx < len(r) else "" for r in sample]
+            col_type = self._infer_cell_type(col_samples)
+            schema.append({"name": str(col_name).strip() or f"col_{col_idx}", "type": col_type})
+        return schema
+
+    def _preview_table_rows(self, rows: list[list[str]], n: int = 5) -> list[list[str]]:
+        """返回前 n 行（不含 header）。会话模型可借此先判断相关性。"""
+        return rows[1 : 1 + n] if len(rows) > 1 else []
 
     def _detect_merged_cells(self, rows: list[list[str]]) -> dict[str, Any]:
         """

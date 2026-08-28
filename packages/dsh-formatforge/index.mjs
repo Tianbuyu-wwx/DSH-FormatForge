@@ -23,7 +23,7 @@ import { createInboxWatcher, inboxDir } from './services/inbox-watcher.mjs'
 import { registerUploadRoute } from './http/upload.mjs'
 import { makeNotifier } from './services/notify.mjs'
 
-const VERSION = '0.10.0'
+const VERSION = '0.11.0'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const pluginDir = join(here)

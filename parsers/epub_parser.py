@@ -115,7 +115,28 @@ class EPUBParser(BaseParser):
                 opf_xml = zf.read(opf_path)
                 title, author, spine_items = self._parse_opf(opf_xml, opf_dir)
 
-                logger.info("EPUB 元数据: title=%s, author=%s, chapters=%d", title, author, len(spine_items))
+                # B8/v0.11.0: 解析 NCX 拿章节标题映射
+                # NCX 键是 navPoint-id / src stem；spine itemref 是 manifest id（如 "ch1"）。
+                # 需通过 manifest 反查：manifest_id -> href stem -> NCX title
+                chapter_titles_raw = self._parse_ncx(zf, opf_xml, opf_dir)
+                # 反向映射 manifest_id -> href stem
+                opf_root_local = ET.fromstring(opf_xml)
+                manifest_map: dict[str, str] = {}
+                for item in opf_root_local.findall(".//opf:item", OPF_NS):
+                    mid = item.get("id")
+                    href = item.get("href")
+                    if mid and href:
+                        stem = href.split("/")[-1].split("#")[0]
+                        manifest_map[mid] = stem
+                chapter_titles: dict[str, str] = {}
+                for spine_id, href in spine_items:
+                    stem = href.split("/")[-1].split("#")[0]
+                    title = chapter_titles_raw.get(spine_id, "") or chapter_titles_raw.get(stem, "")
+                    chapter_titles[spine_id] = title
+                logger.info(
+                    "EPUB 元数据: title=%s, author=%s, chapters=%d (with titles=%d)",
+                    title, author, len(spine_items), len(chapter_titles),
+                )
 
                 # 3. 按 spine 顺序解析各章节
                 pages: list[PageContent] = []
@@ -149,7 +170,11 @@ class EPUBParser(BaseParser):
                                         elementId=f"elem_{page_num}_{elem_idx[0]}",
                                         elementType="text",
                                         content=para,
-                                        metadata={"chapter": item_id, "chapter_index": page_num - 1},
+                                        metadata={
+                                            "chapter": item_id,
+                                            "chapter_index": page_num - 1,
+                                            "chapter_title": chapter_titles.get(item_id, ""),
+                                        },
                                     )
                                 )
                                 raw_lines.append(para)
@@ -238,3 +263,45 @@ class EPUBParser(BaseParser):
                 spine_items.append((idref, manifest[idref]))
 
         return title, author, spine_items
+
+    def _parse_ncx(self, zf: "zipfile.ZipFile", opf_xml: bytes, opf_dir: str) -> dict[str, str]:
+        """B8/v0.11.0: 解析 NCX toc.ncx 返回 chapter_id → title。
+
+        返回空 dict 时不影响主流程（章节用 spine itemref idref 占位）。
+        支持 EPUB 2 NCX 优先；EPUB 3 nav.xhtml 暂简化为读 toc.ncx 即可。
+        """
+        result: dict[str, str] = {}
+        try:
+            ns_ncx = {"ncx": "http://www.daisy.org/z3986/2005/ncx/"}
+            # 找 NCX 路径（从 OPF manifest 的 'ncx' 项）
+            opf_root = ET.fromstring(opf_xml)
+            ncx_href = None
+            for item in opf_root.findall(".//opf:item", OPF_NS):
+                if item.get("media-type") == "application/x-dtbncx+xml":
+                    ncx_href = item.get("href")
+                    break
+            if not ncx_href:
+                return result
+            ncx_path = f"{opf_dir}/{ncx_href}" if opf_dir else ncx_href
+            try:
+                ncx_xml = zf.read(ncx_path)
+            except KeyError:
+                return result
+            ncx_root = ET.fromstring(ncx_xml)
+            for nav_point in ncx_root.findall(".//ncx:navPoint", ns_ncx):
+                label_text = nav_point.find("ncx:navLabel/ncx:text", ns_ncx)
+                content = nav_point.find("ncx:content", ns_ncx)
+                if label_text is None or content is None:
+                    continue
+                title = (label_text.text or "").strip()
+                src = content.get("src", "")
+                src_stem = src.split("/")[-1].split("#")[0]
+                nav_id = nav_point.get("id", "")
+                if title:
+                    if nav_id:
+                        result[nav_id] = title
+                    if src_stem:
+                        result[src_stem] = title
+        except Exception as e:
+            logger.debug("NCX 解析失败（非致命）: %s", e)
+        return result

@@ -22,6 +22,12 @@ except ImportError:
     PPTX_AVAILABLE = False
     logger.warning("python-pptx 库未安装，PPTX 解析功能不可用")
 
+# B6/v0.11.0: 动画 XML namespace
+_ANIM_NS = {
+    "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+}
+
 
 class PPTXParser(BaseParser):
     """PPTX 幻灯片解析器"""
@@ -154,12 +160,19 @@ class PPTXParser(BaseParser):
                 raw_text_parts.append(f"[备注] {notes_text}")
                 elem_idx += 1
 
+        # B6/v0.11.0: 提取动画顺序（p:timing/p:par/p:animMotion/p:animEffect）
+        animations = self._extract_animations(slide)
+
         return PageContent(
             pageNumber=slide_number,
             elements=elements,
             rawText="\n".join(raw_text_parts),
             hasImage=has_image,
             hasTable=has_table,
+            metadata={
+                "animations": animations,
+                "animations_count": len(animations),
+            },
         )
 
     def _extract_table(self, table) -> str:
@@ -169,6 +182,67 @@ class PPTXParser(BaseParser):
             cells = [cell.text.strip() for cell in row.cells]
             rows.append(" | ".join(cells))
         return "\n".join(rows)
+
+    def _extract_animations(self, slide) -> list[dict]:
+        """B6/v0.11.0: 提取动画顺序。
+
+        返回 [{index, shape_id, shape_name, effect_type, delay_ms}, ...] 按播放顺序排序。
+        跳过不抛异常：动画 XML 可能在某些 PPTX 里缺失/破损。
+        """
+        animations: list[dict] = []
+        try:
+            slide_elem = slide._element  # CT_Slide xml 元素
+            timing = slide_elem.find(".//p:timing", _ANIM_NS)
+            if timing is None:
+                return animations
+            time_node_list = timing.find("p:tnLst", _ANIM_NS)
+            if time_node_list is None:
+                return animations
+            # 递归扫描 par 节点（每个 par = 一个动画触发时间线）
+            idx = 0
+            for par in time_node_list.iter("{%s}par" % _ANIM_NS["p"]):
+                # delay 时长（p:stDt 内的 delay）
+                delay_ms = 0
+                st_cell = par.find("p:cTn/p:stCell", _ANIM_NS)
+                if st_cell is not None:
+                    try:
+                        delay_ms = int(st_cell.get("val", "0"))
+                    except (TypeError, ValueError):
+                        delay_ms = 0
+                # 找所有 animMotion / animEffect 子节点
+                for anim_node in list(par):
+                    tag = anim_node.tag.split("}")[-1] if "}" in anim_node.tag else anim_node.tag
+                    if tag in ("animMotion", "animEffect", "animClr", "animScale", "animRot"):
+                        # 找 shape 引用（p:spTgt/p:tgtEl）
+                        shape_id = ""
+                        shape_name = ""
+                        sp_tgt = anim_node.find("p:cTn/p:spTgt", _ANIM_NS)
+                        if sp_tgt is not None:
+                            tgt_el = sp_tgt.find("p:tgtEl", _ANIM_NS)
+                            if tgt_el is not None:
+                                shape_id = tgt_el.get("spid", "")
+                        # 映射到 shape name（python-pptx 不直接给，XML 里有 nvSpPr/cNvPr name）
+                        try:
+                            sp = slide.shapes  # noqa
+                            for s in sp:
+                                if str(getattr(s, "_element", None).get("id", "")) == shape_id:
+                                    shape_name = s.name
+                                    break
+                        except Exception:
+                            pass
+                        idx += 1
+                        animations.append(
+                            {
+                                "index": idx,
+                                "shape_id": shape_id,
+                                "shape_name": shape_name,
+                                "effect_type": tag,
+                                "delay_ms": delay_ms,
+                            }
+                        )
+        except Exception as e:
+            logger.debug("动画顺序提取失败（非致命）: %s", e)
+        return animations
 
     def _detect_element_type(self, text: str) -> str:
         """检测元素类型"""

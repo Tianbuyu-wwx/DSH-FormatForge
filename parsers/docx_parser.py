@@ -14,6 +14,7 @@ logger = logging.getLogger("parsers.docx")
 # 可选依赖
 try:
     from docx import Document
+    from docx.oxml.ns import qn
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
@@ -99,7 +100,39 @@ class DOCXParser(BaseParser):
         # 检查是否有图片
         has_image = len(doc.inline_shapes) > 0 or len(doc.part.package.parts) > 10
 
-        logger.info("DOCX 解析完成: %d 个元素", len(elements))
+        # B5/v0.11.0: 修订追踪（w:ins / w:del）
+        revisions: list[dict] = []
+        if DOCX_AVAILABLE:
+            try:
+                body = doc.element.body
+                for ins in body.iter(qn("w:ins")):
+                    author = ins.get(qn("w:author"), "")
+                    date = ins.get(qn("w:date"), "")
+                    # 收集该 ins 下所有 w:t 文本
+                    text_runs = []
+                    for t_node in ins.iter(qn("w:t")):
+                        if t_node.text:
+                            text_runs.append(t_node.text)
+                    if text_runs:
+                        revisions.append(
+                            {"type": "ins", "author": author, "date": date, "text": "".join(text_runs)}
+                        )
+                for del_node in body.iter(qn("w:del")):
+                    author = del_node.get(qn("w:author"), "")
+                    date = del_node.get(qn("w:date"), "")
+                    # w:del 下的删除文本用 w:delText 标签
+                    text_runs = []
+                    for t_node in del_node.iter(qn("w:delText")):
+                        if t_node.text:
+                            text_runs.append(t_node.text)
+                    if text_runs:
+                        revisions.append(
+                            {"type": "del", "author": author, "date": date, "text": "".join(text_runs)}
+                        )
+            except Exception as e:
+                logger.warning("B5 修订追踪扫描失败: %s", e)
+
+        logger.info("DOCX 解析完成: %d 个元素, %d 条修订", len(elements), len(revisions))
 
         return [
             PageContent(
@@ -108,6 +141,7 @@ class DOCXParser(BaseParser):
                 rawText="\n".join(raw_text_parts),
                 hasImage=has_image,
                 hasTable=has_table,
+                metadata={"revisions": revisions, "revisions_count": len(revisions)},
             )
         ]
 

@@ -7,6 +7,36 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-28 — 第二波场景深耕（CSV/XLSX schema + DOCX 修订 + EPUB 章节 + PPTX 动画）
+
+### Added
+- **B1 CSV/XLSX/SQL schema 推断 + 前 N 行预览**（`core/conversion_strategies.py`）：
+  - 类型判定：integer / float / date / boolean / string
+  - 整数/浮点合并判定（混小数点整列 → float）
+  - `structured_data.schema` 顶层汇总 + 每表 `tables[i].schema` + `preview_rows`（前 5 行）
+  - CLI `--type type` 输出 `meta.schema` / `data.structured_data.schema`
+- **B5 DOCX 修订追踪**（`parsers/docx_parser.py`）：w:ins / w:del 抽出到 `PageContent.metadata.revisions`，
+  含 author/date/text。python-docx 默认忽略 w:ins/w:del 文本，B5 显式 iter 这两个 tag。
+- **B8 EPUB 章节拆分 + NCX 标题**（`parsers/epub_parser.py`）：
+  - `_parse_ncx` 解析 NCX toc.ncx → navPoint.title
+  - 通过 manifest 反查把 spine itemref idref 映射回 NCX 章节标题
+  - element metadata.chapter_title 填充章节名
+- **B6 PPTX 动画顺序**（`parsers/pptx_parser.py`）：
+  - `_extract_animations` 扫 p:timing/p:par 节点
+  - 返回 [{index, shape_id, shape_name, effect_type, delay_ms}, ...] 按播放顺序
+  - 讲者备注（notes_slide）早已支持，B6 加补动画（观望池 PPTX 深度达标）
+
+### Changed
+- `formatforge/__main__.py` cmd_translate：把 `result.structuredData` 透传到 `data.structured_data`（B1 CLI 暴露）
+- `core/conversion_strategies.py` TableExtractionStrategy：`tables[].data` 不再含 header（挪到 `headers` 字段）
+
+### Fixed
+- parser 在 EPUB 缺 NCX 时不报错（_parse_ncx 异常被吞 + log.debug）
+
+### Tests
+- 533/533 passed（509 → 533，+24 增量：B1 CSV/XLSX 3 项、B5 DOCX 2 项、B8 EPUB 2 项、B6 PPTX 2 项 + 测试 fixture）
+- ruff ✓ · format ✓ · mypy 47 文件 0 错
+
 ## [0.10.0] - 2026-08-28 — 第一波新功能（ff_batch / language / output-file / formats 过滤）
 
 ### Added

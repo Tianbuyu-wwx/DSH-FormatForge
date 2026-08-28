@@ -139,6 +139,9 @@ def translate_file_data(
     sd = getattr(result, "structuredData", None)
     if isinstance(sd, dict) and sd.get("structured"):
         data["meta"]["structured"] = True
+    # B1/v0.11.0: structured_data 透传（让 schema/preview_rows 暴露给会话模型）
+    if isinstance(sd, dict) and sd:
+        data["structured_data"] = sd
     if quality:
         try:
             from core.quality_report import QualityReport
