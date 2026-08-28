@@ -39,6 +39,7 @@ _LEGACY_KIND = {
 
 
 from formatforge.batch import cmd_batch  # noqa: E402  (须在 sys.path 注入之后)
+from formatforge.diff import register as register_diff  # noqa: E402  (v0.12.0/B10)
 
 
 def _emit(payload: dict[str, Any]) -> None:
@@ -408,6 +409,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_b.add_argument("--pages", default=None, help="PDF 页选择，如 1-3,7（仅 PDF 生效）")
     p_b.add_argument("--force", action="store_true", help="忽略已有产物强制重转")
     p_b.set_defaults(func=cmd_batch)
+
+    # B10/v0.12.0: 文件差异对比
+    register_diff(sub)
 
     p_fm = sub.add_parser("formats", help="列出支持的格式")
     p_fm.add_argument(

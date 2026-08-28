@@ -114,9 +114,7 @@ class DOCXParser(BaseParser):
                         if t_node.text:
                             text_runs.append(t_node.text)
                     if text_runs:
-                        revisions.append(
-                            {"type": "ins", "author": author, "date": date, "text": "".join(text_runs)}
-                        )
+                        revisions.append({"type": "ins", "author": author, "date": date, "text": "".join(text_runs)})
                 for del_node in body.iter(qn("w:del")):
                     author = del_node.get(qn("w:author"), "")
                     date = del_node.get(qn("w:date"), "")
@@ -126,9 +124,7 @@ class DOCXParser(BaseParser):
                         if t_node.text:
                             text_runs.append(t_node.text)
                     if text_runs:
-                        revisions.append(
-                            {"type": "del", "author": author, "date": date, "text": "".join(text_runs)}
-                        )
+                        revisions.append({"type": "del", "author": author, "date": date, "text": "".join(text_runs)})
             except Exception as e:
                 logger.warning("B5 修订追踪扫描失败: %s", e)
 

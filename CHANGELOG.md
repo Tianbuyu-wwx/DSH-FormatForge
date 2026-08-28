@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-28 — 第三波战略工具（ff_diff 文件对比）
+
+### Added
+- **B10 `ff_diff` 工具**（`tools/diff.mjs` + CLI `diff` 子命令 `formatforge/diff.py`）：
+  - 逐行 LCS diff（difflib.SequenceMatcher），输出 unified diff 格式
+  - 参数：path_a（旧版）、path_b（新版）、format（中间格式）、context_lines、max_chars
+  - 返回：additions / deletions / unchanged_count / similarity / diff_preview
+  - 任意格式可对比（先走 translate 转 text，PDF/DOCX 也能 diff）
+  - 文件不存在 → file_not_found；转换失败 → parse_failed
+- SKILL.md 工具清单加 `ff_diff`
+- 测试：TestR12Diff 4 项（简单版本 / 相同文件 / 缺文件 / PDF 自比）
+
+### Changed
+- `formatforge/__main__.py`：注册 diff 子命令
+- `packages/dsh-formatforge/index.mjs`：注册 ff_diff（5 工具：ff_translate/ff_formats/ff_result/ff_batch/ff_diff）
+- `test-local.mjs` 工具数断言 4→5
+
+### Fixed
+- `_read_text_lines` 处理 translate_file_data 返回 dict（协议 data 字段）而非字符串
+
+### Tests
+- 537/537 passed（533 → 537，+4）· ruff ✓ · format ✓ · mypy 48 文件 0 错
+
 ## [0.11.0] - 2026-08-28 — 第二波场景深耕（CSV/XLSX schema + DOCX 修订 + EPUB 章节 + PPTX 动画）
 
 ### Added

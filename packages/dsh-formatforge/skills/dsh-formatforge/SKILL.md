@@ -20,6 +20,8 @@ when_to_use: |
     list（列全部）；max_chars（默认 2000）、offset（仅单 id 生效）；**R3.4 schema -33.3%**。
   - `ff_batch` — **v0.10.0** 批量锻造。参数：source（目录/glob）、out（产物目录）、format、type、
     workers（1-8）、recursive、force（忽略已有产物）、pages。返回汇总报告 + 每文件结果。
+  - `ff_diff` — **v0.12.0** 对比两份文件差异（合同/法规/版本对照）。参数：path_a、path_b、
+    format（中间格式）、context_lines、max_chars。返回增/删/未变行数 + unified diff 预览。
 
   ## 质量自愈（E4 / R3.3）
 

@@ -18,12 +18,13 @@ import { createTranslateTool } from './tools/translate.mjs'
 import { createFormatsTool } from './tools/formats.mjs'
 import { createResultTool } from './tools/result.mjs'
 import { createBatchTool } from './tools/batch.mjs'
+import { createDiffTool } from './tools/diff.mjs'
 import { findRepoRoot, resolvePython, DEFAULT_TIMEOUT_MS } from './services/python-runner.mjs'
 import { createInboxWatcher, inboxDir } from './services/inbox-watcher.mjs'
 import { registerUploadRoute } from './http/upload.mjs'
 import { makeNotifier } from './services/notify.mjs'
 
-const VERSION = '0.11.0'
+const VERSION = '0.12.0'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const pluginDir = join(here)
@@ -76,7 +77,8 @@ export function apply(ctx) {
       ctx.tools.register(createFormatsTool({ repoRoot, log }))
       ctx.tools.register(createResultTool({ log }))
       ctx.tools.register(createBatchTool({ repoRoot, maxBytes: maxBytesFromEnv(), timeoutMs: timeoutFromEnv(), log }))
-      console.log(`[dsh-formatforge v${VERSION}] tools registered: ff_translate, ff_formats, ff_result, ff_batch`)
+      ctx.tools.register(createDiffTool({ repoRoot, maxBytes: maxBytesFromEnv(), timeoutMs: timeoutFromEnv(), log }))
+      console.log(`[dsh-formatforge v${VERSION}] tools registered: ff_translate, ff_formats, ff_result, ff_batch, ff_diff`)
     } else {
       console.warn(`[dsh-formatforge v${VERSION}] ctx.tools not available; tools not registered`)
     }

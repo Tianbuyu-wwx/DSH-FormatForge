@@ -200,7 +200,7 @@ class PPTXParser(BaseParser):
                 return animations
             # 递归扫描 par 节点（每个 par = 一个动画触发时间线）
             idx = 0
-            for par in time_node_list.iter("{%s}par" % _ANIM_NS["p"]):
+            for par in time_node_list.iter(f"{{{_ANIM_NS['p']}}}par"):
                 # delay 时长（p:stDt 内的 delay）
                 delay_ms = 0
                 st_cell = par.find("p:cTn/p:stCell", _ANIM_NS)
@@ -217,15 +217,14 @@ class PPTXParser(BaseParser):
                         shape_id = ""
                         shape_name = ""
                         sp_tgt = anim_node.find("p:cTn/p:spTgt", _ANIM_NS)
-                        if sp_tgt is not None:
-                            tgt_el = sp_tgt.find("p:tgtEl", _ANIM_NS)
-                            if tgt_el is not None:
-                                shape_id = tgt_el.get("spid", "")
+                        tgt_el = sp_tgt.find("p:tgtEl", _ANIM_NS) if sp_tgt is not None else None
+                        shape_id = (tgt_el.get("spid") or "") if tgt_el is not None else ""
                         # 映射到 shape name（python-pptx 不直接给，XML 里有 nvSpPr/cNvPr name）
                         try:
                             sp = slide.shapes  # noqa
                             for s in sp:
-                                if str(getattr(s, "_element", None).get("id", "")) == shape_id:
+                                s_elem = getattr(s, "_element", None)
+                                if s_elem is not None and str(s_elem.get("id", "")) == shape_id:
                                     shape_name = s.name
                                     break
                         except Exception:

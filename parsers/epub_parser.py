@@ -135,7 +135,10 @@ class EPUBParser(BaseParser):
                     chapter_titles[spine_id] = title
                 logger.info(
                     "EPUB 元数据: title=%s, author=%s, chapters=%d (with titles=%d)",
-                    title, author, len(spine_items), len(chapter_titles),
+                    title,
+                    author,
+                    len(spine_items),
+                    len(chapter_titles),
                 )
 
                 # 3. 按 spine 顺序解析各章节

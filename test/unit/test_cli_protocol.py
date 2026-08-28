@@ -652,3 +652,61 @@ class TestR11PptxAnimations:
         # index 递增
         indices = [a["index"] for a in animations]
         assert indices == sorted(indices) and len(set(indices)) == len(indices)
+
+
+class TestR12Diff:
+    """v0.12.0/B10: diff 子命令 LCS 对比。"""
+
+    def test_diff_simple_versions(self, tmp_path):
+        """两份版本 → additions/deletions/unchanged + diff 预览。"""
+        a = tmp_path / "a.txt"
+        b = tmp_path / "b.txt"
+        a.write_text("line1\nline2\nline3\n", encoding="utf-8")
+        b.write_text("line1\nline2-changed\nline3\nline4\n", encoding="utf-8")
+        payload, code = run_cli("diff", str(a), str(b))
+        assert payload["ok"] is True
+        d = payload["data"]
+        assert d["additions"] >= 1
+        assert d["deletions"] >= 1
+        assert d["unchanged_count"] >= 2
+        # 相似度 0~1
+        assert 0 <= d["similarity"] <= 1
+        # diff 预览包含 +/- 行
+        assert "+" in d["diff_preview"]
+        assert "-" in d["diff_preview"]
+        assert code == 0
+
+    def test_diff_identical_files(self, tmp_path):
+        """相同文件 → 0 增 0 删，全部未变。"""
+        a = tmp_path / "a.txt"
+        b = tmp_path / "b.txt"
+        a.write_text("same\ncontent\n", encoding="utf-8")
+        b.write_text("same\ncontent\n", encoding="utf-8")
+        payload, code = run_cli("diff", str(a), str(b))
+        assert payload["ok"] is True
+        d = payload["data"]
+        assert d["additions"] == 0
+        assert d["deletions"] == 0
+        assert d["unchanged_count"] >= 2
+        assert code == 0
+
+    def test_diff_missing_file(self, tmp_path):
+        """源不存在 → file_not_found。"""
+        a = tmp_path / "a.txt"
+        a.write_text("x\n", encoding="utf-8")
+        payload, code = run_cli("diff", str(a), str(tmp_path / "missing.txt"))
+        assert payload["ok"] is False
+        assert payload["error"]["kind"] == "file_not_found"
+        assert code != 0
+
+    def test_diff_pdf_support(self, tmp_path):
+        """PDF 文件也可 diff（走 translate 中间转换）。"""
+        target = FIXTURES / "complex_test.pdf"
+        if not target.exists():
+            pytest.skip("fixture 缺失")
+        payload, code = run_cli("diff", str(target), str(target), "--format", "text")
+        assert payload["ok"] is True
+        # 相同文件 → 0 增 0 删
+        assert payload["data"]["additions"] == 0
+        assert payload["data"]["deletions"] == 0
+        assert code == 0

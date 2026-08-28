@@ -40,8 +40,8 @@ console.log('plugin name:', mod.name)
 console.log('inject:', JSON.stringify(mod.inject))
 mod.apply(ctx)
 
-if (registered.length !== 4) {
-  console.error(`FAIL: expected 4 tools registered, got ${registered.length}:`, registered.map((t) => t.name))
+if (registered.length !== 5) {
+  console.error(`FAIL: expected 5 tools registered, got ${registered.length}:`, registered.map((t) => t.name))
   process.exit(1)
 }
 console.log('registered:', registered.map((t) => t.name).join(', '))
