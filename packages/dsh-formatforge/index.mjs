@@ -17,12 +17,13 @@ import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import { createTranslateTool } from './tools/translate.mjs'
 import { createFormatsTool } from './tools/formats.mjs'
 import { createResultTool } from './tools/result.mjs'
+import { createBatchTool } from './tools/batch.mjs'
 import { findRepoRoot, resolvePython, DEFAULT_TIMEOUT_MS } from './services/python-runner.mjs'
 import { createInboxWatcher, inboxDir } from './services/inbox-watcher.mjs'
 import { registerUploadRoute } from './http/upload.mjs'
 import { makeNotifier } from './services/notify.mjs'
 
-const VERSION = '0.9.1'
+const VERSION = '0.10.0'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const pluginDir = join(here)
@@ -74,7 +75,8 @@ export function apply(ctx) {
       ctx.tools.register(createTranslateTool({ repoRoot, maxBytes: maxBytesFromEnv(), timeoutMs: timeoutFromEnv(), log }))
       ctx.tools.register(createFormatsTool({ repoRoot, log }))
       ctx.tools.register(createResultTool({ log }))
-      console.log(`[dsh-formatforge v${VERSION}] tools registered: ff_translate, ff_formats, ff_result`)
+      ctx.tools.register(createBatchTool({ repoRoot, maxBytes: maxBytesFromEnv(), timeoutMs: timeoutFromEnv(), log }))
+      console.log(`[dsh-formatforge v${VERSION}] tools registered: ff_translate, ff_formats, ff_result, ff_batch`)
     } else {
       console.warn(`[dsh-formatforge v${VERSION}] ctx.tools not available; tools not registered`)
     }

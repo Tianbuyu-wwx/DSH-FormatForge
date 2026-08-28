@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-28 — 第一波新功能（ff_batch / language / output-file / formats 过滤）
+
+### Added
+- **B3 ff_batch 工具**（`tools/batch.mjs`）：批量锻造，包装 Python CLI `batch` 子命令
+  - 参数：source（目录/glob）、out、format、type、workers（1-8）、recursive、force、pages
+  - 输出：每文件结果 + 汇总报告 `_batch_report.json`（总/成功/失败/跳过/平均置信度/总耗时）
+  - 续跑：产物比源新 → 跳过；空目录 → 仍写报告（exit=1 提示无匹配）
+- **B9 `--language` 目标语言 metadata**：ISO 639-1 代码（如 `zh` / `en` / `ja` / `zh-cn`）
+  - CLI：写入 `meta.target_language` + `enhance.hint`（提示会话模型按此语种整理）
+  - 工具：ff_translate 直接透传
+- **A9 `--output-file` 路径**：content 另存到指定文件，stdout 协议 JSON 不变（meta.output_file 字段标记）
+- **A10 `formats --category` 过滤**：6 类（document/data/email/image/archive/audio）
+  - 输出加 `categories` 列表供会话模型发现可用分类
+- `scripts/dev.py`：一键开发脚本（pytest+ruff+format+mypy+烟雾测）
+- 8 个 CLI 协议护栏（TestR10LanguageFlag / TestR10OutputFile / TestR10FormatsCategory / TestR10Batch）
+
+### Changed
+- `formatforge/__main__.py` cmd_translate：`data` 类型推断加固（cast dict[str, Any] + type:ignore）
+- `formatforge/batch.py` 空源返回 exit=1（旧契约）但仍写报告（契约级 _batch_report.json 必存在）
+
+### Fixed
+- mypy 在 cmd_translate 多个 dict[str, Any] union 操作时报类型冲突（已 cast 化解）
+
 ## [0.9.1] - 2026-08-28 — R3 协作面护栏补丁
 
 ### Added

@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+logger = logging.getLogger(__name__)
 
 # 确保仓库根目录在 sys.path（以 `python -m formatforge` 从任意 cwd 运行时）
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -198,22 +201,107 @@ def cmd_translate(args: argparse.Namespace) -> int:
         encoding=getattr(args, "encoding", None),
     )
     elapsed_ms = int((time.time() - started) * 1000)
-    if exit_code != 0:
+    if exit_code != 0 or not isinstance(data, dict):
         return _fail(str(data.get("kind", "internal")), str(data.get("message", data)))
+    # mypy: cast 让后续索引/赋值用 dict[str, Any]
+    data = cast(dict[str, Any], data)
+    meta = cast(dict[str, Any], data.get("meta")) if isinstance(data.get("meta"), dict) else cast(dict[str, Any], {})
 
-    meta = data.get("meta")
-    if isinstance(meta, dict):
+    if meta:
         meta["elapsed_ms"] = elapsed_ms
         # R3.1 契约字段：标记 quality 是否自动开启（与会话模型对齐）
         meta["quality_auto"] = want_quality and not args.quality
+        # B9/v0.10.0: 目标语 metadata（让 enhance 阶段按目标语翻译输出）
+        target_lang = getattr(args, "language", None)
+        if target_lang:
+            lang_code = str(target_lang).lower()
+            meta["target_language"] = lang_code
+            enhance_obj = data.get("enhance")
+            if not isinstance(enhance_obj, dict) or not enhance_obj.get("needed"):
+                new_hint = (
+                    "用户期望目标语言：" + lang_code + "（ISO 639-1）。"
+                    "如需翻译输出请按此语种整理；FormatForge 不内置翻译。"
+                )
+                if isinstance(enhance_obj, dict):
+                    data["enhance"] = {**enhance_obj, "needed": False, "hint": new_hint}  # type: ignore[assignment]
+                else:
+                    data["enhance"] = {"needed": False, "hint": new_hint}  # type: ignore[assignment]
+    # A9/v0.10.0: --output-file 把 content 落盘（stdout 协议 JSON 不变）
+    output_file = getattr(args, "output_file", None)
+    if output_file:
+        try:
+            out_path = Path(output_file)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            content_val = data.get("content")
+            content_str = (
+                content_val if isinstance(content_val, str) else json.dumps(content_val, ensure_ascii=False, indent=2)
+            )
+            out_path.write_text(content_str, encoding="utf-8")
+            meta["output_file"] = str(out_path)
+        except Exception as e:
+            logger.warning("[A9] --output-file 写入失败: %s", e)
     _emit({"ok": True, "code": 200, "data": data})
     return EXIT_OK
 
 
-def cmd_formats(_args: argparse.Namespace) -> int:
+def cmd_formats(args: argparse.Namespace) -> int:
     from core.format_detector import DataFormat
 
     values = sorted({m.value for m in DataFormat})
+
+    # A10/v0.10.0: 分类标签（按需过滤；不动 DataFormat 本身）
+    category_map = {
+        # document：排版/文档类
+        "pdf": "document",
+        "docx": "document",
+        "pptx": "document",
+        "txt": "document",
+        "rtf": "document",
+        "odt": "document",
+        "odp": "document",
+        "epub": "document",
+        "srt": "document",
+        "latex": "document",
+        # data：结构化数据
+        "csv": "data",
+        "xlsx": "data",
+        "ods": "data",
+        "json": "data",
+        "yaml": "data",
+        "xml": "data",
+        "toml": "data",
+        "html": "data",
+        "sql": "data",
+        # email
+        "eml": "email",
+        "msg": "email",
+        # image
+        "png": "image",
+        "jpeg": "image",
+        "gif": "image",
+        "webp": "image",
+        "bmp": "image",
+        "tiff": "image",
+        "svg": "image",
+        # archive
+        "zip": "archive",
+        "7z": "archive",
+        "rar": "archive",
+        # audio
+        "audio": "audio",
+        # unknown / binary 不分类
+    }
+    requested = getattr(args, "category", None)
+    if requested:
+        wanted = requested.lower()
+        values = [v for v in values if category_map.get(v) == wanted]
+        if not values:
+            # 提示合法值（避免用户猜测错）
+            return _fail(
+                "unsupported_format",
+                f"未知 category={requested}；合法值：document/data/email/image/archive/audio",
+            )
+
     _emit(
         {
             "ok": True,
@@ -221,6 +309,8 @@ def cmd_formats(_args: argparse.Namespace) -> int:
             "data": {
                 "formats": values,
                 "count": len(values),
+                "category": requested or "all",
+                "categories": sorted(set(category_map.values())),
                 "output_formats": ["json", "markdown", "html", "text"],
                 "conversion_types": ["auto", "text", "structured", "table", "image_desc", "ocr"],
             },
@@ -293,6 +383,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_tr.add_argument("--pages", default=None, help="PDF 页选择，如 1-3,7（仅 PDF 生效）")
     p_tr.add_argument("--encoding", default=None, help="文本编码覆写（如 gbk/latin-1，仅 TXT 类生效；自愈重试用）")
     p_tr.add_argument("--no-enhance-hint", action="store_true", help="禁用 enhance 提示字段")
+    # B9/v0.10.0: 目标语标记（仅 metadata；实际翻译由会话模型按 enhance.hint 完成）
+    p_tr.add_argument(
+        "--language",
+        default=None,
+        help="目标语言代码（ISO 639-1，如 zh/en/ja）；写入 meta.target_language，让 enhance 阶段按此翻译",
+    )
+    # A9/v0.10.0: 把 content 另存到指定文件（stdout 仍输出协议 JSON）
+    p_tr.add_argument("--output-file", default=None, help="把 content 写入此路径（stdout 协议 JSON 不变）。")
     p_tr.set_defaults(func=cmd_translate)
 
     # ── batch（EVOLUTION N3）──
@@ -309,6 +407,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_b.set_defaults(func=cmd_batch)
 
     p_fm = sub.add_parser("formats", help="列出支持的格式")
+    p_fm.add_argument(
+        "--category",
+        default=None,
+        choices=["document", "data", "email", "image", "archive", "audio"],
+        help="按分类过滤（如 document/data/image）",
+    )
     p_fm.set_defaults(func=cmd_formats)
 
     p_ver = sub.add_parser("version", help="版本信息")

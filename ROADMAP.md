@@ -1,21 +1,22 @@
 # ROADMAP.md — DSH-FormatForge 后续开发计划
 
-> 起草：2026-08-26 · 基线：v0.7.0（EVOLUTION_PLAN 四批全部交付）· R2 已完成：v0.8.0（2026-08-27）
+> 起草：2026-08-26 · 基线：v0.7.0 · R2 v0.8.0 · R3 v0.9.0/v0.9.1 · 第一波新功能 v0.10.0
 > 定位延续：dsh 插件 · 「文件 → AI 可读数据」锻造层 · 无内置 AI 客户端 · 模型增强永远属于会话模型
 
 ---
 
-## 0. 现状快照（v0.9.0）
+## 0. 现状快照（v0.10.0）
 
 | 维度 | 状态 |
 |---|---|
-| 输入格式 | 34 种；输出 json/markdown/html/text |
-| 入口通道 | 网页拖拽（upload→inbox→watcher）/ 对话工具 ×3（ff_translate/ff_formats/ff_result）/ CLI（translate/formats/version/batch，**新增 --encoding 透传**） |
-| 质量体系 | 5 维评分 + grade + enhance 三触发 + actions（retry_with 可自愈）；**R3.3 encoding/ocr retry_with 真可重调**（CLI 接通） |
-| PDF 深度 | pages 选择 / furniture 剔除 / 双栏阅读序 / **R2.3 标题层级+列表嵌套+目录锚点** / **R2.2 表格语义（合并/跨页/对齐）** |
-| 协作面 | **R3.1 智能默认**（auto 自动带 quality + 200 字头部预览） · **R3.2 ff_result 批量 ids** · **R3.4 schema -33.3%** |
-| 工程面 | **510 tests** · CI 7/7 · mypy 47 文件 0 错 · golden fixture 机制（R2 16 项 + R3 自愈 3 项） · dependabot 三生态 · verify-install 自检 |
-| 分发 | npm `@tianbuyu-wwx/dsh-formatforge`（v0.9.0） · awesome-list 已收录 · storefront 截图已声明 |
+| 输入格式 | 34 种 + 6 大分类过滤（document/data/email/image/archive/audio） |
+| 入口通道 | 网页拖拽 / **四工具**（ff_translate/ff_formats/ff_result/**ff_batch**）/ CLI（translate/formats/version/batch） |
+| 新参数 | **v0.10.0**: `--language`（ISO 639-1）、`--output-file`、`--category` |
+| 质量体系 | 5 维评分 + grade + enhance 三触发 + actions（retry_with 可自愈）；encoding/ocr retry_with 真可重调 |
+| PDF 深度 | pages 选择 / furniture 剔除 / 双栏阅读序 / R2.3 标题+列表+目录 / R2.2 表格语义 |
+| 协作面 | R3.1 智能默认 / R3.2 ff_result 批量 / R3.4 schema -33.3% |
+| 工程面 | **524 tests** · CI 7/7 · mypy 47 文件 0 错 · **golden fixture + scripts/dev.py 一键开发** |
+| 分发 | npm `@tianbuyu-wwx/dsh-formatforge`（v0.10.0） · awesome-list · storefront 截图 |
 
 ---
 

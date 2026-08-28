@@ -7,6 +7,7 @@ JS 侧 python-runner 依赖这些契约，改动须同步 PLUGIN_PLAN.md §4.3�
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -187,3 +188,154 @@ class TestR3MarkdownStructureField:
         assert "structured" in meta
         assert isinstance(meta["structured"], bool)
         assert code == 0
+
+
+class TestR10LanguageFlag:
+    """v0.10.0/B9: --language 写入 meta.target_language + enhance.hint。"""
+
+    def test_language_sets_metadata(self):
+        target = FIXTURES / "gbk_chinese.txt"
+        if not target.exists():
+            pytest.skip("fixture 缺失")
+        payload, code = run_cli("translate", str(target), "--language", "en", "--format", "text")
+        assert payload["ok"] is True
+        meta = payload["data"]["meta"]
+        assert meta.get("target_language") == "en"
+        # enhance.hint 应提示目标语言
+        enhance = payload["data"].get("enhance")
+        assert enhance is not None
+        assert "en" in enhance.get("hint", "")
+        assert code == 0
+
+    def test_language_case_normalized(self):
+        target = FIXTURES / "gbk_chinese.txt"
+        if not target.exists():
+            pytest.skip("fixture 缺失")
+        payload, code = run_cli("translate", str(target), "--language", "ZH-CN", "--format", "text")
+        assert payload["ok"] is True
+        assert payload["data"]["meta"].get("target_language") == "zh-cn"
+        assert code == 0
+
+
+class TestR10OutputFile:
+    """v0.10.0/A9: --output-file 把 content 落盘，stdout 协议不变。"""
+
+    def test_output_file_writes_content(self, tmp_path):
+        target = FIXTURES / "gbk_chinese.txt"
+        if not target.exists():
+            pytest.skip("fixture 缺失")
+        out_file = tmp_path / "out.txt"
+        payload, code = run_cli("translate", str(target), "--format", "text", "--output-file", str(out_file))
+        assert payload["ok"] is True
+        # stdout 协议不变：content 仍包含转换结果
+        assert "GBK 编码测试文件" in payload["data"]["content"]
+        # 落盘文件存在且内容等于 content
+        assert out_file.exists()
+        assert out_file.read_text(encoding="utf-8") == payload["data"]["content"]
+        # meta.output_file 字段标记
+        assert payload["data"]["meta"].get("output_file") == str(out_file)
+        assert code == 0
+
+
+class TestR10FormatsCategory:
+    """v0.10.0/A10: formats --category 按分类过滤。"""
+
+    def test_category_document(self):
+        payload, code = run_cli("formats", "--category", "document")
+        assert payload["ok"] is True
+        d = payload["data"]
+        assert d["category"] == "document"
+        assert d["count"] >= 5
+        # 必须含主文档格式
+        assert "pdf" in d["formats"]
+        assert "docx" in d["formats"]
+        assert "txt" in d["formats"]
+        assert code == 0
+
+    def test_category_data(self):
+        payload, code = run_cli("formats", "--category", "data")
+        assert payload["ok"] is True
+        d = payload["data"]
+        assert d["category"] == "data"
+        assert "csv" in d["formats"]
+        assert "xlsx" in d["formats"]
+        assert code == 0
+
+    def test_category_invalid(self):
+        """argparse choices 校验在 CLI 层拒绝；非 0 退出码 + stderr 信息。"""
+        proc = subprocess.run(
+            [PY, "-m", "formatforge", "formats", "--category", "no_such_thing"],
+            capture_output=True, text=True, cwd=REPO_ROOT, timeout=30,
+            env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        )
+        assert proc.returncode != 0
+        assert "invalid choice" in proc.stderr or "no_such_thing" in proc.stderr
+
+    def test_categories_listed(self):
+        payload, _ = run_cli("formats")
+        cats = payload["data"].get("categories", [])
+        # 必须含这 6 类
+        assert {"document", "data", "email", "image", "archive", "audio"} <= set(cats)
+
+
+class TestR10Batch:
+    """v0.10.0/B3: batch 子命令 + --force 重转 + 报告落盘。"""
+
+    def test_batch_basic_run(self, tmp_path):
+        in_dir = tmp_path / "in"
+        out_dir = tmp_path / "out"
+        in_dir.mkdir()
+        # 拷两个 fixture（GBK 中文 + 一个 txt）
+        shutil.copy(FIXTURES / "gbk_chinese.txt", in_dir / "a.txt")
+        shutil.copy(FIXTURES / "gbk_chinese.txt", in_dir / "b.txt")
+        payload, code = run_cli(
+            "batch", str(in_dir),
+            "--out", str(out_dir),
+            "--to", "markdown",
+            "--workers", "2",
+            "--type", "auto",
+            "--force",
+        )
+        assert payload["ok"] is True
+        assert payload["total"] == 2
+        assert payload["ok_count"] == 2
+        assert payload["failed"] == 0
+        # 产物存在
+        assert (out_dir / "a.md").exists()
+        assert (out_dir / "b.md").exists()
+        # 报告落盘
+        report = out_dir / "_batch_report.json"
+        assert report.exists()
+        assert code == 0
+
+    def test_batch_skip_existing(self, tmp_path):
+        """产物比源新 → 跳过（无需 --force）。"""
+        in_dir = tmp_path / "in"
+        out_dir = tmp_path / "out"
+        in_dir.mkdir()
+        shutil.copy(FIXTURES / "gbk_chinese.txt", in_dir / "a.txt")
+        # 先跑一次产产物
+        run_cli("batch", str(in_dir), "--out", str(out_dir), "--to", "markdown")
+        # 第二跑应全跳过
+        payload, code = run_cli("batch", str(in_dir), "--out", str(out_dir), "--to", "markdown")
+        assert payload["ok"] is True
+        assert payload["ok_count"] == 0
+        assert payload["skipped"] >= 1
+        assert code == 0
+
+    def test_batch_empty_source(self, tmp_path):
+        """空目录 → 空报告（v0.10.0/B3: 但 exit != 0，与原契约一致）。"""
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        payload, code = run_cli(
+            "batch", str(empty),
+            "--out", str(tmp_path / "out"),
+            "--to", "markdown",
+            "--force",
+        )
+        assert payload["ok"] is True
+        assert payload["total"] == 0
+        assert payload["ok_count"] == 0
+        # 报告必须落盘（契约）
+        assert (tmp_path / "out" / "_batch_report.json").exists()
+        assert code != 0  # 空源也算异常（用户期望处理但没匹配）

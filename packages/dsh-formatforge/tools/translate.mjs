@@ -27,6 +27,8 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
       quality: { type: 'boolean', default: false, description: '附质量报告（低置信自动附带）。' },
       max_chars: { type: 'integer', description: '分页大小。' },
       offset: { type: 'integer', default: 0 },
+      language: { type: 'string', description: '目标语言代码（ISO 639-1，如 zh/en/ja）。' },
+      output_file: { type: 'string', description: '把 content 另存到此路径。' },
     },
     output: {
       schema: {
@@ -74,6 +76,10 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
       const cliArgs = ['translate', '--format', args.format || 'json']
       cliArgs.push('--type', args.type || 'auto')
       if (args.prompt) cliArgs.push('--prompt', String(args.prompt))
+      // B9/v0.10.0: 目标语言透传
+      if (args.language) cliArgs.push('--language', String(args.language).toLowerCase())
+      // A9/v0.10.0: output_file 透传
+      if (args.output_file) cliArgs.push('--output-file', String(args.output_file))
       // R3.1 智能默认：quality 由模型显式传入，或 auto 模式下自动附带
       // （低置信/劣化场景在结果里自动出现 quality.actions，供自愈闭环消费）
       const wantQuality = args.quality === true || (args.quality === undefined && (args.type || 'auto') === 'auto')

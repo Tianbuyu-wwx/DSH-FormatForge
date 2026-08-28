@@ -1,6 +1,6 @@
 ---
 name: dsh-formatforge
-description: FormatForge — 把任意文件格式锻造成 AI 可读的结构化数据。Use when the user asks to convert/parse/extract a local file (pdf/docx/xlsx/pptx/eml/msg/epub/toml/yaml/csv/md/html/svg/image/archive) into text, JSON or Markdown; to read a document's content; to batch-fetch multiple FormatForge results; or to check which formats are supported. Tools: ff_translate (convert), ff_formats (list supported formats), ff_result (fetch past results from inbox by id or batch). When the result carries data.enhance.needed=true, YOU are expected to complete the enhancement using the hint — do not call external APIs.
+description: FormatForge — 把任意文件格式锻造成 AI 可读的结构化数据。Use when the user asks to convert/parse/extract a local file (pdf/docx/xlsx/pptx/eml/msg/epub/toml/yaml/csv/md/html/svg/image/archive) into text, JSON or Markdown; to read a document's content; to batch-fetch multiple FormatForge results; to bulk-forge a directory of files in one shot; or to check which formats are supported (optionally filtered by category). Tools: ff_translate (convert), ff_formats (list supported formats), ff_result (fetch past results from inbox by id or batch), ff_batch (bulk convert a directory). When the result carries data.enhance.needed=true, YOU are expected to complete the enhancement using the hint — do not call external APIs.
 when_to_use: |
   # FormatForge（格式锻炉）
 
@@ -12,10 +12,14 @@ when_to_use: |
     format（json/markdown/html/text，默认 json）、type（auto/text/structured/table/
     image_desc/ocr，默认 auto，**R3.1：auto 模式下自动附带 quality + 返回头 200 字预览**）、
     quality（附质量报告）、prompt（自定义指令）、pages（PDF 页选择 `1-3,7`）、
-    encoding（TXT 类编码覆写如 `gbk`/`latin-1`，**R3.3：自愈重试链路接通了**）。
-  - `ff_formats` — 列出支持的输入格式、输出格式与转换策略。
+    encoding（TXT 类编码覆写如 `gbk`/`latin-1`，**R3.3：自愈重试链路接通了**）、
+    **v0.10.0**: language（ISO 639-1 目标语言 metadata，写入 enhance.hint）、
+    **v0.10.0**: output_file（content 另存路径，stdout 协议 JSON 不变）。
+  - `ff_formats` — 列出支持的输入格式。**v0.10.0**: category 过滤（document/data/email/image/archive/audio）。
   - `ff_result` — 收件箱取回。参数：id（单 id）/ ids（批量 `id1,id2,...`，**R3.2 ≤20**）/
     list（列全部）；max_chars（默认 2000）、offset（仅单 id 生效）；**R3.4 schema -33.3%**。
+  - `ff_batch` — **v0.10.0** 批量锻造。参数：source（目录/glob）、out（产物目录）、format、type、
+    workers（1-8）、recursive、force（忽略已有产物）、pages。返回汇总报告 + 每文件结果。
 
   ## 质量自愈（E4 / R3.3）
 
