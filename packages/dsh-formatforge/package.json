@@ -1,7 +1,7 @@
 {
   "name": "@tianbuyu-wwx/dsh-formatforge",
-  "version": "0.12.0",
-  "description": "FormatForge for DeepSeek Harness: forge any file format (pdf/docx/xlsx/pptx/eml/toml/...) into AI-readable structured data. Thin bundle that spawns the local Python CLI (python -m formatforge) and returns protocol JSON; enhancement is delegated to the current session model via enhance hints.",
+  "version": "0.13.0",
+  "description": "FormatForge for DeepSeek Harness: forge any file format (pdf/docx/xlsx/pptx/eml/toml/...) into AI-readable structured data. v0.13.0 (2026-08-31): 修复 6 项 P0 + 5 项 P1（分页字段统一、diff size clamp、KNOWN_EXT 净化、batch 透传 quality/encoding/language、SKILL 同步、smartTruncate 一致性测试）。Thin bundle spawns local Python CLI (`python -m formatforge`) returning protocol JSON; enhancement delegated to current session model via enhance hints.",
   "type": "module",
   "main": "./index.mjs",
   "exports": {

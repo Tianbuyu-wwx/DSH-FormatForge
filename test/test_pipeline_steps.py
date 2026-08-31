@@ -552,3 +552,29 @@ class TestBuildResultStep:
         BuildResultStep(mock_pipeline).process(basic_ctx)
 
         mock_pipeline.decision_engine.build_recommendation.assert_called_once()
+
+    def test_builds_result_when_decision_noop(self, basic_ctx, mock_pipeline, parsed_file,
+                                                decision_noop, input_data, detected_result):
+        """v0.13.0/B3: decision_noop (conversion_needed=False) 走 BuildResultStep 不崩。
+
+        regression 复盘：此前 ConvertStep 的 raw_data / noop 分支未走 BuildResultStep 单测；
+        BuildResultStep.process line 451/467 两次访问 ctx.decision.to_dict()，若 decision=None 会 NPE。
+        """
+        basic_ctx.input_data = input_data
+        basic_ctx.parsed_file = parsed_file
+        basic_ctx.detected = detected_result
+        basic_ctx.decision = decision_noop
+        basic_ctx.formatted_content = "# 原始数据\n\n..."
+        basic_ctx.result_id = "cvt_noop_test"
+
+        # 不期望抛任何异常
+        BuildResultStep(mock_pipeline).process(basic_ctx)
+
+        assert basic_ctx.result_data is not None
+        assert basic_ctx.result_data.resultId == "cvt_noop_test"
+        # structured_data 应含 conversion_decision（来自 decision_noop）
+        sd = basic_ctx.result_data.structuredData
+        assert sd is not None
+        assert sd["conversion_decision"]["conversion_needed"] is False
+        # 缓存路径必须被走到
+        mock_pipeline._add_to_cache.assert_called_once()

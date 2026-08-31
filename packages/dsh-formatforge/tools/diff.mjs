@@ -9,7 +9,7 @@
 // DSL contract: parameters = flat value-schema; output = { schema, render }.
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { runFormatForge } from '../services/python-runner.mjs'
+import { runFormatForge, validateLocalFile } from '../services/python-runner.mjs'
 
 const OUTPUT_FORMATS = ['json', 'markdown', 'html', 'text']
 
@@ -59,6 +59,13 @@ export function createDiffTool({ repoRoot, maxBytes, timeoutMs, log = () => {} }
           ok: false,
           code: 4001,
           error: { kind: 'bad_request', message: 'path_a 与 path_b 必填' },
+        }
+      }
+      // B1/v0.13.0: size clamp 复用 ff_translate 的 validateLocalFile（防 OOM 大文件）
+      for (const p of [args.path_a, args.path_b]) {
+        const check = validateLocalFile(p, maxBytes)
+        if (!check.ok) {
+          return { ok: false, code: -1, error: { kind: 'too_large', message: check.reason } }
         }
       }
       const contextLines = Math.max(0, Math.min(20, Number(args.context_lines) || 3))

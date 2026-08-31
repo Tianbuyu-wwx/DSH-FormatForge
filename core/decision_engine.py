@@ -14,7 +14,19 @@ _IMAGE_FORMATS = {"png", "jpeg", "gif", "webp", "bmp", "tiff"}
 
 
 class ConversionDecision:
-    """转换决策记录"""
+    """转换决策记录
+
+    v0.13.0/G1: 字段语义澄清
+    ----------------------------------
+    - input_format          检测到的输入格式（如 "pdf"/"txt"）
+    - conversion_needed     是否需要转换（false=模型可直接消费）
+    - target_format         转换后的内部格式（通常为 "text"）
+    - strategies            **候选策略列表**（按顺序考虑）；并非"已执行的策略"。
+                            实际执行由 select_best_strategy() 从 strategy_registry 里
+                            按 can_handle() 评分决定。会话模型看到此字段不应理解为
+                            "这些策略都跑了"，而应理解为"管线按这个顺序考虑了这些策略"。
+    - preserve_original     是否同时保留原始文件作为辅助上下文
+    """
 
     def __init__(
         self,

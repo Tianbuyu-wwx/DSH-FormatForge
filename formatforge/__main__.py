@@ -331,9 +331,24 @@ def cmd_version(_args: argparse.Namespace) -> int:
 
 
 def cmd_translate_main(
-    path: Path, to_format: str, conv_type: str, timeout_s: int, pages: str | None = None
-) -> tuple[str, dict[str, Any]]:
-    """供 batch 复用的单文件转换入口：返回 (content, meta)。异常向上抛。"""
+    path: Path,
+    to_format: str,
+    conv_type: str,
+    timeout_s: int,
+    pages: str | None = None,
+    quality: bool = False,
+    encoding: str | None = None,
+    language: str | None = None,
+    custom_prompt: str | None = None,
+) -> tuple[str, dict[str, Any], dict[str, Any] | None]:
+    """供 batch 复用的单文件转换入口：返回 (content, meta, enhance)。
+
+    v0.13.0/A3: 透传 quality/encoding/language/custom_prompt（之前 batch 路径全部丢失，
+    导致 batch 出的 markdown 文件不会带 enhance 提示，会话模型无法决定是否增强）。
+
+    timeout_s 参数保留签名兼容（实际超时由 JS 侧 spawn 控制；Python 内核当前未强制）。
+    异常向上抛。
+    """
     from core.models import ConversionType, OutputFormat
     from core.pipeline import ConversionPipeline, PipelineContext
 
@@ -358,6 +373,8 @@ def cmd_translate_main(
         conversion_type=type_map.get(conv_type, ConversionType.AUTO),
         output_format=fmt_map[to_format],
         pages=pages,
+        custom_prompt=custom_prompt,
+        encoding=encoding,
     )
     response = pipeline.run(ctx)
     result = response.get("result")
@@ -370,7 +387,14 @@ def cmd_translate_main(
         "confidence": result.confidence,
         "elapsed_ms": int((time.time() - started) * 1000),
     }
-    return result.convertedContent, meta
+    # A3: 语言 metadata 透传（写入 enhance.hint 让会话模型按目标语整理）
+    if language:
+        meta["target_language"] = str(language).lower()
+    # A3: quality 模式开 → 计算质量报告（增强提示通过 pipeline 已写入 result.enhance）
+    # 注意：quality 报告本身由 cmd_translate 出口统一生成；batch 复用这条路径时如果
+    # callers 不需要完整 quality 字典，可只关心 enhance（这是会话模型消费的核心字段）
+    enhance = result.enhance if isinstance(getattr(result, "enhance", None), dict) else None
+    return result.convertedContent, meta, enhance
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -405,8 +429,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_b.add_argument("--type", default="auto", choices=["auto", "text", "structured", "table", "image_desc", "ocr"])
     p_b.add_argument("--workers", type=int, default=4, help="并发线程数（默认 4）")
     p_b.add_argument("--recursive", action="store_true", help="递归子目录")
-    p_b.add_argument("--quality", action="store_true", help="结果附 enhance 提示")
+    p_b.add_argument("--quality", action="store_true", help="结果附 enhance 提示（v0.13.0: 透传到每个文件）")
     p_b.add_argument("--pages", default=None, help="PDF 页选择，如 1-3,7（仅 PDF 生效）")
+    # v0.13.0/A3: 透传 encoding/language（与 translate 命令对齐）
+    p_b.add_argument("--encoding", default=None, help="文本编码覆写（仅 TXT 类生效；自愈重试用）")
+    p_b.add_argument(
+        "--language",
+        default=None,
+        help="目标语言代码（ISO 639-1，如 zh/en/ja）；写入 meta.target_language",
+    )
     p_b.add_argument("--force", action="store_true", help="忽略已有产物强制重转")
     p_b.set_defaults(func=cmd_batch)
 

@@ -28,6 +28,10 @@ export function createBatchTool({ repoRoot, maxBytes, timeoutMs, log = () => {} 
       recursive: { type: 'boolean', default: false, description: '递归子目录。' },
       force: { type: 'boolean', default: false, description: '强制重转（忽略产物是否比源新）。' },
       pages: { type: 'string', description: 'PDF 页选择如 1-3,7（仅 PDF 生效）。' },
+      // v0.13.0/A3: 与 translate 对齐
+      quality: { type: 'boolean', default: false, description: '每文件附 enhance 提示（透传到 Python CLI）。' },
+      encoding: { type: 'string', description: '文本编码覆写（仅 TXT 类生效；自愈重试用）。' },
+      language: { type: 'string', description: '目标语言代码（ISO 639-1，如 zh/en/ja）。' },
     },
     output: {
       schema: {
@@ -85,6 +89,10 @@ export function createBatchTool({ repoRoot, maxBytes, timeoutMs, log = () => {} 
       if (args.recursive) cliArgs.push('--recursive')
       if (args.force) cliArgs.push('--force')
       if (args.pages) cliArgs.push('--pages', String(args.pages))
+      // v0.13.0/A3: 透传
+      if (args.quality) cliArgs.push('--quality')
+      if (args.encoding) cliArgs.push('--encoding', String(args.encoding))
+      if (args.language) cliArgs.push('--language', String(args.language).toLowerCase())
 
       log(`[ff_batch] ${cliArgs.join(' ')} (timeoutMs=${timeoutMs})`)
       const res = await runFormatForge({

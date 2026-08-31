@@ -12,28 +12,11 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { join, basename } from 'node:path'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { inboxDir } from '../services/inbox-watcher.mjs'
+import { smartTruncate } from './_truncate.mjs'
 
 const DEFAULT_MAX_CHARS = 12_000
 
-/** E1-mirror: paragraph boundary > line boundary > hard cut. */
-function smartTruncate(text, maxChars, start = 0) {
-  if (start >= text.length) return { chunk: '', nextOffset: undefined }
-  const windowEnd = Math.min(start + maxChars, text.length)
-  if (windowEnd === text.length) return { chunk: text.slice(start), nextOffset: undefined }
-  const window = text.slice(start, windowEnd)
-  let cut = window.lastIndexOf('\n\n')
-  if (cut < maxChars / 2) cut = window.lastIndexOf('\n')
-  let chunk, next
-  if (cut <= 0) {
-    chunk = window
-    next = windowEnd
-  } else {
-    chunk = window.slice(0, cut)
-    next = start + cut + 1
-    if (next < text.length && text[next] === '\n') next += 1
-  }
-  return { chunk, nextOffset: next < text.length ? next : undefined }
-}
+/** v0.13.0: 截断逻辑已抽到 _truncate.mjs 共用；smartTruncate 由该模块导入（与 core/utils.py::smart_truncate 镜像） */
 
 function listArtifacts() {
   const dir = inboxDir()
@@ -179,15 +162,18 @@ async function fetchOne(rawId, args, log) {
   let target = null
   try {
     const names = readdirSync(dir).filter((n) => n.endsWith('.ff.json'))
+    // v0.13.0/C6: 删 includes() 兜底（id="abc" 会命中 xxxabcxxx.ff.json 是误匹配）
+    // 三段递进：精确 file stem → 前缀（如 resultId 前 8 位）→ JSON 头里的 resultId
     target =
       names.find((n) => n === `${rawId}.ff.json`) ||
       names.find((n) => n.startsWith(`${rawId}.ff.`)) ||
-      names.find((n) => n.includes(rawId))
+      null
     if (!target && names.length > 0) {
       for (const n of names) {
         try {
           const head = readFileSync(join(dir, n), { encoding: 'utf8' }).slice(0, 512)
-          if (head.includes(`"resultId": "${rawId}`)) {
+          // 精确匹配 resultId（JSON 头里 "resultId": "cvt..." 字段）
+          if (head.includes(`"resultId": "${rawId}"`)) {
             target = n
             break
           }
