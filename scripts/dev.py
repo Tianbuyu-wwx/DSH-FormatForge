@@ -129,11 +129,14 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.quick:
-        for fn in (step_pytest, step_ruff):
-            rc = fn(args.quick)
-            if rc != 0:
-                print(f"\n[FAIL] {fn.__name__} 返回 {rc}")
-                return rc
+        rc = step_pytest(args.quick)
+        if rc != 0:
+            print(f"\n[FAIL] step_pytest 返回 {rc}")
+            return rc
+        rc = step_ruff()
+        if rc != 0:
+            print(f"\n[FAIL] step_ruff 返回 {rc}")
+            return rc
         if not args.no_mypy:
             rc = step_mypy()
             if rc != 0:
