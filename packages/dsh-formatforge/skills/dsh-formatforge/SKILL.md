@@ -1,6 +1,8 @@
 ---
 name: dsh-formatforge
-description: FormatForge — 把任意文件格式锻造成 AI 可读的结构化数据。Use when the user asks to convert/parse/extract a local file (pdf/docx/xlsx/pptx/eml/msg/epub/toml/yaml/csv/md/html/svg/image/archive) into text, JSON or Markdown; to read a document's content; to batch-fetch multiple FormatForge results; to bulk-forge a directory of files in one shot; or to check which formats are supported (optionally filtered by category). Tools: ff_translate (convert), ff_formats (list supported formats), ff_result (fetch past results from inbox by id or batch), ff_batch (bulk convert a directory). When the result carries data.enhance.needed=true, YOU are expected to complete the enhancement using the hint — do not call external APIs.
+description: FormatForge — 把任意文件格式锻造成 AI 可读的结构化数据。Use when the user asks to convert/parse/extract a local file (pdf/docx/xlsx/pptx/eml/msg/epub/toml/yaml/csv/md/html/svg/image/archive) into text, JSON or Markdown; to read a document's content; to batch-fetch multiple FormatForge results; to bulk-forge a directory of files in one shot; to diff two files (合同/法规/脚本版本对照); or to check which formats are supported (optionally filtered by category). Tools: ff_translate (convert), ff_formats (list supported formats), ff_result (fetch past results from inbox by id or batch), ff_batch (bulk convert a directory), ff_diff (compare two files via unified diff). When the result carries data.enhance.needed=true, YOU are expected to complete the enhancement using the hint — do not call external APIs.
+version: 0.13.0
+updated: 2026-08-31
 when_to_use: |
   # FormatForge（格式锻炉）
 
@@ -82,6 +84,5 @@ FormatForge 的 DSH 插件壳：把 `python -m formatforge` CLI 包装为原生�
 `ff_translate` / `ff_formats` / `ff_result`。Python 内核负责 30+ 格式解析与策略选择；
 模型增强通过 enhance 协议交给当前会话完成。
 
-**版本**：v0.9.0（2026-08-28）—— R3 协作面：智能默认 / 批量取回 / 自愈闭环 / schema 瘦身。
-**变更点**：见 CHANGELOG v0.9.0 节（retry_with.encoding 接通 CLI、auto 自动带 quality、
-ff_result ids 数组批量、schema -33.3%）。
+**版本**：v0.13.0（2026-08-31）—— 封口批：分页字段统一 / diff size clamp / KNOWN_EXT 净化 / batch 透传 / SKILL 同步。
+**变更点**：见 CHANGELOG v0.13.0 节（6 项 P0 + 5 项 P1 + 1 项 P2 + 1 项 G1 改动）。

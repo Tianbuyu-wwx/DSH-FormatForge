@@ -385,6 +385,9 @@ class TestR11CsvSchema:
 class TestR11XlsxSchema:
     """v0.11.0/B1: XLSX → structured_data 含 schema。"""
 
+    # v0.13.0: openpyxl 在某些 venv 缺失（如 py312 启动器）→ importorskip 防 ERROR
+    openpyxl = pytest.importorskip("openpyxl")
+
     def test_xlsx_structured_data_present(self, tmp_path):
         """xlsx fixture 有表 → schema 字段非空。"""
         # 用 openpyxl 在 tmp_path 生成小 xlsx
@@ -411,7 +414,10 @@ class TestR11XlsxSchema:
 
 
 class TestR11DocxRevisions:
-    """v0.11.0/B5: DOCX w:ins/w:del 修订追踪。"""
+    """v0.11.0/B5: DOCX 修订追踪（w:ins/w:del）。"""
+
+    # v0.13.0: python-docx 在某些 venv 缺失 → importorskip 防 ERROR
+    docx = pytest.importorskip("docx")
 
     def test_docx_revisions_extracted(self, tmp_path):
         """构造带 w:ins / w:del 的 DOCX → parser 应抽到 revisions。"""
@@ -574,6 +580,9 @@ class TestR11EpubChapters:
 
 class TestR11PptxAnimations:
     """v0.11.0/B6: PPTX 动画顺序 + 讲者备注。"""
+
+    # v0.13.0: python-pptx 在某些 venv 缺失 → importorskip 防 ERROR
+    pptx = pytest.importorskip("pptx")
 
     @pytest.fixture
     def sample_pptx(self, tmp_path):

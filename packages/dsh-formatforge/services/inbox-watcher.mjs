@@ -27,9 +27,11 @@ export function inboxDir() {
   return join(ffHome(), 'inbox')
 }
 
-/** 支持的扩展名白名单（与 parsers 能力对齐的保守清单；未知扩展交给 CLI 报 unsupported_format）。 */
+/** 支持的扩展名白名单（与 parsers 能力对齐的保守清单；未知扩展交给 CLI 报 unsupported_format）。
+ *  v0.13.0/B2: 移除 .doc（无 Python doc 解析器，写 .ff.error.txt 是假阳性）
+ */
 const KNOWN_EXT = new Set([
-  '.pdf', '.docx', '.doc', '.pptx', '.xlsx', '.xlsm', '.csv', '.txt', '.md', '.markdown',
+  '.pdf', '.docx', '.pptx', '.xlsx', '.xlsm', '.csv', '.txt', '.md', '.markdown',
   '.rtf', '.odt', '.ods', '.odp', '.html', '.htm', '.xml', '.json', '.yaml', '.yml',
   '.toml', '.eml', '.msg', '.epub', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp',
   '.bmp', '.tiff', '.zip', '.7z', '.rar', '.srt', '.sql', '.latex', '.tex',

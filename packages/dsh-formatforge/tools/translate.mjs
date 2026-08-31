@@ -9,6 +9,7 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { runFormatForge, validateLocalFile, DEFAULT_TIMEOUT_MS } from '../services/python-runner.mjs'
+import { renderTruncate } from './_truncate.mjs'
 
 const OUTPUT_FORMATS = ['json', 'markdown', 'html', 'text']
 const CONVERSION_TYPES = ['auto', 'text', 'structured', 'table', 'image_desc', 'ocr']
@@ -52,14 +53,20 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
         // R3.1: 长 markdown/json 内容带 200 字头部预览，模型可先判断质量/相关性再决定翻页
         let preview = ''
         if (body.length > 2_000 && (data.format === 'markdown' || data.format === 'json')) {
-          preview = `\n\n[头部预览]\n${body.slice(0, 200)}…`
+          preview = `\n\n[头部预览]\n${renderTruncate(body, 200)}…`
         }
-        if (body.length > 20_000) body = body.slice(0, 20_000) + `\n…[render 截断，共 ${body.length} 字符]`
+        // C1/v0.13.0: 兜底截断走 renderTruncate（段落/行边界优先，避免切碎代码块/表格）
+        if (body.length > 20_000) {
+          const orig = body.length
+          body = renderTruncate(body, 20_000) + `\n…[render 截断，共 ${orig} 字符]`
+        }
         const enhance = data.enhance && data.enhance.needed
           ? `\n\n[enhance:${data.enhance.reason}] ${data.enhance.hint}`
           : ''
-        const pageNote = data.truncated
-          ? `\n\n[已按 max_chars 分页：本页到 offset=${(meta.next_offset ?? 0)}；继续读取请带 offset=${meta.next_offset}]`
+        // A1/v0.13.0: 分页提示统一读 paging.next_offset（与单文件路径一致；多文件路径已迁）
+        const nextOffset = data.paging?.next_offset ?? meta.next_offset
+        const pageNote = data.truncated && nextOffset !== undefined
+          ? `\n\n[已按 max_chars 分页：本页到 offset=${nextOffset}；继续读取请带 offset=${nextOffset}]`
           : ''
         return [{ type: 'text', text: `${head}\n\n${body}${preview}${enhance}${pageNote}` }]
       },
@@ -155,6 +162,7 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
           } else if (startOff > 0) {
             joined = joined.slice(startOff)
           }
+          // A1/v0.13.0: 分页字段统一到顶层 paging（与单文件 applyPaging 输出一致）
           const nextOffset = truncated ? Math.max(startOff + 1, joined.length + startOff + 1) : undefined
           return {
             ok: true,
@@ -166,10 +174,10 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
                 parser: 'multi',
                 file_count: targets.length,
                 total_chars: fullLen,
-                next_offset: truncated ? nextOffset : undefined,
                 elapsed_ms: 0,
               },
               truncated,
+              ...(truncated ? { paging: { next_offset: nextOffset, total: fullLen } } : {}),
             },
           }
         }

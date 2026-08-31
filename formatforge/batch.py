@@ -22,11 +22,10 @@ from typing import Any
 
 from core.errors import ErrorCode, exit_code_of
 
-#: 支持的输入扩展名（与 inbox watcher 白名单保持一致）
+#: 支持的输入扩展名（与 inbox watcher 白名单保持一致；v0.13.0/B2: 移除 .doc）
 KNOWN_EXT = {
     ".pdf",
     ".docx",
-    ".doc",
     ".pptx",
     ".xlsx",
     ".xlsm",
@@ -95,16 +94,32 @@ def _collect_targets(source: Path, recursive: bool) -> list[Path]:
 
 
 def _translate_one(
-    path: Path, out_dir: Path, to_format: str, conv_type: str, timeout_s: int, pages: str | None = None
+    path: Path,
+    out_dir: Path,
+    to_format: str,
+    conv_type: str,
+    timeout_s: int,
+    pages: str | None = None,
+    quality: bool = False,
+    encoding: str | None = None,
+    language: str | None = None,
 ) -> dict[str, Any]:
-    """转换单个文件，返回结果行。独立函数便于线程池与测试。"""
+    """转换单个文件，返回结果行。v0.13.0/A3: 透传 quality/encoding/language。"""
     from formatforge.__main__ import cmd_translate_main
 
     started = time.time()
     try:
-        content, meta = cmd_translate_main(path, to_format, conv_type, timeout_s, pages)
+        content, meta, enhance = cmd_translate_main(
+            path, to_format, conv_type, timeout_s, pages, quality, encoding, language
+        )
     except Exception as e:  # 单文件失败不拖垮整批
-        return {"file": str(path), "ok": False, "kind": "parse_failed", "message": str(e), "elapsed_ms": 0}
+        return {
+            "file": str(path),
+            "ok": False,
+            "kind": "parse_failed",
+            "message": str(e),
+            "elapsed_ms": 0,
+        }
 
     elapsed = int((time.time() - started) * 1000)
     # 产物命名：<stem>.<to_format>（markdown→.md）；源已是目标扩展名时不重复后缀
@@ -113,7 +128,7 @@ def _translate_one(
     stem = path.stem if path.suffix.lower() == out_ext else path.stem
     out_path = out_dir / f"{stem}{out_ext}"
     out_path.write_text(content, encoding="utf-8")
-    return {
+    row: dict[str, Any] = {
         "file": str(path),
         "ok": True,
         "out": str(out_path),
@@ -122,6 +137,10 @@ def _translate_one(
         "chars": len(content),
         "elapsed_ms": elapsed,
     }
+    # A3: 把 enhance 透传到结果行（让 batch 报告/产物消费者能感知增强提示）
+    if enhance:
+        row["enhance"] = enhance
+    return row
 
 
 def cmd_batch(args: argparse.Namespace) -> int:
@@ -189,9 +208,24 @@ def cmd_batch(args: argparse.Namespace) -> int:
             pending.append(t)
 
     results: list[dict[str, Any]] = []
+    # v0.13.0/A3: 透传 quality/encoding/language 给每个文件
+    batch_quality = bool(getattr(args, "quality", False))
+    batch_encoding = getattr(args, "encoding", None)
+    batch_language = getattr(args, "language", None)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_translate_one, t, out_dir, args.format, conv_type, settings.FF_TIMEOUT_S, args.pages): t
+            pool.submit(
+                _translate_one,
+                t,
+                out_dir,
+                args.format,
+                conv_type,
+                settings.FF_TIMEOUT_S,
+                args.pages,
+                batch_quality,
+                batch_encoding,
+                batch_language,
+            ): t
             for t in pending
         }
         for fut in as_completed(futures):
