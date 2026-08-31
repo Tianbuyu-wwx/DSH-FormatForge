@@ -117,8 +117,30 @@ def step_smoke() -> int:
 
 
 def step_npm_publish() -> int:
+    """npm publish（v0.13.0 hotfix 后修）。
+
+    根因记录：npm 是 Windows 批处理（.CMD），`subprocess.run(["npm", ...])`
+    不带 shell 时 Windows CreateProcess 找不到 npm.exe（WinError 2）。
+    改用 shutil.which() 拿绝对路径，自动适配 PATH，无需 shell=True。
+
+    设计：先用 `npm --version` subprocess 探活，确认通了再真 publish。
+    npm 服务端对重复 publish 会拒（403），失败时给清晰提示。
+    """
     pkg_dir = REPO / "packages" / "dsh-formatforge"
-    return run(["npm", "publish", "--access", "public"], cwd=pkg_dir, timeout=180)
+    npm_path = shutil.which("npm")
+    if not npm_path:
+        print(
+            "[FAIL] 找不到 npm（PATH 未设或 npm 未安装）。\n"
+            "       dev.py --publish 需 npm 登录态 + PATH 含 npm。\n"
+            "       退而求其次：在 packages/dsh-formatforge/ 目录手动跑 `npm publish`。"
+        )
+        return 1
+    # 探活：subprocess 真能解析 npm（之前 WinError 2 的根因）
+    rc_probe = run([npm_path, "--version"], cwd=pkg_dir, timeout=30)
+    if rc_probe != 0:
+        print(f"\n[FAIL] npm --version subprocess 探活失败（rc={rc_probe}），中止 publish")
+        return rc_probe
+    return run([npm_path, "publish", "--access", "public"], cwd=pkg_dir, timeout=180)
 
 
 def main() -> int:
