@@ -84,7 +84,10 @@ def build_parse_response_data(result_data: ConvertResultData) -> dict[str, Any]:
 
 
 def smart_truncate(text: str, max_chars: int, start: int = 0) -> tuple[str, int | None]:
-    """结构化截断（EVOLUTION_PLAN E1）：优先段落边界 > 行边界 > 硬切。
+    """结构化截断（EVOLUTION_PLAN E1）。
+
+    v0.14.0/B-P1-7: 优先级 --- 多文件分隔符 > 段落 > 行 > 硬切。
+    --- 分隔符（translate.mjs 多文件拼接）保护不被切在文件标题中间。
 
     返回 (chunk, next_offset)；next_offset 为 None 表示已到末尾。
     保证不把表格行/列表项从中间切断（除非单行超长才硬切）。
@@ -96,20 +99,24 @@ def smart_truncate(text: str, max_chars: int, start: int = 0) -> tuple[str, int 
         return text[start:], None
 
     window = text[start:window_end]
-    # 1) 段落边界（\n\n）——找窗口内最后一个；切点落在段落分隔符之后
-    cut = window.rfind("\n\n")
-    # 2) 行边界——整行切割保证表格行/列表项完整性
-    if cut < max_chars // 2:
-        cut = window.rfind("\n")
+    # v0.14.0/B-P1-7: --- 多文件分隔符为最强边界——找到就用，不应用 cap/2 阈值；
+    # 多文件场景下 --- 经常出现在 cap/2 之前，回退到段落会把下一个文件标题切断。
+    cut = window.rfind("\n\n---\n\n")
+    if cut < 0:
+        # 没找到 --- 分隔符 → 走原有逻辑：段落 > 行 > 硬切
+        cut = window.rfind("\n\n")
+        if cut < max_chars // 2:
+            cut = window.rfind("\n")
     if cut <= 0:
-        # 单行超长：硬切
         chunk = window
         nxt = start + window_end
     else:
         chunk = window[:cut]
-        nxt = start + cut + 1  # 跳过切掉的换行符
-        # 段落切割时把第二个换行也消费掉，下一页从新段落首字符开始
-        if nxt < len(text) and text[nxt] == "\n":
+        nxt = start + cut + 1
+        # --- 分隔符含 7 个换行（\n\n---\n\n）→ 跳过整个分隔符
+        if text.startswith("\n\n---\n\n", start + cut):
+            nxt = start + cut + 7
+        elif nxt < len(text) and text[nxt] == "\n":
             nxt += 1
     next_offset: int | None = nxt if nxt < len(text) else None
     return chunk, next_offset

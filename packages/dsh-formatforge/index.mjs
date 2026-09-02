@@ -104,7 +104,9 @@ export function apply(ctx) {
       log,
       onDone: (result) => {
         try {
-          notifier.broadcast(ctx, notifier.buildNotice(result))
+          const text = notifier.buildNotice(result)
+          // v0.14.0/B-P1-3: buildNotice 内部对 retention 通知降噪（只 log 返回 ''）
+          if (text) notifier.broadcast(ctx, text)
         } catch (e) {
           log(`[dsh-formatforge] notify failed: ${(e && e.message) || e}`)
         }

@@ -68,12 +68,12 @@ export function makeNotifier({ log = () => {} } = {}) {
 
   /** Build the standard one-liner for a finished conversion. */
   function buildNotice(result) {
-    // E5: retention 清理通知（批量合并为一条）
+    // v0.14.0/B-P1-3: retention 清理通知降噪——只 log 不广播
+    // 原因：retention 每 7 天 / 容量阈值触发一次清理（FF_INBOX_TTL_DAYS / FF_INBOX_MAX_MB），
+    // 广播会惊扰所有 live session；保留 log 让运维可见，避免用户被打扰。
     if (result.retention) {
-      return (
-        `[FormatForge] 收件箱清理：已按 TTL/容量策略移除 ${result.count} 个过期文件` +
-        `（FF_INBOX_TTL_DAYS / FF_INBOX_MAX_MB 可配）。`
-      )
+      log(`[ff-notify] retention cleanup: ${result.count} file(s) removed (silent)`)
+      return ''
     }
     if (result.ok) {
       const enh = result.enhanceReason ? `；⚠ enhance=${result.enhanceReason}` : ''

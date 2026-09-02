@@ -13,7 +13,8 @@
 
 import { join, basename, extname } from 'node:path'
 import { homedir } from 'node:os'
-import { readdirSync, statSync, existsSync, writeFileSync, unlinkSync } from 'node:fs'
+import { readdirSync, statSync, existsSync, writeFileSync, unlinkSync, readFileSync, appendFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { runFormatForge } from './python-runner.mjs'
 
 const SCAN_INTERVAL_MS = 2_000
@@ -238,13 +239,43 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
     }
     if (doomed.size === 0) return
 
+    // v0.14.0/B-P1-4: TTL 删除前发预览——记录到 .ff.retired.log（含 sha256/path/size/mtime）
+    // 目的：用户清理后能找回历史产物 hash；运维也能审计清理动作。
+    const retiredLogPath = join(inbox, '.ff.retired.log')
+    const retiredEntries = []
     const removed = []
     for (const name of doomed) {
       try {
-        unlinkSync(join(inbox, name))
+        const full = join(inbox, name)
+        // 读取前几 KB 计算 sha256（限制 64KB 避免对大文件做完整 hash）
+        const stat = statSync(full)
+        const sample = readFileSync(full).slice(0, 65536)
+        const hash = createHash('sha256').update(sample).digest('hex')
+        const entry = {
+          ts: new Date().toISOString(),
+          name,
+          path: full,
+          size: stat.size,
+          mtime_iso: new Date(stat.mtimeMs).toISOString(),
+          sha256: hash,
+          hash_note: sample.length < stat.size ? 'first 64KB only' : 'full content',
+        }
+        retiredEntries.push(entry)
+        unlinkSync(full)
         removed.push(name)
         doneAt.delete(name)
       } catch { /* 已被并发删除等场景 */ }
+    }
+
+    // 写 .ff.retired.log（append，避免覆盖历史清理记录）
+    if (retiredEntries.length > 0) {
+      try {
+        const lines = retiredEntries.map((e) => JSON.stringify(e)).join('\n') + '\n'
+        appendFileSync(retiredLogPath, lines, 'utf-8')
+        log(`[ff-inbox] retention: wrote ${retiredEntries.length} entry(s) to .ff.retired.log`)
+      } catch (e) {
+        log(`[ff-inbox] retention: failed to write .ff.retired.log: ${e.message}`)
+      }
     }
     if (removed.length > 0) {
       log(`[ff-inbox] retention: removed ${removed.length} file(s)`)
