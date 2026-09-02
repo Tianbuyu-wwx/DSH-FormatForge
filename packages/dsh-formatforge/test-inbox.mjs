@@ -73,5 +73,28 @@ await new Promise((r) => setTimeout(r, 4000))
 w2.stop()
 console.log('after restart, no re-processing:', events.filter((e) => e.file === 'sample.txt').length === 1)
 
+// 场景5（v0.14.0/B-P1-3）：retention 清理通知降噪
+// 预期：retention=true 的事件 → broadcast 收到空文本（notify.broadcast 跳过），
+// 而 onDone 回调仍然被 inbox-watcher 触发（行为不丢，仅日志层面降噪）。
+const { makeNotifier } = await import('./services/notify.mjs')
+const capturedTexts = []
+const fakeCtx = {
+  sessions: {
+    get: (id) => ({
+      append: (type, msg, opts) => {
+        if (type === 'user/message' && msg?.content?.[0]?.text) {
+          capturedTexts.push(msg.content[0].text)
+        }
+      },
+    }),
+  },
+  agents: { list: () => [{ id: 'session-A' }] },
+}
+const notifier = makeNotifier({ log: () => {} })
+notifier.broadcast(fakeCtx, notifier.buildNotice({ retention: true, count: 5 }))
+notifier.broadcast(fakeCtx, notifier.buildNotice({ ok: true, file: 'r.txt', parser: 'txt', confidence: 0.9 }))
+console.log('retention broadcast captured:', capturedTexts.filter((t) => t.includes('收件箱清理')).length, '(expect 0)')
+console.log('normal conversion broadcast captured:', capturedTexts.filter((t) => t.includes('已锻好')).length, '(expect 1)')
+
 rmSync(testHome, { recursive: true, force: true })
 console.log('INBOX-E2E-DONE')
