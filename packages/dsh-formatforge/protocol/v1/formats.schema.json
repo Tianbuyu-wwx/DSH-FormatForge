@@ -1,0 +1,31 @@
+{
+  "ok": "<bool>",
+  "code": "<int>",
+  "data": {
+    "formats": [
+      "<string>",
+      "...(34 items)"
+    ],
+    "count": "<int>",
+    "category": "<string>",
+    "categories": [
+      "<string>",
+      "...(6 items)"
+    ],
+    "output_formats": [
+      "<string>",
+      "...(4 items)"
+    ],
+    "conversion_types": [
+      "<string>",
+      "...(6 items)"
+    ],
+    "details": [
+      {
+        "format": "<string>",
+        "capabilities": []
+      },
+      "...(29 items)"
+    ]
+  }
+}

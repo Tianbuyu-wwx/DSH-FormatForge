@@ -1,0 +1,43 @@
+{
+  "ok": "<bool>",
+  "code": "<int>",
+  "data": {
+    "content": "<string>",
+    "format": "<string>",
+    "meta": {
+      "parser": "<string>",
+      "file_size": "<int>",
+      "result_id": "<string>",
+      "confidence": "<float>",
+      "elapsed_ms": "<int>",
+      "quality_auto": "<bool>"
+    },
+    "structured_data": {
+      "pages": "<int>",
+      "total_chars": "<int>",
+      "conversion_decision": {
+        "input_format": "<string>",
+        "conversion_needed": "<bool>",
+        "target_format": "<string>",
+        "strategies": [
+          "<string>"
+        ],
+        "preserve_original": "<bool>"
+      }
+    },
+    "quality": {
+      "overall_score": "<float>",
+      "grade": "<string>",
+      "scores": {
+        "text_coverage": "<float>",
+        "encoding_confidence": "<float>",
+        "structure_preservation": "<float>",
+        "table_accuracy": "<float>",
+        "content_completeness": "<float>"
+      },
+      "warnings": [],
+      "suggestions": [],
+      "actions": []
+    }
+  }
+}

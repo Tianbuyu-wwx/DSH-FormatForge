@@ -3,10 +3,13 @@
 **把任意文件拖进 DeepSeek Harness，立刻变成 AI 能读懂的数据。**
 
 [![Version](https://img.shields.io/npm/v/@tianbuyu-wwx/dsh-formatforge)](https://www.npmjs.com/package/@tianbuyu-wwx/dsh-formatforge)
+[![Status](https://img.shields.io/badge/status-production--ready-brightgreen)](https://github.com/Tianbuyu-wwx/DSH-FormatForge/releases)
 [![CI](https://github.com/Tianbuyu-wwx/DSH-FormatForge/actions/workflows/ci.yml/badge.svg)](https://github.com/Tianbuyu-wwx/DSH-FormatForge/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://python.org)
 [![Node](https://img.shields.io/badge/Node-22%2B-green)](https://nodejs.org)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+
+> **v1.0 production-ready**（2026-09）：协议冻结（`packages/dsh-formatforge/protocol/v1/`），向后兼容承诺启用。
 
 DSH-FormatForge 是一个 [DeepSeek Harness](https://github.com/deepseek-ai) 插件：把 PDF、DOCX、PPTX、XLSX、EML、EPUB、TOML 等 **30+ 种格式**锻造成 AI 模型可直接消化的结构化文本——直接**拖进 dsh 网页**，或在对话里粘贴文件路径。
 

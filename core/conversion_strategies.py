@@ -972,7 +972,11 @@ class StrategyRegistry:
         self._register_default_strategies()
 
     def _register_default_strategies(self):
-        """注册默认策略"""
+        """注册默认策略
+
+        v1.0/C: 移除 MediaIndexStrategy —— 无人调用、无法通过 select_best_strategy 自动选中、
+        未被 CLI conversion_type 枚举引用。代码保留为 deprecated reference（v2.0 删除）。
+        """
         strategies = [
             AutoDetectStrategy(),
             TextExtractionStrategy(),
@@ -980,7 +984,7 @@ class StrategyRegistry:
             TableExtractionStrategy(),
             ImageDescriptionStrategy(),
             OcrStrategy(),
-            MediaIndexStrategy(),
+            # MediaIndexStrategy() — deprecated, v1.0/C 不再注册
         ]
         for s in strategies:
             self._strategies[s.strategy_id] = s

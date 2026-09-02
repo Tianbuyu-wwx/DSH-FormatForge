@@ -405,12 +405,15 @@ class TestStrategyRegistry:
         assert strategy is None
 
     def test_get_all_strategies(self):
+        """v1.0/C: MediaIndexStrategy 已从注册表移除（dead code），现 6 个策略。"""
         strategies = self.registry.get_all_strategies()
-        assert len(strategies) == 7
+        assert len(strategies) == 6
         strategy_ids = [s.strategy_id for s in strategies]
         assert "auto_detect" in strategy_ids
         assert "text_extraction" in strategy_ids
         assert "table_extraction" in strategy_ids
+        # v1.0/C: media_index 不再在注册表中
+        assert "media_index" not in strategy_ids
 
     def test_select_best_strategy_auto(self):
         parsed = TestFixtures.create_parsed_file(

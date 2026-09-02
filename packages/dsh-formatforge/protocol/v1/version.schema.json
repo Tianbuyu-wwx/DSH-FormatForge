@@ -1,0 +1,8 @@
+{
+  "ok": "<bool>",
+  "code": "<int>",
+  "data": {
+    "name": "<string>",
+    "version": "<string>"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "note": "v1.0 错误码冻结——新增只能 append，已有的不能改语义",
+  "exit_codes": {
+    "file_not_found": 2,
+    "is_directory": 2,
+    "permission_denied": 2,
+    "unsupported_format": 3,
+    "parse_failed": 4,
+    "timeout": 5,
+    "too_large": 6,
+    "bad_request": 7,
+    "internal": 70
+  },
+  "messages_template": {
+    "file_not_found": "文件不存在 / file not found: {detail}",
+    "is_directory": "路径是目录而非文件 / path is a directory: {detail}",
+    "too_large": "文件超出大小上限 / file exceeds size limit: {detail}",
+    "unsupported_format": "不支持的格式 / unsupported format: {detail}",
+    "parse_failed": "解析失败 / parse failed: {detail}",
+    "timeout": "转换超时 / conversion timed out: {detail}",
+    "permission_denied": "无访问权限 / permission denied: {detail}",
+    "bad_request": "参数错误 / bad request: {detail}",
+    "internal": "内部错误 / internal error: {detail}"
+  }
+}
