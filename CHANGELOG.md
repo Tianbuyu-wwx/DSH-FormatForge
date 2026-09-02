@@ -7,6 +7,43 @@
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-31 — 窗 B 全收口（v1.0 stable 前最后一站）
+
+> 基线：v0.13.0（538 测试）→ v0.14.0 stable（566 测试，+28）
+> 主题：完成 v0.14.0 计划全部 7 项（2 项 P0 + 5 项 P1）。v1.0 stable 直接复用此代码 + 窗 C 协议冻结。
+
+### Added
+
+- **B-P0-1 `ff_formats` 能力元数据**：每个 format 自带 `capabilities` 列表（自动扫描 parser 代码真实方法名）
+- **B-P0-2 `ff_diff` 增量模式**：`--against-dir <dir>` + `--since-mtime <ts>`，共享 `_compute_diff`
+- **B-P1-3 retention 通知降噪**：retention 清理只 log 不广播，避免惊扰 live session
+- **B-P1-4 TTL 删除前 `.ff.retired.log`**：sha256(path) + ts + size 审计轨迹
+- **B-P1-5 质量评分按 file_type 动态调权重**：纯文本 table_accuracy 归零；表格 table_accuracy 提高
+- **B-P1-6 OCR enhance 漏判修复**：OCR 后纯图片 PDF，OCR confidence < 0.6 触发 `ocr_low_confidence`
+- **B-P1-7 多文件 markdown `---` 分隔符保护**：截断优先级提升到最强边界，JS+Python 双端同步
+- 跨语言一致性测试 `test-truncate-consistency.mjs` 11 case（保证 JS/Python smartTruncate byte-equal）
+
+### Changed
+
+- `cli/formatforge diff` 顺序变更 `path_b path_a`（argparse 限制）
+- `_resolve_paths` 容错旧顺序
+- `QualityReport.analyze` 现在记 `file_type` → `overall_score` 按 file_type 调权
+
+### Removed
+
+- **MediaIndexStrategy 从策略注册表移除**（v1.0/C 清理 dead code）：无人调用、auto_detect 不选它、CLI conversion_type 枚举不引用；class 保留供 v2.0 删
+
+### Notes
+
+- v0.14.0 RC（v0.14.0-rc.1）已发布但不进 npm latest——本 stable 才进 npm latest
+- 协议冻结（v1.0/C）由 PR #9 完成
+- npm 上 `latest: 0.14.0` 发布后，旧 0.13.0 仍可访问但不再推荐
+
+### Tests
+- 538 → **566 passed**（+28：B-P0-1 11 + B-P0-2 6 + B-P1-3/4 各 1 + B-P1-5 4 + B-P1-6 5 + B-P1-7 4）
+- ruff ✓ / format ✓ / mypy ✓
+- Node `test-local.mjs` / `test-inbox.mjs` / `test-manifest.mjs` / `test-truncate-consistency.mjs` 全过
+
 ## [0.14.0-rc.1] - 2026-08-31 — RC 候选（v1.0 前第二批 P0）
 
 > 基线：v0.13.0（538 测试） → v0.14.0-rc.1（555 测试，+17）

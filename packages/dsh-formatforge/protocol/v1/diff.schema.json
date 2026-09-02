@@ -1,0 +1,19 @@
+{
+  "ok": "<bool>",
+  "code": "<int>",
+  "data": {
+    "path_a": "<string>",
+    "path_b": "<string>",
+    "format": "<string>",
+    "lines_a": "<int>",
+    "lines_b": "<int>",
+    "additions": "<int>",
+    "deletions": "<int>",
+    "unchanged_count": "<int>",
+    "similarity": "<float>",
+    "diff_preview": "<string>",
+    "truncated": "<bool>",
+    "max_chars": "<int>",
+    "diff_total_chars": "<int>"
+  }
+}

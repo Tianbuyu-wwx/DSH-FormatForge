@@ -1,0 +1,24 @@
+{
+  "ok": "<bool>",
+  "code": "<int>",
+  "total": "<int>",
+  "ok_count": "<int>",
+  "failed": "<int>",
+  "skipped": "<int>",
+  "avg_confidence": "<float>",
+  "elapsed_ms": "<int>",
+  "out_dir": "<string>",
+  "results": [
+    {
+      "file": "<string>",
+      "ok": "<bool>",
+      "out": "<string>",
+      "parser": "<string>",
+      "confidence": "<float>",
+      "chars": "<int>",
+      "elapsed_ms": "<int>"
+    },
+    "...(2 items)"
+  ],
+  "failures": []
+}
