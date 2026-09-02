@@ -20,11 +20,17 @@ export function createDiffTool({ repoRoot, maxBytes, timeoutMs, log = () => {} }
       '对比两份文件的内容差异（合同/法规/脚本版本对照）。' +
       '返回 additions/deletions/unchanged_count + unified diff 预览。',
     parameters: {
-      path_a: { type: 'string', description: '文件 A 路径（旧版本）。' },
+      path_a: { type: 'string', description: '文件 A 路径（旧版本；增量模式下可选）。' },
       path_b: { type: 'string', description: '文件 B 路径（新版本）。' },
       format: { type: 'string', enum: OUTPUT_FORMATS, default: 'text', description: '中间转换格式。' },
       context_lines: { type: 'integer', default: 3, description: 'diff 上下文行数。' },
       max_chars: { type: 'integer', default: 12000, description: 'diff 文本截断上限。' },
+      // v0.14.0/B-P0-2: 增量模式
+      against_dir: { type: 'string', description: '与 dir 内同 stem 文件做 diff（path_a 可省）。' },
+      since_mtime: {
+        type: 'number',
+        description: '仅处理 mtime >= 此 Unix timestamp 的 path_b（增量过滤）。',
+      },
     },
     output: {
       schema: {
@@ -54,15 +60,18 @@ export function createDiffTool({ repoRoot, maxBytes, timeoutMs, log = () => {} }
       },
     },
     async execute(args) {
-      if (!args.path_a || !args.path_b) {
+      if (!args.path_b) {
         return {
           ok: false,
           code: 4001,
-          error: { kind: 'bad_request', message: 'path_a 与 path_b 必填' },
+          error: { kind: 'bad_request', message: 'path_b 必填' },
         }
       }
       // B1/v0.13.0: size clamp 复用 ff_translate 的 validateLocalFile（防 OOM 大文件）
-      for (const p of [args.path_a, args.path_b]) {
+      // v0.14.0/B-P0-2: 增量模式下 path_a 可省
+      const pathsToCheck = [args.path_b]
+      if (args.path_a) pathsToCheck.push(args.path_a)
+      for (const p of pathsToCheck) {
         const check = validateLocalFile(p, maxBytes)
         if (!check.ok) {
           return { ok: false, code: -1, error: { kind: 'too_large', message: check.reason } }
@@ -71,16 +80,16 @@ export function createDiffTool({ repoRoot, maxBytes, timeoutMs, log = () => {} }
       const contextLines = Math.max(0, Math.min(20, Number(args.context_lines) || 3))
       const maxChars = Math.max(500, Number(args.max_chars) || 12000)
 
-      log(`[ff_diff] A=${args.path_a} B=${args.path_b} context=${contextLines} maxChars=${maxChars}`)
+      log(`[ff_diff] A=${args.path_a || '(auto)'} B=${args.path_b} against_dir=${args.against_dir || '-'} since_mtime=${args.since_mtime ?? '-'} context=${contextLines} maxChars=${maxChars}`)
+      // v0.14.0/B-P0-2: path_b 变 optional（argparse 限制），CLI 端也允许省略
+      // 顺序：path_b path_a（argparse 中 path_b 在前，因 path_a 是 optional + 中间夹 option 会失败——见 Python CLI 注册注释）
+      const cliArgs = ['diff', String(args.path_b || ''), args.path_a ? String(args.path_a) : '', '--format', args.format || 'text', '--context', String(contextLines), '--max-chars', String(maxChars)]
+      if (args.against_dir) cliArgs.push('--against-dir', String(args.against_dir))
+      if (args.since_mtime !== undefined && args.since_mtime !== null) {
+        cliArgs.push('--since-mtime', String(args.since_mtime))
+      }
       const res = await runFormatForge({
-        cliArgs: [
-          'diff',
-          String(args.path_a),
-          String(args.path_b),
-          '--format', args.format || 'text',
-          '--context', String(contextLines),
-          '--max-chars', String(maxChars),
-        ],
+        cliArgs,
         repoRoot,
         timeoutMs,
         log,

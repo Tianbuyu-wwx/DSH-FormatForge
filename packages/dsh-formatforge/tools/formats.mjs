@@ -43,6 +43,16 @@ export function createFormatsTool({ repoRoot, log }) {
         if (d.categories && d.categories.length) {
           lines.push(`可用分类: ${d.categories.join(', ')}`)
         }
+        // v0.14.0/B-P0-1: 能力元数据（让会话模型按 capability 选择 format）
+        if (Array.isArray(d.details) && d.details.length) {
+          const withCaps = d.details
+            .filter((x) => Array.isArray(x.capabilities) && x.capabilities.length > 0)
+            .map((x) => `${x.format}=[${x.capabilities.join(',')}]`)
+            .join(' ')
+          if (withCaps) {
+            lines.push(`能力元数据: ${withCaps}`)
+          }
+        }
         return [{ type: 'text', text: lines.join('\n') }]
       },
     },

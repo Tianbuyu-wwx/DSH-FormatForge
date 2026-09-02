@@ -7,6 +7,42 @@
 
 ## [Unreleased]
 
+## [0.14.0-rc.1] - 2026-08-31 — RC 候选（v1.0 前第二批 P0）
+
+> 基线：v0.13.0（538 测试） → v0.14.0-rc.1（555 测试，+17）
+> 主题：**会话模型发现能力 + diff 增量模式**。为 P1 五项做铺垫，本 RC 仅含 2 项 P0；完整 v0.14.0 等下个工作窗合并 P1 后再发 stable。
+
+### Added
+- **B-P0-1 `ff_formats` 能力元数据**：每个 format 自带 `capabilities` 列表（机器可读），让会话模型按能力选择 format：
+  - `pdf` → `[furniture_strip, ocr, table, two_column]`
+  - `pptx` → `[animation_order, speaker_notes, table]`
+  - `epub` → `[chapter_split]`
+  - `xlsx` → `[multi_sheet]`
+  - `odt/ods/odp` → `[table]`
+  - 数据来源：自动扫描 `parsers/*.py` 类真实方法名（`_extract_animations`/`_parse_ncx`/`_extract_table`/...），不依赖静态字典——自动反映 parser 代码真实能力
+  - 新模块 `core/format_capabilities.py`
+- **B-P0-2 `ff_diff` 增量模式**：
+  - 新参数 `--against-dir <dir>`：与 dir 内同 stem 文件做 diff（path_a 可省，自动从 dir 找）
+  - 新参数 `--since-mtime <ts>`：仅处理 path_b mtime >= 此 Unix timestamp 的文件
+  - 抽出 `_compute_diff` 共享函数（单文件模式 + 增量模式都用）
+- 新单测 `test/unit/test_format_capabilities.py` 11 项（probe 注册 + build_format_details + capability 检测）
+- 新单测 `TestR14DiffIncremental` 6 项（against_dir stem 匹配 / 显式 path_a 优先 / 缺 stem 报错 / since-mtime 过滤 / 类型校验 / 0 等价不过滤）
+
+### Changed
+- **CLI 顺序变更**：`formatforge diff` 现在 `path_b path_a`（argparse 限制：optional+required positional+中间 option 会失败）
+- `_resolve_paths` 容错：JS 端或测试传反顺序时自动检测并互换（path_a 是文件 path_b 不是 → 互换）
+- CLI 注册注释解释 argparse 限制 + 共享 `_compute_diff` 抽出
+- SKILL.md `ff_formats` 条目加 capabilities 字段说明
+
+### Notes
+- **本 RC 仅含 2 项 P0**，未含完整 v0.14.0 计划的所有 5 项 P1（retention 降噪 / TTL 预览 / 动态权重 / OCR 漏判 / markdown 分段优先）——下个工作窗继续
+- npm 上**不发布 0.14.0-rc.1**（RC 标签会让 npm dist-tag 混乱）；只走 PR + GitHub Release，不打 npm。完整 v0.14.0 stable 才上 npm
+
+### Tests
+- 538 → **555 passed**（+17：B-P0-1 11 项 + B-P0-2 6 项）
+- ruff ✓ · format ✓ · mypy ✓（49 source files 0 issues）
+- Node `test-local.mjs` / `test-inbox.mjs` / `test-manifest.mjs` / `test-truncate-consistency.mjs` 全过
+
 ## [0.13.0] - 2026-08-31 — 封口批（v1.0 前 P0/P1 修复）
 
 > 基线：v0.12.0（537 测试） → v0.13.0（538 测试）
