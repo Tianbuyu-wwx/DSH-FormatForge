@@ -21,6 +21,8 @@ class QualityReport:
         self.suggestions: list[str] = []
         self.actions: list[dict[str, Any]] = []
         self._last_parsed_file: Any = None
+        # v0.14.0/B-P1-5: 记录 file_type 以便 overall_score 动态调权
+        self._last_file_type: str = "unknown"
 
     # ==================== 评分维度 ====================
 
@@ -271,6 +273,8 @@ class QualityReport:
         self.suggestions = []
         self.actions = []
         self._last_parsed_file = parsed_file
+        # v0.14.0/B-P1-5: 记录 file_type
+        self._last_file_type = file_type
 
         self.scores["text_coverage"] = self._score_text_coverage(content, file_size, file_type)
         self.scores["encoding_confidence"] = self._score_encoding_confidence(content)
@@ -335,11 +339,17 @@ class QualityReport:
 
     @property
     def overall_score(self) -> float:
-        """综合质量评分 0-100"""
+        """综合质量评分 0-100
+
+        v0.14.0/B-P1-5: 按 file_type 动态调权重。
+        - 纯文本格式（txt/md/json/yaml/...）：table_accuracy 归零（无表格意义）
+        - 表格/数据格式（csv/xlsx/...）：structure_preservation 权降低，table_accuracy 权提高
+        - 其他格式（pdf/docx/pptx/...）：用默认权重
+        """
         if not self.scores:
             return 0.0
 
-        # 权重：text_coverage 15%, encoding 25%, structure 25%, table 15%, completeness 20%
+        # 默认权重（v0.13.0 行为）
         weights = {
             "text_coverage": 0.15,
             "encoding_confidence": 0.25,
@@ -347,6 +357,21 @@ class QualityReport:
             "table_accuracy": 0.15,
             "content_completeness": 0.20,
         }
+        # v0.14.0/B-P1-5: 按 file_type 调权
+        ft = (self._last_file_type or "unknown").lower()
+        # 纯文本/数据格式：table_accuracy 权归零（csv/xlsx/ods 是表格，单独处理）
+        if ft in {"txt", "md", "markdown", "json", "yaml", "yml", "xml", "toml",
+                  "html", "tsv", "sql", "srt", "vtt", "latex", "tex", "log"}:
+            weights["table_accuracy"] = 0.0
+        # 表格格式：table_accuracy 权提高，structure 权降低
+        elif ft in {"csv", "xlsx", "xls", "ods"}:
+            weights["table_accuracy"] = 0.35
+            weights["structure_preservation"] = 0.10
+            weights["content_completeness"] = 0.10
+        # 演示/视觉格式：structure 权提高
+        elif ft in {"pptx", "ppt"}:
+            weights["structure_preservation"] = 0.35
+            weights["content_completeness"] = 0.20
 
         total = 0.0
         total_weight = 0.0
