@@ -306,6 +306,19 @@ def cmd_formats(args: argparse.Namespace) -> int:
                 f"未知 category={requested}；合法值：document/data/email/image/archive/audio",
             )
 
+    # v0.14.0/B-P0-1: 每个 format 的能力元数据（机器可读，让会话模型决定何时用哪个）
+    details: list[dict[str, Any]] = []
+    try:
+        from core.file_parser import FileParser
+        from core.format_capabilities import build_format_details
+
+        # FileParser 初始化时会注册所有 parser；upload_dir 在 build_format_details 不需要
+        fp = FileParser(upload_dir=Path("./uploads"))
+        details = build_format_details(fp.registry)
+    except Exception as cap_err:
+        # capability 元数据是 best-effort；不影响 formats 列表返回
+        logger.warning("[B-P0-1] format capabilities 探测失败: %s", cap_err)
+
     _emit(
         {
             "ok": True,
@@ -317,6 +330,7 @@ def cmd_formats(args: argparse.Namespace) -> int:
                 "categories": sorted(set(category_map.values())),
                 "output_formats": ["json", "markdown", "html", "text"],
                 "conversion_types": ["auto", "text", "structured", "table", "image_desc", "ocr"],
+                "details": details,  # v0.14.0/B-P0-1: [{format, capabilities}, ...]
             },
         }
     )

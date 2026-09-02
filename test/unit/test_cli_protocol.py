@@ -719,3 +719,127 @@ class TestR12Diff:
         assert payload["data"]["additions"] == 0
         assert payload["data"]["deletions"] == 0
         assert code == 0
+
+
+class TestR14DiffIncremental:
+    """v0.14.0/B-P0-2: diff 增量模式（--against-dir / --since-mtime）。"""
+
+    def test_against_dir_finds_matching_stem(self, tmp_path):
+        """--against-dir + path_b：dir 内自动找 stem 匹配的 path_a。"""
+        old_dir = tmp_path / "old"
+        old_dir.mkdir()
+        (old_dir / "report.txt").write_text("line1\nline2-old\nline3\n", encoding="utf-8")
+
+        new_path = tmp_path / "report.txt"
+        new_path.write_text("line1\nline2-new\nline3\n", encoding="utf-8")
+
+        # CLI 顺序：path_b 在前，path_a 在后（argparse 限制：optional + required positional + 中间 option）
+        payload, code = run_cli(
+            "diff", str(new_path), "--against-dir", str(old_dir), "--format", "text"
+        )
+        assert payload["ok"] is True, payload
+        assert payload["data"]["mode"] == "against_dir"
+        assert payload["data"]["against_dir"] == str(old_dir)
+        # line2 改了一行 → 1 增 1 删
+        assert payload["data"]["additions"] == 1
+        assert payload["data"]["deletions"] == 1
+        assert "line2-old" in payload["data"]["diff_preview"]
+        assert "line2-new" in payload["data"]["diff_preview"]
+        assert code == 0
+
+    def test_against_dir_explicit_path_a_wins(self, tmp_path):
+        """--against-dir + 显式 path_a：以 path_a 为准，不走 stem 匹配。"""
+        old_dir = tmp_path / "old"
+        old_dir.mkdir()
+        # 在 dir 里放一个干扰文件（同 stem 但内容不同）—— 显式 path_a 应优先
+        (old_dir / "report.txt").write_text("IGNORE_ME\n", encoding="utf-8")
+        real_old = tmp_path / "real_old.txt"
+        real_old.write_text("real-old\n", encoding="utf-8")
+
+        new_path = tmp_path / "report.txt"
+        new_path.write_text("real-new\n", encoding="utf-8")
+
+        # 顺序：path_b path_a + --against-dir
+        payload, code = run_cli(
+            "diff", str(new_path), str(real_old), "--against-dir", str(old_dir)
+        )
+        assert payload["ok"] is True, payload
+        assert payload["data"]["path_a"] == str(real_old)
+        assert payload["data"]["additions"] == 1
+        assert "IGNORE_ME" not in payload["data"]["diff_preview"]
+        assert code == 0
+
+    def test_against_dir_missing_stem(self, tmp_path):
+        """--against-dir 内无 stem 匹配 → file_not_found 错误。"""
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+        new_path = tmp_path / "anything.txt"
+        new_path.write_text("x", encoding="utf-8")
+
+        payload, code = run_cli(
+            "diff", str(new_path), "--against-dir", str(empty_dir)
+        )
+        assert payload["ok"] is False, payload
+        assert payload["error"]["kind"] == "file_not_found"
+        assert "stem" in payload["error"]["message"]
+
+    def test_since_mtime_skips_old_file(self, tmp_path):
+        """--since-mtime 过滤：path_b mtime < ts → 跳过（skipped=True）。"""
+        old_dir = tmp_path / "old"
+        old_dir.mkdir()
+        (old_dir / "r.txt").write_text("old\n", encoding="utf-8")
+
+        new_path = tmp_path / "r.txt"
+        new_path.write_text("new\n", encoding="utf-8")
+        # 强制把 path_b 的 mtime 设为 ts 之前
+        old_ts = 1000000000  # 远古时间
+        new_ts = old_ts + 100
+        os.utime(new_path, (new_ts, new_ts))
+
+        # 用 new_ts+1 作为 since-mtime（path_b mtime < new_ts+1）—— 跳过
+        payload, code = run_cli(
+            "diff",
+            str(new_path),
+            "--against-dir", str(old_dir),
+            "--since-mtime", str(new_ts + 1),
+        )
+        assert payload["ok"] is True, payload
+        assert payload["data"].get("skipped") is True
+        assert "mtime" in payload["data"]["reason"]
+        assert code == 0
+
+    def test_since_mtime_invalid_value(self, tmp_path):
+        """--since-mtime 非数字 → bad_request 错误。"""
+        old_dir = tmp_path / "old"
+        old_dir.mkdir()
+        new_path = tmp_path / "r.txt"
+        new_path.write_text("x", encoding="utf-8")
+
+        # CLI 顺序：--since-mtime 必须在 path_b 之前（argparse positional 不在 option 前）
+        payload, code = run_cli(
+            "diff",
+            "--against-dir", str(old_dir),
+            "--since-mtime", "not-a-number",
+            str(new_path),
+        )
+        assert payload["ok"] is False, payload
+        assert payload["error"]["kind"] == "bad_request"
+
+    def test_since_mtime_zero_passes_through(self, tmp_path):
+        """--since-mtime 0 等价于不过滤（任意 mtime 都 ≥ 0）。"""
+        old_dir = tmp_path / "old"
+        old_dir.mkdir()
+        (old_dir / "r.txt").write_text("old-content\n", encoding="utf-8")
+        new_path = tmp_path / "r.txt"
+        new_path.write_text("new-content\n", encoding="utf-8")
+
+        payload, code = run_cli(
+            "diff",
+            str(new_path),
+            "--against-dir", str(old_dir),
+            "--since-mtime", "0",
+        )
+        assert payload["ok"] is True, payload
+        assert payload["data"].get("skipped") is not True
+        assert payload["data"]["additions"] == 1
+        assert code == 0

@@ -1,7 +1,7 @@
 ---
 name: dsh-formatforge
 description: FormatForge — 把任意文件格式锻造成 AI 可读的结构化数据。Use when the user asks to convert/parse/extract a local file (pdf/docx/xlsx/pptx/eml/msg/epub/toml/yaml/csv/md/html/svg/image/archive) into text, JSON or Markdown; to read a document's content; to batch-fetch multiple FormatForge results; to bulk-forge a directory of files in one shot; to diff two files (合同/法规/脚本版本对照); or to check which formats are supported (optionally filtered by category). Tools: ff_translate (convert), ff_formats (list supported formats), ff_result (fetch past results from inbox by id or batch), ff_batch (bulk convert a directory), ff_diff (compare two files via unified diff). When the result carries data.enhance.needed=true, YOU are expected to complete the enhancement using the hint — do not call external APIs.
-version: 0.13.0
+version: 0.14.0-rc.1
 updated: 2026-08-31
 when_to_use: |
   # FormatForge（格式锻炉）
@@ -18,6 +18,7 @@ when_to_use: |
     **v0.10.0**: language（ISO 639-1 目标语言 metadata，写入 enhance.hint）、
     **v0.10.0**: output_file（content 另存路径，stdout 协议 JSON 不变）。
   - `ff_formats` — 列出支持的输入格式。**v0.10.0**: category 过滤（document/data/email/image/archive/audio）。
+    **v0.14.0**: 返回 `data.details[]` 含每个 format 的 capabilities 列表（如 `pdf` 有 `[furniture_strip, ocr, table, two_column]`），按能力选择 format。
   - `ff_result` — 收件箱取回。参数：id（单 id）/ ids（批量 `id1,id2,...`，**R3.2 ≤20**）/
     list（列全部）；max_chars（默认 2000）、offset（仅单 id 生效）；**R3.4 schema -33.3%**。
   - `ff_batch` — **v0.10.0** 批量锻造。参数：source（目录/glob）、out（产物目录）、format、type、
@@ -84,5 +85,5 @@ FormatForge 的 DSH 插件壳：把 `python -m formatforge` CLI 包装为原生�
 `ff_translate` / `ff_formats` / `ff_result`。Python 内核负责 30+ 格式解析与策略选择；
 模型增强通过 enhance 协议交给当前会话完成。
 
-**版本**：v0.13.0（2026-08-31）—— 封口批：分页字段统一 / diff size clamp / KNOWN_EXT 净化 / batch 透传 / SKILL 同步。
-**变更点**：见 CHANGELOG v0.13.0 节（6 项 P0 + 5 项 P1 + 1 项 P2 + 1 项 G1 改动）。
+**版本**：v0.14.0-rc.1（2026-08-31）—— RC 候选（2 项 P0）：ff_formats 能力元数据 + ff_diff 增量模式。
+**变更点**：见 CHANGELOG v0.14.0 节（2 项 P0；P1 五项下个工作窗）。
