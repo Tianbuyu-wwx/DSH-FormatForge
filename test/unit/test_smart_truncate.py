@@ -60,3 +60,29 @@ class TestSmartTruncate:
                 break
             off = result[1]
         assert result[0].endswith("tail content")
+
+    def test_multi_file_separator_protects_file_boundary(self):
+        """v0.14.0/B-P1-7: --- 多文件分隔符优先级高于段落，
+        防止多文件拼接 markdown 在文件标题中间被切断。"""
+        multi = (
+            "## 文件: a.md\n\n短内容\n\n---\n\n"
+            "## 文件: b.md\n\n更长的内容段落 1\n更长的内容段落 2\n\n"
+            "## 文件: c.md\n\n第三段很长很长很长很长很长很长很长的内容"
+        )
+        # cap=80 强制截断（total 长度 > 80）；cut 必须在 --- 之前
+        chunk, nxt = smart_truncate(multi, 80)
+        # chunk 不应越过 --- 进入 b.md
+        assert "## 文件: b.md" not in chunk, f"chunk 越过了 --- 边界: {chunk!r}"
+        # --- 分隔符本身也被切掉（避免 chunk 末尾留 --- 显得不完整）
+        # 但 ## 文件: a.md 必须完整保留
+        assert "## 文件: a.md" in chunk
+        # 下一段从 b.md 开始
+        assert nxt is not None
+        assert multi[nxt:].startswith("## 文件: b.md")
+
+    def test_no_separator_falls_back_to_paragraph(self):
+        """v0.14.0/B-P1-7: 无 --- 分隔符时回退段落边界（与 v0.13.0 一致）。"""
+        text = "## 文件: a.md\n\n短内容段落"
+        chunk, nxt = smart_truncate(text, 30)
+        assert "## 文件: a.md" in chunk
+        # 段落边界\n        assert chunk.endswith("## 文件: a.md")

@@ -45,6 +45,19 @@ const cases = [
   { name: 'empty input', input: '', max: 100, start: 0 },
   { name: 'zero max (edge)', input: 'hello world', max: 0, start: 0 },
   { name: 'exact boundary', input: 'aaa\nbbb', max: 3, start: 0 },
+  // v0.14.0/B-P1-7: --- 多文件分隔符保护
+  {
+    name: 'multi-file separator (---) wins over paragraph',
+    input: '## 文件: a.md\n\n短内容\n\n---\n\n## 文件: b.md\n\n更长的内容段落 1\n更长的内容段落 2',
+    max: 50,
+    start: 0,
+  },
+  {
+    name: 'no separator falls back to paragraph',
+    input: '## 文件: a.md\n\n短内容',
+    max: 30,
+    start: 0,
+  },
 ]
 
 // --- 调 Python smart_truncate 取真值 ---
