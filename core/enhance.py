@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 IMAGE_ONLY_RATIO = 0.5
 #: 低置信度阈值
 LOW_CONFIDENCE = 0.5
+#: v0.14.0/B-P1-6: OCR 后纯图片 PDF 文字层置信度阈值（OCR confidence < 此值触发 enhance）
+OCR_LOW_CONFIDENCE = 0.6
 
 
 @dataclass(frozen=True)
@@ -35,8 +37,17 @@ class EnhanceHint:
         return {"needed": self.needed, "reason": self.reason, "hint": self.hint}
 
 
-def build_enhance_hint(parsed_file: Any, confidence: float) -> EnhanceHint | None:
-    """按三触发规则判定是否需要调用方模型增强；不需要返回 None。"""
+def build_enhance_hint(
+    parsed_file: Any,
+    confidence: float,
+    ocr_confidence: float | None = None,
+) -> EnhanceHint | None:
+    """按四触发规则判定是否需要调用方模型增强；不需要返回 None。
+
+    v0.14.0/B-P1-6: 新增 ocr_confidence 可选参数——当 OCR 后纯图片 PDF
+    文字层已被 OCR 填充（不再 image_only）但 OCR confidence 低时，
+    会触发 enhance 让会话模型复核 OCR 文本。
+    """
     if not parsed_file:
         return None
 
@@ -53,6 +64,22 @@ def build_enhance_hint(parsed_file: Any, confidence: float) -> EnhanceHint | Non
             needed=True,
             reason="image_only",
             hint=f"{textless}/{total} 页无文字层（疑似扫描件）。请基于 OCR 文本/图片描述重建结构并补齐表格。",
+        )
+
+    # v0.14.0/B-P1-6: OCR 后纯图片 PDF 漏判修复——文字层已 OCR 填充，
+    # 但 OCR confidence < 0.6 时仍应提示会话模型复核
+    if ocr_confidence is not None and ocr_confidence < OCR_LOW_CONFIDENCE:
+        logger.info(
+            "[enhance] ocr_low_confidence 触发: ocr_confidence=%.2f",
+            ocr_confidence,
+        )
+        return EnhanceHint(
+            needed=True,
+            reason="ocr_low_confidence",
+            hint=(
+                f"OCR 文字层置信度仅 {ocr_confidence:.2f}（阈值 {OCR_LOW_CONFIDENCE}）。"
+                "文字已被 OCR 填充，但建议会话模型复核关键字段（数字/专名）。"
+            ),
         )
 
     if confidence < LOW_CONFIDENCE:
