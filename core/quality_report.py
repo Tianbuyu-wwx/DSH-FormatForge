@@ -360,8 +360,24 @@ class QualityReport:
         # v0.14.0/B-P1-5: 按 file_type 调权
         ft = (self._last_file_type or "unknown").lower()
         # 纯文本/数据格式：table_accuracy 权归零（csv/xlsx/ods 是表格，单独处理）
-        if ft in {"txt", "md", "markdown", "json", "yaml", "yml", "xml", "toml",
-                  "html", "tsv", "sql", "srt", "vtt", "latex", "tex", "log"}:
+        if ft in {
+            "txt",
+            "md",
+            "markdown",
+            "json",
+            "yaml",
+            "yml",
+            "xml",
+            "toml",
+            "html",
+            "tsv",
+            "sql",
+            "srt",
+            "vtt",
+            "latex",
+            "tex",
+            "log",
+        }:
             weights["table_accuracy"] = 0.0
         # 表格格式：table_accuracy 权提高，structure 权降低
         elif ft in {"csv", "xlsx", "xls", "ods"}:
