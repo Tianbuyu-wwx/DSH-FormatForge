@@ -7,6 +7,52 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-31 — 首个 production-ready stable
+
+> 基线：v0.14.0-rc.1（538 测试）→ v1.0.0（567 测试，+29）
+> 主题：**v1.0 production-ready 里程碑**——v0.14.0 stable 代码 + 协议冻结 + 5 项 audit 修复。
+
+### 升级指南
+
+- npm 上 v0.14.0 缺 audit 修复（4 bug + 1 性能）——已在 npm 上 deprecate，提示升级 v1.0.0
+- GitHub Release v0.14.0 加注 "升级到 v1.0.0"
+- v1.0.0 是首个 production-ready stable，**v1.x 内 API 向后兼容**（不破坏性改动）
+
+### v1.0.0 增量（5 项 audit 修复）
+
+1. **Bug：translate.mjs 多文件分页用 inline 旧逻辑（v0.13.0 遗留）**
+   - 文件：`packages/dsh-formatforge/tools/translate.mjs` line 152-160
+   - 修法：改用 `_truncate.mjs::smartTruncate` 替代 inline 截断
+2. **Bug：多文件分隔符 `---` 与 markdown 水平线冲突**
+   - translate 多文件拼接改用 `<!-- ff-file-sep -->`（HTML 注释——markdown 不解析、对模型可读）
+   - 之前 `--- 第 1 页 ---` 水平线被 smartTruncate 误识别为多文件分隔符，**实测 cap=40/70 时单文件内容被切断**
+3. **Bug：`smartTruncate` JS / Python 算法不一致（6 case 不一致）**
+   - 修法：sep_len 跟踪避免 nxt 算法漂移（Python 与 JS 完全对齐 13/13）
+4. **Bug：`--against-dir` 触发 self-diff**
+   - 文件：`formatforge/diff.py::cmd_diff_against_dir`
+   - 修法：`candidates` 加 `if p != path_b and p.exists()` 排除自身
+5. **性能优化：inbox-watcher retention sha256 全量读**
+   - 文件：`packages/dsh-formatforge/services/inbox-watcher.mjs`
+   - 修法：`openSync + readSync(64KB) + closeSync` 替代 `readFileSync().slice()`
+
+### 测试
+
+- 567 passed / 0 fail
+- 跨语言 truncate 一致性：13/13
+- ruff ✓ / format ✓ / mypy ✓
+
+### 未修的 7 项（v0.14.1 / v1.0.1 hotfix 候选）
+
+| # | 问题 | 严重度 | 处置 |
+|---|---|---|---|
+| 2 | argparse 错误未走 JSON 输出 | UX | v0.14.1 修 |
+| 5 | retention 通知完全静默化 | UX | v0.14.1 改 Plan B |
+| 6 | 跨进程 `.ff.retired.log` append race | 性能 | 极低风险 |
+| 1 | 无扩展名文件 fallback `parser=unknown` | 已知边界 | v0.14.1 重构 |
+| 7 | 同内容不同扩展名评分不同 | 已知行为 | 接受 |
+| 8 | ocr_low_confidence 阈值严格边界 | 已知行为 | 接受 |
+| 10 | capabilities `hasattr` 探针可能误报 | 已知 | 已文档化 |
+
 ## [0.14.0] - 2026-08-31 — 窗 B 全收口（v1.0 stable 前最后一站）
 
 > 基线：v0.13.0（538 测试）→ v0.14.0 stable（566 测试，+28）

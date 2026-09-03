@@ -1,7 +1,7 @@
 ---
 name: dsh-formatforge
 description: FormatForge — 把任意文件格式锻造成 AI 可读的结构化数据。Use when the user asks to convert/parse/extract a local file (pdf/docx/xlsx/pptx/eml/msg/epub/toml/yaml/csv/md/html/svg/image/archive) into text, JSON or Markdown; to read a document's content; to batch-fetch multiple FormatForge results; to bulk-forge a directory of files in one shot; to diff two files (合同/法规/脚本版本对照); or to check which formats are supported (optionally filtered by category). Tools: ff_translate (convert), ff_formats (list supported formats), ff_result (fetch past results from inbox by id or batch), ff_batch (bulk convert a directory), ff_diff (compare two files via unified diff). When the result carries data.enhance.needed=true, YOU are expected to complete the enhancement using the hint — do not call external APIs.
-version: 0.14.0
+version: 1.0.0
 updated: 2026-08-31
 when_to_use: |
   # FormatForge（格式锻炉）
@@ -85,5 +85,5 @@ FormatForge 的 DSH 插件壳：把 `python -m formatforge` CLI 包装为原生�
 `ff_translate` / `ff_formats` / `ff_result`。Python 内核负责 30+ 格式解析与策略选择；
 模型增强通过 enhance 协议交给当前会话完成。
 
-**版本**：v0.14.0（2026-08-31）—— 窗 B 全收口（5 项 P1 完成）+ 窗 C 协议冻结。
-**变更点**：见 CHANGELOG v0.14.0 节（7 项 P0+P1 + 协议快照 + 死代码清理）。
+**版本**：v1.0.0（2026-08-31）—— **首个 production-ready stable**。协议冻结（v1.x 内向后兼容）。
+**变更点**：见 CHANGELOG v1.0.0 节（v0.14.0 全部 + 5 项 audit 修复 + 协议快照 + production-ready 声明）。
