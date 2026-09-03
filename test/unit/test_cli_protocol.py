@@ -40,6 +40,34 @@ def run_cli(*args: str, stdin: str | None = None) -> tuple[dict, int]:
     return payload, proc.returncode
 
 
+class TestArgparseJsonOutput:
+    """v1.0.1: argparse 错误包成协议 JSON（保持 stdout 唯一出口约定）。"""
+
+    def test_unknown_subcommand_returns_json(self, capsys):
+        """v1.0.1: 不存在的子命令 → JSON 错误输出（而非 argparse usage 到 stderr）。"""
+        from formatforge.__main__ import main
+        rc = main(["nonexistent_subcmd"])
+        captured = capsys.readouterr()
+        # stderr 应空（argparse 错误消息被重定向到 devnull）
+        assert captured.err == "", f"argparse 应静默 stderr，但输出了: {captured.err!r}"
+        # stdout 应是协议 JSON
+        import json
+        payload = json.loads(captured.out.strip())
+        assert payload["ok"] is False
+        assert payload["error"]["kind"] == "internal"
+        assert rc != 0
+
+    def test_invalid_choice_returns_json(self, capsys):
+        """v1.0.1: 命令参数无效选择 → JSON 错误输出。"""
+        from formatforge.__main__ import main
+        rc = main(["formats", "--category", "no_such_category"])
+        captured = capsys.readouterr()
+        assert captured.err == "", f"argparse 应静默 stderr，但输出了: {captured.err!r}"
+        import json
+        payload = json.loads(captured.out.strip())
+        assert payload["ok"] is False
+
+
 class TestVersion:
     def test_version_ok(self):
         payload, code = run_cli("version")
@@ -269,7 +297,12 @@ class TestR10FormatsCategory:
             env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
         )
         assert proc.returncode != 0
-        assert "invalid choice" in proc.stderr or "no_such_thing" in proc.stderr
+        # v1.0.1: argparse 错误已包成协议 JSON（stderr 静默、stdout JSON）
+        # 旧断言依赖 argparse stderr 文本输出
+        import json
+        payload = json.loads(proc.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]["kind"] == "internal"
 
     def test_categories_listed(self):
         payload, _ = run_cli("formats")

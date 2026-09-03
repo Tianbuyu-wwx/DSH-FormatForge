@@ -475,7 +475,41 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+
+    # v1.0.1: argparse 错误包成协议 JSON 输出（保持 stdout 唯一出口约定）。
+    # argparse 默认 print usage + 错误到 stderr 然后 exit 2 —— 破坏 stdout 唯一出口。
+    # 方案：临时把 sys.stderr 替换为 _SilentStream（不写入），parse_args 后还原。
+    # 这同时覆盖 pytest capsys（它替换 sys.stderr.write 而非 fd）。
+    class _SilentStream:
+        def write(self, *_args, **_kwargs):
+            return 0
+
+        def flush(self):
+            pass
+
+        def isatty(self):
+            return False
+
+        def writable(self):
+            return True
+
+        def readable(self):
+            return False
+
+        def seekable(self):
+            return False
+
+    _saved_stderr = sys.stderr
+    sys.stderr = _SilentStream()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as e:
+        sys.stderr = _saved_stderr
+        if isinstance(e.code, int) and e.code != 0:
+            return _fail("internal", f"参数错误（exit {e.code}）。试 --help 看用法。")
+        raise
+    finally:
+        sys.stderr = _saved_stderr
     result_code: int = exit_code_of(ErrorCode.BAD_REQUEST)
     try:
         result_code = int(args.func(args))
