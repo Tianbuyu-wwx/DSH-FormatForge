@@ -7,6 +7,26 @@
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-31 — Hotfix（description + argparse JSON 化）
+
+> 基线：v1.0.0（567 测试）→ v1.0.1（569 测试，+2）
+
+### 修复
+
+1. **description 修正**：v1.0.0 npm 包 description 字段仍含 'v0.14.0'（被遗漏）
+   - 文件：`packages/dsh-formatforge/package.json`
+   - 修法：description 字符串 v0.14.0 → v1.0.0
+2. **argparse 错误 JSON 化**（v0.14.1 候选 #1）
+   - 文件：`formatforge/__main__.py`
+   - 修法：`main()` 临时 `sys.stderr = _SilentStream()` 让 argparse usage 静默，
+     `SystemExit` 时走 `_fail("internal", ...)` 输出协议 JSON 到 stdout
+   - 之前 argparse 错误走 stderr + exit 2，破坏 stdout 唯一出口约定
+3. **测试 `test_category_invalid` 修正**：旧断言依赖 argparse stderr 文本输出
+
+### 新增测试
+
+- `test/unit/test_cli_protocol.py::TestArgparseJsonOutput`（2 测试）
+
 ## [1.0.0] - 2026-08-31 — 首个 production-ready stable
 
 > 基线：v0.14.0-rc.1（538 测试）→ v1.0.0（567 测试，+29）
