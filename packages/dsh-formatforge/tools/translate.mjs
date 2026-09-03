@@ -9,7 +9,7 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { runFormatForge, validateLocalFile, DEFAULT_TIMEOUT_MS } from '../services/python-runner.mjs'
-import { renderTruncate } from './_truncate.mjs'
+import { renderTruncate, smartTruncate } from './_truncate.mjs'
 
 const OUTPUT_FORMATS = ['json', 'markdown', 'html', 'text']
 const CONVERSION_TYPES = ['auto', 'text', 'structured', 'table', 'image_desc', 'ocr']
@@ -145,25 +145,28 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
               parts.push(`## 文件: ${name}\n\n[失败 ${one.error.kind}] ${one.error.message}`)
             }
           }
-          let joined = parts.join('\n\n---\n\n')
+          // v0.14.0/B-P1-7 多文件拼接用 HTML 注释代替 --- ——markdown --- 水平线
+          // （--- 第 1 页 ---）会被 smartTruncate 的 --- 边界检测误判为分隔符。
+          // HTML 注释不影响渲染，对会话模型可见（可读性好），与 --- 不冲突。
+          let joined = parts.join('\n\n<!-- ff-file-sep -->\n\n')
           const fullLen = joined.length
           let truncated = false
           if (fullLen > startOff + cap) {
-            // E1: 结构化截断——优先段落边界 > 行边界 > 硬切（与 core/utils.py smart_truncate 镜像）
-            const windowEnd = startOff + cap
-            let cut = joined.lastIndexOf('\n\n', windowEnd)
-            if (cut < startOff + cap / 2) cut = joined.lastIndexOf('\n', windowEnd)
-            if (cut <= startOff) {
-              joined = joined.slice(startOff, windowEnd)
-            } else {
-              joined = joined.slice(startOff, cut)
-            }
+            // v0.14.0/B-P1-7: 用 _truncate.mjs::smartTruncate 替代旧的 inline 逻辑，
+            // 保证多文件分隔符 \n\n---\n\n 在多文件分页时不被切断
+            const { chunk, nextOffset } = smartTruncate(joined, cap, startOff)
+            joined = chunk
             truncated = true
+            // smartTruncate 的 nextOffset 是相对全文本的偏移，与原设计一致
+            // 保留作为 paging.next_offset 输出
+            var nextOffsetVal = nextOffset
           } else if (startOff > 0) {
             joined = joined.slice(startOff)
+            // startOff > 0 但不需要再切（cap 已够），nextOffset 仍 undefined
           }
-          // A1/v0.13.0: 分页字段统一到顶层 paging（与单文件 applyPaging 输出一致）
-          const nextOffset = truncated ? Math.max(startOff + 1, joined.length + startOff + 1) : undefined
+          // A1/v0.13.0: 分页字段统一到顶层 paging（与单文件 applyPaging 输出一致）；
+          // v0.14.0/B-P1-7: smartTruncate 直接给出 nextOffset 数值（如果 truncated）
+          const nextOffset = truncated ? nextOffsetVal : undefined
           return {
             ok: true,
             code: 200,

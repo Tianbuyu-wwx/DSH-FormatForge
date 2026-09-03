@@ -13,7 +13,7 @@
 
 import { join, basename, extname } from 'node:path'
 import { homedir } from 'node:os'
-import { readdirSync, statSync, existsSync, writeFileSync, unlinkSync, readFileSync, appendFileSync } from 'node:fs'
+import { readdirSync, statSync, existsSync, writeFileSync, unlinkSync, readFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { runFormatForge } from './python-runner.mjs'
 
@@ -247,9 +247,17 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
     for (const name of doomed) {
       try {
         const full = join(inbox, name)
-        // 读取前几 KB 计算 sha256（限制 64KB 避免对大文件做完整 hash）
         const stat = statSync(full)
-        const sample = readFileSync(full).slice(0, 65536)
+        // v0.14.0/audit: 用 openSync + readSync 限前 64KB，避免大文件全量加载到内存
+        const fd = openSync(full, 'r')
+        let sample
+        try {
+          const buf = Buffer.alloc(65536)
+          const bytesRead = readSync(fd, buf, 0, 65536, 0)
+          sample = buf.subarray(0, bytesRead)
+        } finally {
+          closeSync(fd)
+        }
         const hash = createHash('sha256').update(sample).digest('hex')
         const entry = {
           ts: new Date().toISOString(),
