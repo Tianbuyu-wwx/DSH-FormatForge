@@ -89,6 +89,10 @@ def smart_truncate(text: str, max_chars: int, start: int = 0) -> tuple[str, int 
     v0.14.0/B-P1-7: 优先级 --- 多文件分隔符 > 段落 > 行 > 硬切。
     --- 分隔符（translate.mjs 多文件拼接）保护不被切在文件标题中间。
 
+    v0.14.0/audit: 加入 <!-- ff-file-sep --> 多文件分隔符——比 --- 更稳，
+    因为 markdown --- 水平线（含 --- 第 N 页 ---）会与多文件 --- 模式冲突，
+    smartTruncate 误识别会让分页把单文件内容切断。
+
     返回 (chunk, next_offset)；next_offset 为 None 表示已到末尾。
     保证不把表格行/列表项从中间切断（除非单行超长才硬切）。
     """
@@ -99,25 +103,28 @@ def smart_truncate(text: str, max_chars: int, start: int = 0) -> tuple[str, int 
         return text[start:], None
 
     window = text[start:window_end]
-    # v0.14.0/B-P1-7: --- 多文件分隔符为最强边界——找到就用，不应用 cap/2 阈值；
-    # 多文件场景下 --- 经常出现在 cap/2 之前，回退到段落会把下一个文件标题切断。
-    cut = window.rfind("\n\n---\n\n")
+    # 多文件分隔符（按优先级查找）；找到就用，不应用 cap/2 阈值
+    cut = -1
+    sep_len = 0
+    file_seps = ("\n\n---\n\n", "<!-- ff-file-sep -->")
+    for sep in file_seps:
+        idx = window.rfind(sep)
+        if idx >= 0 and (cut < 0 or idx > cut):
+            cut = idx
+            sep_len = len(sep)
     if cut < 0:
-        # 没找到 --- 分隔符 → 走原有逻辑：段落 > 行 > 硬切
+        # 没找到多文件分隔符 → 走原有逻辑：段落 > 行 > 硬切
         cut = window.rfind("\n\n")
+        sep_len = 2  # "\n\n"
         if cut < max_chars // 2:
             cut = window.rfind("\n")
+            sep_len = 1  # "\n"
     if cut <= 0:
         chunk = window
         nxt = start + window_end
     else:
         chunk = window[:cut]
-        nxt = start + cut + 1
-        # --- 分隔符含 7 个换行（\n\n---\n\n）→ 跳过整个分隔符
-        if text.startswith("\n\n---\n\n", start + cut):
-            nxt = start + cut + 7
-        elif nxt < len(text) and text[nxt] == "\n":
-            nxt += 1
+        nxt = start + cut + sep_len
     next_offset: int | None = nxt if nxt < len(text) else None
     return chunk, next_offset
 

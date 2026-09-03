@@ -10,14 +10,13 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, '..', '..')
 
 // 把 ESM stub 装一下（与 test-local.mjs 一致：这是测试工具，不依赖 dsh 运行时）
 const stubRoot = join(here, 'node_modules', '@deepseek-ai')
-import { mkdirSync } from 'node:fs'
 for (const name of ['dsh-tools', 'dsh-skill-filesystem']) {
   const dir = join(stubRoot, name)
   mkdirSync(dir, { recursive: true })
@@ -50,6 +49,20 @@ const cases = [
     name: 'multi-file separator (---) wins over paragraph',
     input: '## 文件: a.md\n\n短内容\n\n---\n\n## 文件: b.md\n\n更长的内容段落 1\n更长的内容段落 2',
     max: 50,
+    start: 0,
+  },
+  // v0.14.0/audit: HTML 注释代替 --- 多文件分隔符
+  {
+    name: 'multi-file separator (<!-- ff-file-sep -->) wins',
+    input: '## 文件: a.md\n\n短内容\n\n<!-- ff-file-sep -->\n\n## 文件: b.md\n\n更长的内容段落',
+    max: 50,
+    start: 0,
+  },
+  // v0.14.0/audit: markdown 水平线 --- 第 1 页 --- 不应被误识别
+  {
+    name: 'markdown hr (--- 第 1 页 ---) is NOT a file separator',
+    input: '## 文件: a.md\n\n# 转换结果\n\n--- 第 1 页 ---\n\n文件 A 内容',
+    max: 30,
     start: 0,
   },
   {
@@ -108,7 +121,7 @@ for (let i = 0; i < cases.length; i++) {
 }
 
 if (failures > 0) {
-  console.error(`\n❌ ${failures}/${cases.length} cases drifted between JS and Python smartTruncate`)
+  console.error(`\n❌ ${failures}/${cases.length} cases differ between JS and Python`)
   process.exit(1)
 }
 console.log(`\n✅ all ${cases.length} cases consistent between JS and Python`)

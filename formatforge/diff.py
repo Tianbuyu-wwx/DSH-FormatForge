@@ -209,7 +209,12 @@ def _cmd_diff_against_dir(args: argparse.Namespace, fmt: str) -> int:
     if getattr(args, "path_a", None):
         path_a = Path(args.path_a)
     else:
-        candidates = list(against_dir.glob(f"{stem}.*")) + list(against_dir.glob(stem))
+        # v0.14.0/audit: 排除 path_b 自身（之前 glob(stem) 会匹配 new.txt 自身 → self-diff）
+        candidates = [
+            p
+            for p in (list(against_dir.glob(f"{stem}.*")) + list(against_dir.glob(stem)))
+            if p != path_b and p.exists()
+        ]
         if not candidates:
             return _emit_diff(
                 ok=False,

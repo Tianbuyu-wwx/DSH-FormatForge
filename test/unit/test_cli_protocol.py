@@ -783,6 +783,24 @@ class TestR14DiffIncremental:
         assert payload["error"]["kind"] == "file_not_found"
         assert "stem" in payload["error"]["message"]
 
+    def test_against_dir_excludes_self(self, tmp_path):
+        """v0.14.0/audit: --against-dir 与 path_b 自身同名不应触发 self-diff。
+
+        之前 glob(stem) 会匹配 path_b 自身（new.txt） → path_a=path_b=同一文件
+        → self-diff → 假 negative（additions=0, deletions=0）。
+        现在排除 path_b 自身后应走 file_not_found 路径。
+        """
+        empty_dir = tmp_path / "only_self"
+        empty_dir.mkdir()
+        new_path = tmp_path / "lonely.txt"
+        new_path.write_text("data\n", encoding="utf-8")
+
+        payload, code = run_cli(
+            "diff", str(new_path), "--against-dir", str(empty_dir)
+        )
+        assert payload["ok"] is False, payload
+        assert payload["error"]["kind"] == "file_not_found"
+
     def test_since_mtime_skips_old_file(self, tmp_path):
         """--since-mtime 过滤：path_b mtime < ts → 跳过（skipped=True）。"""
         old_dir = tmp_path / "old"
