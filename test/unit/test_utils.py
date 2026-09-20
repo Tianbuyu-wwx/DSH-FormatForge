@@ -175,6 +175,19 @@ class TestFormatOutput:
         assert "<div class='converted-content'>" in result
         assert "<p>" in result
 
+    def test_format_html_escapes_live_markup(self):
+        """H3/audit: HTML 产物必须转义活体标签（存储型 XSS 产物路径）。"""
+        payload = "<script>alert(1)</script><img src=x onerror=alert(2)>"
+        result = format_output(payload, OutputFormat.HTML)
+        assert "<script>" not in result
+        assert "<img" not in result
+        assert "alert(1)" in result  # 文本仍可见，只是被转义
+        assert "&lt;script&gt;" in result
+
+    def test_format_html_multiline_structure_preserved(self):
+        result = format_output("a\n\nb", OutputFormat.HTML)
+        assert "</p><p>" in result
+
     def test_format_text(self):
         result = format_output("raw text", OutputFormat.TEXT)
         assert result == "raw text"

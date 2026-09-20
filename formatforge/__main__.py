@@ -3,18 +3,21 @@ FormatForge CLI 入口
 
 协议契约（JS 侧 python-runner 依赖此形状，勿随意改动）：
     成功: {"ok": true,  "code": 200, "data": {content, format, meta, quality?, enhance?}}
-    失败: {"ok": false, "code": <int>, "error": {"kind": str, "message": str}}
-退出码: 0 成功 / 2 参数错 / 3 解析失败 / 4 超限
+    失败: {"ok": false, "code": <4000+exit>, "error": {"kind": str, "message": str}}
+退出码（权威定义见 core/errors.py::EXIT_CODES）:
+    0 成功 / 2 文件不存在·是目录·无权限 / 3 格式不支持 / 4 解析失败 /
+    5 超时 / 6 超出大小上限 / 7 参数错误 / 70 内部错误
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, cast
 
 logger = logging.getLogger(__name__)
@@ -29,30 +32,79 @@ EXIT_OK = 0
 # M4: 错误码协议固化（core/errors.py 为唯一权威；旧 kind 字符串映射到新枚举）
 from core.errors import ErrorCode, exit_code_of  # noqa: E402
 
+#: 旧 kind 字符串 → ErrorCode（表内只有「不是 ErrorCode 值」的历史别名；
+#: 其余 kind 由 _kind_to_code 直接按枚举值解析）
 _LEGACY_KIND = {
     "not_found": ErrorCode.FILE_NOT_FOUND,
-    "is_directory": ErrorCode.IS_DIRECTORY,
-    "unsupported_format": ErrorCode.UNSUPPORTED_FORMAT,
-    "parse_failed": ErrorCode.PARSE_FAILED,
-    "too_large": ErrorCode.TOO_LARGE,
+    # FF-M-kinds/audit: 以下别名此前缺失，而上游（管道 error payload、batch）
+    # 会按新值语义传 kind（file_not_found / bad_request / permission_denied /
+    # timeout）——它们查不到就被 remap 成 INTERNAL(70)，JS 侧据此判错类型。
+    "file_not_found": ErrorCode.FILE_NOT_FOUND,
+    "permission_denied": ErrorCode.PERMISSION_DENIED,
+    "bad_request": ErrorCode.BAD_REQUEST,
+    "timeout": ErrorCode.TIMEOUT,
 }
+
+
+def _kind_to_code(kind: str) -> ErrorCode:
+    """kind 字符串 → ErrorCode。
+
+    先按枚举值精确匹配（新值语义，含 file_not_found/bad_request 等），失败再退
+    到历史别名表，最后兜底 INTERNAL。未知 kind 不再静默变 70 却不留痕迹。
+    """
+    try:
+        return ErrorCode(kind)
+    except ValueError:
+        return _LEGACY_KIND.get(kind, ErrorCode.INTERNAL)
 
 
 from formatforge.batch import cmd_batch  # noqa: E402  (须在 sys.path 注入之后)
 from formatforge.diff import register as register_diff  # noqa: E402  (v0.12.0/B10)
+from formatforge.protocol import emit, pin_std_streams_utf8  # noqa: E402
 
 
 def _emit(payload: dict[str, Any]) -> None:
-    """stdout 唯一出口：单行协议 JSON"""
-    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    """stdout 唯一出口：单行协议 JSON（编码由 protocol.pin_std_streams_utf8 保证）"""
+    emit(payload)
+
+
+# FF-L-main/audit: 协议 JSON 会把完整本地路径（含用户名目录）和原始异常文本
+# （可能夹带内部堆栈/路径片段）回传给调用方 —— 信息泄露。对外 message 一律先过
+# 这道收敛：绝对路径收敛为 basename，超长文本截断。错误 kind/exit_code 不变，
+# 调用方仍可按类型分支；只有「人读的路径/堆栈细节」被收敛。
+_MAX_MESSAGE_CHARS = 400
+
+
+def _safe_message(message: Any, *, _path_token: Path | None = None) -> str:
+    """收敛对外错误消息：绝对路径→basename，长度截断。
+
+    _path_token：调用方已知的源文件路径，其 str() 在消息里替换成 basename；
+    其余出现的路径形态（盘符:/ 或 / 开头的长 token）同样按 basename 收敛。
+    """
+    text = str(message)
+    if _path_token is not None:
+        try:
+            text = text.replace(str(_path_token), Path(_path_token).name)
+        except Exception:
+            pass
+    # 收敛 Windows 盘符路径（两种分隔符）、UNC 路径和 POSIX 绝对路径。
+    import re
+
+    windows_basename = lambda m: PureWindowsPath(m.group(0)).name  # noqa: E731
+    text = re.sub(r"\\\\[^\\/\s\"':;]+[\\/][^\s\"':;]+", windows_basename, text)
+    text = re.sub(r"[A-Za-z]:[\\/][^\s\"':;]+", windows_basename, text)
+    text = re.sub(r"(?<![\w:])/(?:[^\s\"':;/]+/)+([^\s\"':;/]+)", r"\1", text)
+    if len(text) > _MAX_MESSAGE_CHARS:
+        text = text[:_MAX_MESSAGE_CHARS] + "…(truncated)"
+    return text
 
 
 def _fail(kind: str, message: str, *, code: ErrorCode | None = None) -> int:
     """失败出口。kind 为旧字符串兼容参数；优先用 code 枚举。"""
-    ec = code or _LEGACY_KIND.get(kind, ErrorCode.INTERNAL)
+    ec = code or _kind_to_code(kind)
     exit_code = exit_code_of(ec)
-    err = {"kind": ec.value, "message": message}
+    # FF-L-main/audit: 所有协议错误消息统一收敛（绝对路径→basename、超长截断）
+    err = {"kind": ec.value, "message": _safe_message(message)}
     _emit({"ok": False, "code": 4000 + exit_code, "error": err})
     return exit_code
 
@@ -117,13 +169,21 @@ def translate_file_data(
         err = ctx.error or "未知错误"
         if "pages 参数格式错误" in str(err):
             return {"kind": "bad_request", "message": str(err)}, 7
+        if "不支持的文件类型" in str(err):
+            # H18/audit: 无解析器的格式（.doc/.ppt/.xlsb 等）报 unsupported_format
+            return {"kind": "unsupported_format", "message": str(err)}, 3
         return {"kind": "parse_failed", "message": str(err)}, 4
-    if (
-        result.structuredData
-        and result.structuredData.get("error")
-        and "pages 参数格式错误" in str(result.convertedContent)
-    ):
-        return {"kind": "bad_request", "message": result.convertedContent}, 7
+    sd = getattr(result, "structuredData", None)
+    # H1: pipeline 失败也会返回真实 ConvertResultData（_build_error_response 把错误文本
+    # 放进 convertedContent、structuredData={"error": True}）——入口必须显式识别，
+    # 不能把错误文本当转换产物返回 ok:true。
+    if isinstance(sd, dict) and sd.get("error"):
+        if "pages 参数格式错误" in str(result.convertedContent):
+            return {"kind": "bad_request", "message": result.convertedContent}, 7
+        if "不支持的文件类型" in str(result.convertedContent):
+            # H18/audit: 无解析器的格式报 unsupported_format（友好收缩后错误）
+            return {"kind": "unsupported_format", "message": result.convertedContent}, 3
+        return {"kind": "parse_failed", "message": result.convertedContent}, 4
 
     data: dict[str, Any] = {
         "content": result.convertedContent,
@@ -178,7 +238,16 @@ def cmd_translate(args: argparse.Namespace) -> int:
     source: Any
 
     if args.stdin_text:
-        source = sys.stdin.read()
+        # T3-7/audit: stdin 也是公开输入面，与文件路径共用同一字节上限。
+        # 只多读一个字符，先防止无界 read；再按 CLI 协议的 UTF-8
+        # 字节口径校验，所以多字节文本也不会绕过 FF_MAX_BYTES。
+        source = sys.stdin.read(settings.FF_MAX_BYTES + 1)
+        stdin_size = len(source.encode("utf-8"))
+        if stdin_size > settings.FF_MAX_BYTES:
+            return _fail(
+                "bad_request",
+                f"stdin {stdin_size} 字节超过上限 {settings.FF_MAX_BYTES}",
+            )
     else:
         path = Path(args.path) if args.path else None
         if not path:
@@ -186,7 +255,7 @@ def cmd_translate(args: argparse.Namespace) -> int:
         if not path.exists():
             return _fail("not_found", f"文件不存在: {path}")
         if not path.is_file():
-            return _fail("not_found", f"路径不是文件: {path}")
+            return _fail("is_directory", f"路径不是文件: {path}")
         size = path.stat().st_size
         if size > settings.FF_MAX_BYTES:
             return _fail("too_large", f"文件 {size} 字节超过上限 {settings.FF_MAX_BYTES}")
@@ -231,10 +300,18 @@ def cmd_translate(args: argparse.Namespace) -> int:
                 else:
                     data["enhance"] = {"needed": False, "hint": new_hint}  # type: ignore[assignment]
     # A9/v0.10.0: --output-file 把 content 落盘（stdout 协议 JSON 不变）
+    # FF-M-protocol/audit: 写入失败不再「logger.warning + ok:true」；目标路径
+    # 收敛到用户显式声明的 FF_OUTPUT_ROOT；代码/导入路径始终受保护，越界报 bad_request。
     output_file = getattr(args, "output_file", None)
     if output_file:
+        # T1-8/audit: 文件写入走 resolve_output_file —— 包含性 + 输出扩展名白名单。
+        from formatforge.output_guard import OutputPathError, resolve_output_file
+
         try:
-            out_path = Path(output_file)
+            out_path = resolve_output_file(output_file, source=source if isinstance(source, Path) else None)
+        except OutputPathError as e:
+            return _fail("bad_request", str(e), code=ErrorCode.BAD_REQUEST)
+        try:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             content_val = data.get("content")
             content_str = (
@@ -242,8 +319,12 @@ def cmd_translate(args: argparse.Namespace) -> int:
             )
             out_path.write_text(content_str, encoding="utf-8")
             meta["output_file"] = str(out_path)
-        except Exception as e:
-            logger.warning("[A9] --output-file 写入失败: %s", e)
+        except OSError as e:
+            return _fail(
+                "permission_denied",
+                f"--output-file 写入失败: {out_path}: {e}",
+                code=ErrorCode.PERMISSION_DENIED,
+            )
     _emit({"ok": True, "code": 200, "data": data})
     return EXIT_OK
 
@@ -394,6 +475,10 @@ def cmd_translate_main(
     result = response.get("result")
     if result is None:
         raise ValueError(str(ctx.error or "未知错误"))
+    # H1: 同 translate_file_data —— structuredData.error=True 说明这是错误响应页，不是转换产物
+    result_sd = getattr(result, "structuredData", None)
+    if isinstance(result_sd, dict) and result_sd.get("error"):
+        raise ValueError(str(result.convertedContent))
     meta = {
         "parser": result.fileInfo.fileType.value if result.fileInfo else "unknown",
         "file_size": result.fileInfo.fileSize if result.fileInfo else 0,
@@ -474,6 +559,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # T1-6: 任何东西读写标准流之前先钉死编码。协议两面都是 UTF-8，而 Windows 管道
+    # 默认走 locale 编码（cp1252）—— 不钉，非 ASCII 载荷会在第一行 JSON 出去之前
+    # 就 UnicodeEncodeError，调用方只看到 internal(70)。
+    pin_std_streams_utf8()
+
     parser = build_parser()
 
     # v1.0.1: argparse 错误包成协议 JSON 输出（保持 stdout 唯一出口约定）。
@@ -500,21 +590,50 @@ def main(argv: list[str] | None = None) -> int:
             return False
 
     _saved_stderr = sys.stderr
+    # FF-M-protocol/audit: argparse 的 --help 会 print_help 到 **stdout** 并
+    # SystemExit(0) —— usage 直接污染「stdout 唯一 JSON 出口」。这里把 stdout
+    # 临时接到缓冲区：捕获到的 usage 走 stderr（人类通道），stdout 只发一条协议
+    # JSON（data.help 带全文）。
+    _saved_stdout = sys.stdout
+    _captured = io.StringIO()
+    sys.stdout = _captured
     sys.stderr = _SilentStream()
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:
+        # 先还原真实 stdout（_emit/_fail 必须写到真实 stdout），再决定出口
+        sys.stdout = _saved_stdout
         sys.stderr = _saved_stderr
+        usage_text = _captured.getvalue()
+        if usage_text.strip():
+            print(usage_text, file=_saved_stderr, end="")
+            _emit({"ok": True, "code": 200, "data": {"help": usage_text}})
+            return EXIT_OK
         if isinstance(e.code, int) and e.code != 0:
-            return _fail("internal", f"参数错误（exit {e.code}）。试 --help 看用法。")
+            # FF-M-kinds/audit: argparse 的参数错误此前报 internal(70)，
+            # 与 errors.py 的 bad_request(7) 语义不符（且让调用方无法区分
+            # 「用法错误」和「内部崩溃」）。
+            return _fail("bad_request", f"参数错误（exit {e.code}）。试 --help 看用法。")
         raise
     finally:
+        sys.stdout = _saved_stdout
         sys.stderr = _saved_stderr
     result_code: int = exit_code_of(ErrorCode.BAD_REQUEST)
     try:
         result_code = int(args.func(args))
     except SystemExit as e:
-        result_code = int(e.code or 0) if isinstance(e.code, (int, str)) else exit_code_of(ErrorCode.BAD_REQUEST)
+        # FF-M-kinds/audit: 原 `int(e.code or 0)` 在 SystemExit("用法提示") 上会抛
+        # ValueError——异常处理器内再抛异常不会被下面的 except Exception 接住，
+        # 于是「已知的参数错误」变成无协议 JSON 的 traceback。这里显式分类。
+        code = e.code
+        if code is None:
+            result_code = EXIT_OK
+        elif isinstance(code, int):
+            result_code = code
+        else:
+            # 字符串 SystemExit 不是正常出口协议，命令也不会输出协议 JSON；
+            # 这里补一条 bad_request 保证 stdout 仍只有一条合法 JSON。
+            return _fail("bad_request", f"命令中止: {code}")
     except BrokenPipeError:
         return EXIT_OK
     except Exception as e:  # 兜底：任何未捕获异常都以协议 JSON 报告

@@ -13,7 +13,10 @@ import { spawnSync } from 'node:child_process'
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const repoRoot = join(here, '..', '..')
+// 本 JS 包在 <repo>/packages/dsh-formatforge 下 → 仓库根（含 core/ pyproject.toml）在上三层。
+// （旧值 `../..` 指向 packages/，`from core.utils import smart_truncate` 必然失败、
+//  proc.stderr 为 undefined → 测试在断言前就 TypeError 崩掉。）
+const repoRoot = join(here, '..', '..', '..')
 
 // 把 ESM stub 装一下（与 test-local.mjs 一致：这是测试工具，不依赖 dsh 运行时）
 const stubRoot = join(here, 'node_modules', '@deepseek-ai')
@@ -70,6 +73,26 @@ const cases = [
     input: '## 文件: a.md\n\n短内容',
     max: 30,
     start: 0,
+  },
+  // audit M7: 奇数 max_chars —— Python 用 `max // 2`（下取整），JS 曾用浮点 `/2`：
+  // 段落边界恰好落在 max//2 时 Python 保留、JS 丢弃（本用例的 cut 正好在 15）
+  {
+    name: 'odd max_chars: paragraph boundary at exactly max//2',
+    input: 'ABCDEFGHIJKLMNO\n\nrest of the paragraph follows here',
+    max: 31,
+    start: 0,
+  },
+  {
+    name: 'odd max_chars: paragraph boundary just below max//2',
+    input: 'ABCDEFGHIJKLMN\n\nrest of the paragraph follows here',
+    max: 31,
+    start: 0,
+  },
+  {
+    name: 'odd max_chars with offset',
+    input: 'lead-in text here\n\nABCDEFGHIJKLMNO\n\nrest of the paragraph follows',
+    max: 31,
+    start: 12,
   },
 ]
 

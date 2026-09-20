@@ -25,6 +25,11 @@ def run_cli(*args: str, stdin: str | None = None) -> tuple[dict, int]:
         [PY, "-m", "formatforge", *args],
         capture_output=True,
         text=True,
+        # T1-6: 协议两面都是 UTF-8。`text=True` 默认按**跑测机器的 locale** 解码
+        # 子进程输出（本机 cp1252），于是这份契约测试的结果取决于代码页而不是
+        # 被测代码 —— 中文载荷直接 UnicodeDecodeError。显式钉死，与 CLI 现在
+        # 自己钉的编码一致。
+        encoding="utf-8",
         input=stdin,
         cwd=REPO_ROOT,
         timeout=180,
@@ -54,8 +59,9 @@ class TestArgparseJsonOutput:
         import json
         payload = json.loads(captured.out.strip())
         assert payload["ok"] is False
-        assert payload["error"]["kind"] == "internal"
-        assert rc != 0
+        # FF-M-kinds/audit: 用法错误是 bad_request(exit 7)，不是 internal(70)
+        assert payload["error"]["kind"] == "bad_request"
+        assert rc == 7
 
     def test_invalid_choice_returns_json(self, capsys):
         """v1.0.1: 命令参数无效选择 → JSON 错误输出。"""
@@ -103,6 +109,23 @@ class TestTranslateText:
         assert {"parser", "file_size", "elapsed_ms"} <= set(meta)
         assert code == 0
 
+    def test_stdin_text_over_ff_max_bytes_is_bad_request(self, monkeypatch, capsys):
+        from io import StringIO
+
+        from core.config import settings
+        from formatforge.__main__ import build_parser, cmd_translate
+
+        monkeypatch.setattr(settings, "FF_MAX_BYTES", 10)
+        monkeypatch.setattr(sys, "stdin", StringIO("x" * 11))
+        args = build_parser().parse_args(["translate", "--stdin-text", "--format", "text"])
+
+        code = cmd_translate(args)
+        payload = json.loads(capsys.readouterr().out.strip())
+
+        assert payload["ok"] is False
+        assert payload["error"]["kind"] == "bad_request"
+        assert code == 7
+
     def test_txt_file_conversion(self):
         target = FIXTURES / "gbk_chinese.txt"
         if not target.exists():
@@ -125,7 +148,7 @@ class TestTranslateErrors:
     def test_directory_rejected(self):
         payload, code = run_cli("translate", str(REPO_ROOT / "test"))
         assert payload["ok"] is False
-        assert payload["error"]["kind"] == "file_not_found"
+        assert payload["error"]["kind"] == "is_directory"
         assert code == 2
 
 
@@ -248,11 +271,14 @@ class TestR10LanguageFlag:
 class TestR10OutputFile:
     """v0.10.0/A9: --output-file 把 content 落盘，stdout 协议不变。"""
 
-    def test_output_file_writes_content(self, tmp_path):
+    def test_output_file_writes_content(self, tmp_path, monkeypatch):
         target = FIXTURES / "gbk_chinese.txt"
         if not target.exists():
             pytest.skip("fixture 缺失")
         out_file = tmp_path / "out.txt"
+        # H11 之后 --output-file 必须落在 output_guard 的允许根内；pytest 的
+        # tmp_path 不在其中，所以这里显式声明它（这正是 FF_OUTPUT_ROOT 的用途）。
+        monkeypatch.setenv("FF_OUTPUT_ROOT", str(tmp_path))
         payload, code = run_cli("translate", str(target), "--format", "text", "--output-file", str(out_file))
         assert payload["ok"] is True
         # stdout 协议不变：content 仍包含转换结果
@@ -293,7 +319,7 @@ class TestR10FormatsCategory:
         """argparse choices 校验在 CLI 层拒绝；非 0 退出码 + stderr 信息。"""
         proc = subprocess.run(
             [PY, "-m", "formatforge", "formats", "--category", "no_such_thing"],
-            capture_output=True, text=True, cwd=REPO_ROOT, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", cwd=REPO_ROOT, timeout=30,
             env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
         )
         assert proc.returncode != 0
@@ -302,7 +328,9 @@ class TestR10FormatsCategory:
         import json
         payload = json.loads(proc.stdout)
         assert payload["ok"] is False
-        assert payload["error"]["kind"] == "internal"
+        # FF-M-kinds/audit: 用法错误是 bad_request(7)，不是 internal(70)。
+        # 同文件的 TestArgparseJsonOutput 早已断言新语义；这里是漏改的一处。
+        assert payload["error"]["kind"] == "bad_request"
 
     def test_categories_listed(self):
         payload, _ = run_cli("formats")
@@ -313,6 +341,10 @@ class TestR10FormatsCategory:
 
 class TestR10Batch:
     """v0.10.0/B3: batch 子命令 + --force 重转 + 报告落盘。"""
+
+    @pytest.fixture(autouse=True)
+    def _declare_output_root(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FF_OUTPUT_ROOT", str(tmp_path))
 
     def test_batch_basic_run(self, tmp_path):
         in_dir = tmp_path / "in"
@@ -739,14 +771,20 @@ class TestR12Diff:
         payload, code = run_cli("diff", str(a), str(tmp_path / "missing.txt"))
         assert payload["ok"] is False
         assert payload["error"]["kind"] == "file_not_found"
-        assert code != 0
+        assert code == 2
 
     def test_diff_pdf_support(self, tmp_path):
         """PDF 文件也可 diff（走 translate 中间转换）。"""
         target = FIXTURES / "complex_test.pdf"
         if not target.exists():
             pytest.skip("fixture 缺失")
-        payload, code = run_cli("diff", str(target), str(target), "--format", "text")
+        # 「同一文件」现在被显式拒绝（bad_request，无 diff 意义），所以用两份
+        # 内容相同的副本来保留本用例的本意：PDF 能走 diff，且相同内容 0 增 0 删。
+        copy_a = tmp_path / "a.pdf"
+        copy_b = tmp_path / "b.pdf"
+        copy_a.write_bytes(target.read_bytes())
+        copy_b.write_bytes(target.read_bytes())
+        payload, code = run_cli("diff", str(copy_a), str(copy_b), "--format", "text")
         assert payload["ok"] is True
         # 相同文件 → 0 增 0 删
         assert payload["data"]["additions"] == 0
@@ -792,9 +830,9 @@ class TestR14DiffIncremental:
         new_path = tmp_path / "report.txt"
         new_path.write_text("real-new\n", encoding="utf-8")
 
-        # 顺序：path_b path_a + --against-dir
+        # H12 之后位置语义按文档顺序：第一个实参 = path_a（旧版），第二个 = path_b
         payload, code = run_cli(
-            "diff", str(new_path), str(real_old), "--against-dir", str(old_dir)
+            "diff", str(real_old), str(new_path), "--against-dir", str(old_dir)
         )
         assert payload["ok"] is True, payload
         assert payload["data"]["path_a"] == str(real_old)
@@ -894,3 +932,140 @@ class TestR14DiffIncremental:
         assert payload["data"].get("skipped") is not True
         assert payload["data"]["additions"] == 1
         assert code == 0
+
+
+class TestH12DiffDirection:
+    """H12/audit: 双文件调用按文档顺序 `diff <path_a> <path_b>` 解析——additions/deletions 不再 report 反。"""
+
+    def test_two_file_diff_direction(self, tmp_path, capsys):
+        from formatforge.__main__ import main
+
+        old = tmp_path / "v1.txt"
+        new = tmp_path / "v2.txt"
+        old.write_text("a\nb\nc\n", encoding="utf-8")
+        new.write_text("a\nx\nc\n", encoding="utf-8")
+
+        rc = main(["diff", str(old), str(new)])
+        out = capsys.readouterr().out
+        payload = json.loads(out.splitlines()[0])
+        assert payload["ok"] is True
+        data = payload["data"]
+        assert data["path_a"].endswith("v1.txt")  # 文档顺序：第一个实参 = path_a
+        assert data["path_b"].endswith("v2.txt")
+        assert data["additions"] == 1  # x 是新加的
+        assert data["deletions"] == 1  # b 被替换
+        assert rc == 0
+
+    def test_deletion_of_lines_counts_as_deletions(self, tmp_path, capsys):
+        from formatforge.__main__ import main
+
+        old = tmp_path / "del1.txt"
+        new = tmp_path / "del2.txt"
+        old.write_text("p\nq\nr\ns\n", encoding="utf-8")
+        new.write_text("p\nq\n", encoding="utf-8")
+
+        main(["diff", str(old), str(new)])
+        payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        data = payload["data"]
+        assert data["additions"] == 0
+        assert data["deletions"] == 2  # r/s 被删（此前会 report 成 additions=2）
+
+
+class TestT16StdoutEncodingPinned:
+    """T1-6 回归：CLI 必须自己钉死 stdout 的编码。
+
+    协议是 UTF-8 JSON（`ensure_ascii=False`），但 `sys.stdout` 从未被
+    reconfigure。Windows 管道默认走 locale 编码（本机 cp1252），于是任何非
+    ASCII 载荷在**第一行协议 JSON 落地之前**就抛 UnicodeEncodeError，调用方
+    拿到的不是结果而是 internal(70)。JS 侧 python-runner 在 buildChildEnv 里
+    注入 PYTHONIOENCODING/PYTHONUTF8 把它盖住了 —— 所以产品路径看着没事，
+    而直接调用 CLI（以及这里的 capture_output 子进程）全线踩坑。
+
+    这些用例**故意剥掉** PYTHONIOENCODING / PYTHONUTF8，也就是一个普通
+    Windows 控制台或管道的样子。
+    """
+
+    @staticmethod
+    def _env_without_utf8_hints() -> dict[str, str]:
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")}
+        env["PYTHONPATH"] = str(REPO_ROOT)
+        return env
+
+    def _run_raw(self, *args: str, stdin: bytes | None = None) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [PY, "-m", "formatforge", *args],
+            capture_output=True,  # bytes：解码方式由断言自己决定，不受跑测机器 locale 影响
+            input=stdin,
+            cwd=REPO_ROOT,
+            timeout=180,
+            env=self._env_without_utf8_hints(),
+        )
+
+    def _assert_protocol_line(self, proc: subprocess.CompletedProcess) -> dict:
+        assert proc.stdout.strip(), (
+            f"stdout 为空：协议 JSON 在写出之前就死了。stderr={proc.stderr[-500:]!r}"
+        )
+        text = proc.stdout.decode("utf-8")  # 协议规定 UTF-8；解不开就是契约破了
+        lines = [line for line in text.splitlines() if line.strip()]
+        payload = json.loads(lines[0])
+        assert isinstance(payload, dict)
+        assert "ok" in payload and "code" in payload
+        return payload
+
+    def test_cjk_conversion_survives_a_cp1252_pipe(self):
+        """非 ASCII 正文 + 无 UTF-8 环境变量 → 仍须返回真正的转换结果。"""
+        target = FIXTURES / "gbk_chinese.txt"
+        if not target.exists():
+            pytest.skip("fixture 缺失")
+
+        proc = self._run_raw("translate", str(target), "--format", "text")
+        payload = self._assert_protocol_line(proc)
+
+        assert payload["ok"] is True, payload
+        assert payload["code"] == 200
+        assert proc.returncode == 0
+        content = payload["data"]["content"]
+        assert "编码测试文件" in content, content[:120]
+
+    def test_stdin_cjk_survives_a_cp1252_pipe(self):
+        proc = self._run_raw("translate", "--stdin-text", "--format", "text",
+                             stdin="中文测试内容，用于验证 stdout 编码。".encode())
+        payload = self._assert_protocol_line(proc)
+        assert payload["ok"] is True, payload
+        assert "中文测试内容" in payload["data"]["content"]
+
+    def test_error_paths_keep_their_own_kind(self):
+        """错误消息是中文。stdout 编码没钉死时，_fail -> _emit 自己先炸，
+        于是每一类错误都塌缩成 internal(70)，调用方再也分不清错误类型。"""
+        proc = self._run_raw("translate", "/no/such/file.docx")
+        payload = self._assert_protocol_line(proc)
+
+        assert payload["ok"] is False
+        assert payload["error"]["kind"] == "file_not_found", payload
+        assert proc.returncode == 2
+
+    def test_emit_never_raises_even_on_an_unpinnable_stream(self):
+        """出口自身的兜底：流不是 UTF-8 且不可 reconfigure 时也必须写出一行。
+
+        `_fail` 走的就是这条路——出口一抛异常，进程就一条协议 JSON 都发不出去。
+        """
+        import io
+
+        from formatforge.protocol import emit
+
+        saved = sys.stdout
+        buffer = io.BytesIO()
+        # cp1252 文本流，且 reconfigure 无法把它变成 UTF-8
+        wrapper = io.TextIOWrapper(buffer, encoding="cp1252", errors="strict", newline="")
+        sys.stdout = wrapper
+        try:
+            emit({"ok": False, "code": 4004, "error": {"kind": "parse_failed", "message": "转换失败：无法解析"}})
+            wrapper.flush()
+            raw = buffer.getvalue()
+        finally:
+            sys.stdout = saved
+            wrapper.detach()  # 别让 wrapper 被回收时连带关掉 buffer
+
+        line = raw.decode("cp1252").strip()
+        payload = json.loads(line)
+        assert payload["error"]["message"] == "转换失败：无法解析"

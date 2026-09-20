@@ -11,6 +11,16 @@ from typing import Any
 
 logger = logging.getLogger("quality_report")
 
+_TEXT_EVIDENCE_SAMPLE_CHARS = 65_536
+
+
+def _sample_text_evidence(content: str) -> str:
+    """Return an evenly spaced, bounded sample for character classification."""
+    if len(content) <= _TEXT_EVIDENCE_SAMPLE_CHARS:
+        return content
+    step = (len(content) + _TEXT_EVIDENCE_SAMPLE_CHARS - 1) // _TEXT_EVIDENCE_SAMPLE_CHARS
+    return content[::step]
+
 
 class QualityReport:
     """解析质量报告"""
@@ -27,7 +37,13 @@ class QualityReport:
     # ==================== 评分维度 ====================
 
     def _score_text_coverage(self, content: str, file_size: int, file_type: str) -> float:
-        """评估文本覆盖率 (0-100)"""
+        """评估文本覆盖率 (0-100)
+
+        FF-M-quality/audit: 覆盖率必须同时是**证据**——解析失败后的 raw 字节透传
+        与二进制乱码同样能满足 ``ratio >= expected``，曾被与真实文本一起打 100 分
+        （H1 关闭的 failure-as-success 类的下游症状）。现在以「内容像文本的程度」
+        作为乘子，并把该证据指标写进 warning，而不是只报一个漂亮的数字。
+        """
         if file_size <= 0:
             self.warnings.append("文件大小为0，无法评估文本覆盖率")
             return 0.0
@@ -52,11 +68,49 @@ class QualityReport:
         else:
             score = 0.0
 
+        evidence, printable_ratio, lexical_ratio = self._text_evidence(content)
+        if evidence < 0.6:
+            self.warnings.append(
+                f"内容可打印字符比例仅 {printable_ratio:.1%}（语言字符 {lexical_ratio:.1%}），"
+                f"疑似二进制/乱码透传——文本覆盖率按证据折算为 {score * evidence:.1f}"
+            )
+            self.suggestions.append("确认解析器是否匹配；二进制内容不应按文本覆盖率评估")
+
+        score *= evidence
+
         if score < 50:
             self.warnings.append(f"文本覆盖率较低 ({ratio:.4f})，提取的内容可能不完整")
             self.suggestions.append("建议检查文件是否损坏或解析器是否匹配")
 
         return round(score, 1)
+
+    @staticmethod
+    def _text_evidence(content: str) -> tuple[float, float, float]:
+        """返回 (证据强度 0..1, 可打印字符比例, 语言字符比例)。
+
+        证据强度 = 可打印字符比例（U+FFFD 与控制字符不计入）× 语言信号：
+        字母/数字/CJK 占比低于 5% 的符号/控制字符堆不视为可用文本。
+        """
+        if not content:
+            return 0.0, 0.0, 0.0
+        # K-5: quality runs automatically for --type auto. Classifying every
+        # character in a maximum-sized input made this a new O(N) hot path;
+        # an even sample keeps the signal representative with a fixed ceiling.
+        sample = _sample_text_evidence(content)
+        total = len(sample)
+        printable = 0
+        lexical = 0
+        for ch in sample:
+            if ch in "\n\r\t" or (ch.isprintable() and ch != "\ufffd"):
+                printable += 1
+            if ch.isalnum():
+                lexical += 1
+        printable_ratio = printable / total
+        lexical_ratio = lexical / total
+        evidence = printable_ratio
+        if lexical_ratio < 0.05:
+            evidence *= 0.3
+        return evidence, printable_ratio, lexical_ratio
 
     def _score_encoding_confidence(self, content: str) -> float:
         """评估编码置信度 (0-100)"""

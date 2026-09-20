@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 
 from core.models import ExtractedElement, PageContent
+from core.table_semantics import escape_md_cell
 from parsers import BaseParser
 
 logger = logging.getLogger("parsers.odf")
@@ -121,82 +122,88 @@ class ODFParser(BaseParser):
     def _process_text_body(self, parent: ET.Element, elements: list, raw_lines: list, elem_idx: list):
         """递归处理文本 body 中的子元素"""
         for child in parent:
-            tag = child.tag
+            # H15/audit: 每个 child 独立处理——一个畸形 attribute 不能让整个文档中止
+            # （此前 outline-level 等出现在 try 块之外，一路 abort 到底）
+            try:
+                self._process_body_child(child, elements, raw_lines, elem_idx)
+            except Exception as e:  # noqa: BLE001  单元素失败不拖垮整份文档
+                logger.warning("ODF 单元素解析失败（跳过）: %s", e)
 
-            # 标题
-            if tag == _ns("text:h"):
-                level_str = child.get(_ns("text:outline-level")) or "1"
-                level = int(level_str)
-                text = self._get_text(child)
+    def _process_body_child(self, child: ET.Element, elements: list, raw_lines: list, elem_idx: list):
+        """单个 body 子元素的分派处理（供 _process_text_body 的 per-element 隔离调用）。"""
+        tag = child.tag
+
+        # 标题
+        if tag == _ns("text:h"):
+            level = max(1, min(self._safe_int(child.get(_ns("text:outline-level")), default=1), 6)) or 1
+            text = self._get_text(child)
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="heading",
+                    content=text,
+                    metadata={"level": level},
+                )
+            )
+            raw_lines.append(text)
+            elem_idx[0] += 1
+
+        # 段落
+        elif tag == _ns("text:p"):
+            text = self._get_text(child)
+            if text.strip():
                 elements.append(
-                    ExtractedElement(
-                        elementId=f"elem_1_{elem_idx[0]}",
-                        elementType="heading",
-                        content=text,
-                        metadata={"level": level},
-                    )
+                    ExtractedElement(elementId=f"elem_1_{elem_idx[0]}", elementType="text", content=text, metadata={})
                 )
                 raw_lines.append(text)
                 elem_idx[0] += 1
 
-            # 段落
-            elif tag == _ns("text:p"):
-                text = self._get_text(child)
-                if text.strip():
-                    elements.append(
-                        ExtractedElement(
-                            elementId=f"elem_1_{elem_idx[0]}", elementType="text", content=text, metadata={}
-                        )
-                    )
-                    raw_lines.append(text)
-                    elem_idx[0] += 1
-
-            # 列表
-            elif tag == _ns("text:list"):
-                items = []
-                for li in child.findall(_ns("text:list-item")):
-                    item_text = self._get_text(li)
-                    if item_text.strip():
-                        items.append(item_text)
-                if items:
-                    elements.append(
-                        ExtractedElement(
-                            elementId=f"elem_1_{elem_idx[0]}",
-                            elementType="list",
-                            content="\n".join(items),
-                            metadata={
-                                "ordered": False,
-                                "items": [{"text": t} for t in items],
-                            },
-                        )
-                    )
-                    raw_lines.extend(items)
-                    elem_idx[0] += 1
-
-            # 表格
-            elif tag == _ns("table:table"):
-                self._extract_table(child, elements, raw_lines, elem_idx)
-
-            # 图片
-            elif tag == _ns("draw:frame"):
-                image_href = None
-                image_node = child.find(_ns("draw:image"))
-                if image_node is not None:
-                    image_href = image_node.get(_ns("xlink:href"))
+        # 列表
+        elif tag == _ns("text:list"):
+            items = []
+            for li in child.findall(_ns("text:list-item")):
+                item_text = self._get_text(li)
+                if item_text.strip():
+                    items.append(item_text)
+            if items:
                 elements.append(
                     ExtractedElement(
                         elementId=f"elem_1_{elem_idx[0]}",
-                        elementType="image",
-                        content="[图片]",
-                        metadata={"url": image_href or "[embedded]"},
+                        elementType="list",
+                        content="\n".join(items),
+                        metadata={
+                            "ordered": False,
+                            "items": [{"text": t} for t in items],
+                        },
                     )
                 )
-                raw_lines.append(f"[图片] {image_href or ''}")
+                raw_lines.extend(items)
                 elem_idx[0] += 1
 
-            # 递归处理其他容器元素
-            else:
-                self._process_text_body(child, elements, raw_lines, elem_idx)
+        # 表格
+        elif tag == _ns("table:table"):
+            self._extract_table(child, elements, raw_lines, elem_idx)
+
+        # 图片
+        elif tag == _ns("draw:frame"):
+            image_href = None
+            image_node = child.find(_ns("draw:image"))
+            if image_node is not None:
+                image_href = image_node.get(_ns("xlink:href"))
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{elem_idx[0]}",
+                    elementType="image",
+                    content="[图片]",
+                    metadata={"url": image_href or "[embedded]"},
+                )
+            )
+            raw_lines.append(f"[图片] {image_href or ''}")
+            elem_idx[0] += 1
+
+        # 递归处理其他容器元素
+        else:
+            self._process_text_body(child, elements, raw_lines, elem_idx)
 
     # ==================== ODS 表格解析 ====================
 
@@ -230,22 +237,24 @@ class ODFParser(BaseParser):
             for row_elem in table_elem.findall(_ns("table:table-row")):
                 cells: list[str] = []
                 for cell_elem in row_elem.findall(_ns("table:table-cell")):
-                    # 处理列重复
-                    repeat = int(cell_elem.get(_ns("table:number-columns-repeated")) or 1)
+                    # H15/audit: 处理列重复——钳制上限（曾用裸 int() 直接扩展）
+                    repeat = self._safe_int(cell_elem.get(_ns("table:number-columns-repeated")), default=1)
                     cell_text = self._get_text(cell_elem).strip()
                     for _ in range(repeat):
                         cells.append(cell_text)
 
                 if any(c for c in cells):
+                    # FF-M-table/audit: 单元格内的 | / 换行会撕开伪 Markdown 表格几何
+                    rendered = [escape_md_cell(c) for c in cells]
                     elements.append(
                         ExtractedElement(
                             elementId=f"elem_{page_num}_{elem_idx[0]}",
                             elementType="table_row",
-                            content=" | ".join(cells),
+                            content=" | ".join(rendered),
                             metadata={"cells": cells, "col_count": len(cells), "sheet": sheet_name},
                         )
                     )
-                    raw_lines.append(" | ".join(cells))
+                    raw_lines.append(" | ".join(rendered))
                     elem_idx[0] += 1
 
             pages.append(
@@ -359,6 +368,19 @@ class ODFParser(BaseParser):
 
     # ==================== 公共方法 ====================
 
+    #: H15/audit: int 属性展开上限（repeat/text:c/outline-level 等任何尺寸的
+    #: 整数属性都不允许触发 GB 级分配/列表构造）
+    _MAX_EXPANSION = 10000
+
+    @staticmethod
+    def _safe_int(value: str | None, default: int) -> int:
+        """H15/audit: 容错解析 int 属性并钳制——非数字回 default，超大值钳上限，
+        阻断 text:c / number-columns-repeated / outline-level 的整数扩展炸弹。"""
+        try:
+            return max(0, min(int(value), ODFParser._MAX_EXPANSION))
+        except (TypeError, ValueError):
+            return default
+
     def _extract_table(self, table_elem: ET.Element, elements: list, raw_lines: list, elem_idx: list):
         """提取表格数据"""
         header: list[str] = []
@@ -368,7 +390,7 @@ class ODFParser(BaseParser):
         for row_elem in table_elem.findall(_ns("table:table-row")):
             cells: list[str] = []
             for cell_elem in row_elem.findall(_ns("table:table-cell")):
-                repeat = int(cell_elem.get(_ns("table:number-columns-repeated")) or 1)
+                repeat = self._safe_int(cell_elem.get(_ns("table:number-columns-repeated")), default=1)
                 cell_text = self._get_text(cell_elem).strip()
                 for _ in range(repeat):
                     cells.append(cell_text)
@@ -383,8 +405,12 @@ class ODFParser(BaseParser):
                 rows.append(cells)
 
         if rows or header:
+            # FF-M-table/audit: 单元格内的 | / 换行会撕开伪 Markdown 表格几何
+            safe_header = [escape_md_cell(c) for c in header]
             table_text = (
-                " | ".join(header) + "\n" + "\n".join(" | ".join(r) for r in rows) if rows else " | ".join(header)
+                " | ".join(safe_header) + "\n" + "\n".join(" | ".join(escape_md_cell(c) for c in r) for r in rows)
+                if rows
+                else " | ".join(safe_header)
             )
             elements.append(
                 ExtractedElement(
@@ -413,7 +439,8 @@ class ODFParser(BaseParser):
             lb.text = "\n"
         # 处理 text:s (空格)
         for sp in element.findall(_ns("text:s")):
-            count = int(sp.get(_ns("text:c")) or 1)
+            # H15/audit: text:c 展开钳制（曾用裸 int()）
+            count = self._safe_int(sp.get(_ns("text:c")), default=1) or 1
             sp.text = " " * count
 
         self._element_text(element, parts)

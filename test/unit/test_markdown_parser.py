@@ -293,3 +293,17 @@ date: 2024-01-01
         footnotes = [e for e in elements if e.elementType == "footnote"]
         assert len(footnotes) == 1
         assert "脚注说明" in footnotes[0].content
+
+class TestH10ReferenceLineNoHang:
+    """H10/audit: 引用定义行匹配块级 pattern 但没有分支消费 → 此前 i 永不前进，永久 wedge。"""
+
+    def test_reference_definition_line_does_not_hang(self, tmp_path):
+        from parsers.markdown_parser import MarkdownParser
+
+        parser = MarkdownParser()
+        md_path = tmp_path / "ref.md"
+        md_path.write_text("# 标题\n\n[ref]: http://x (Title)\n\n正文内容\n", encoding="utf-8")
+        result = parser.parse(md_path)  # 若 wedged 会永远挂住测试
+        contents = [e.content for p in result for e in p.elements]
+        assert any("正文内容" in c for c in contents)
+        assert any("[ref]" in c or "ref" in c for c in contents)

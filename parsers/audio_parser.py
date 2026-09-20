@@ -135,32 +135,35 @@ class AudioParser(BaseParser):
                 )
             ]
 
+    #: M4A/MP4 单个 chunk 的读取上限（防御性：异常大的 chunk_size 不再 f.read 出巨型分配）
+    _MAX_MP4_CHUNK = 8 * 1024 * 1024  # 8 MB
+
     def _parse_wav(self, f, file_path: Path, metadata: dict[str, Any]) -> dict[str, Any]:
         """解析 WAV (RIFF) 文件头"""
         metadata["format"] = "WAV"
 
         try:
-            header_data = f.read(32)
-            if len(header_data) < 28:
+            # H9/audit: parse() 在调用本方法前已消费 12 字节 RIFF 头——必须先回卷，
+            # 否则 fmt/data chunk 永远匹配不到，所有 WAV 的元数据都是错的
+            f.seek(0)
+            riff_header = f.read(12)
+            if len(riff_header) < 12:
                 return metadata
-
-            # RIFF 头: 4字节 "RIFF", 4字节 文件大小-8, 4字节 "WAVE"
-            riff_id, riff_size, wave_id = struct.unpack("<4sI4s", header_data[:12])
+            riff_id, riff_size, wave_id = struct.unpack("<4sI4s", riff_header)
             metadata["riff_size"] = riff_size + 8
 
-            pos = 12
             data_size = 0
-
-            while pos < len(header_data) + 8:
-                # 读取 chunk 头
-                chunk_header = header_data[pos : pos + 8]
+            # H9(扩展): 逐 chunk 顺序读取（旧实现只读前 32 字节再原地切片，
+            # fmt 16 字节数据落在 32 字节窗口外 → 永远解析不到）
+            while True:
+                chunk_header = f.read(8)
                 if len(chunk_header) < 8:
-                    pos += 8
-                    continue
+                    break
                 chunk_id, chunk_size = struct.unpack("<4sI", chunk_header)
+                padded_size = chunk_size + (chunk_size & 1)
 
                 if chunk_id == b"fmt ":
-                    fmt_data = header_data[pos + 8 : pos + 8 + chunk_size]
+                    fmt_data = f.read(min(chunk_size, 64))
                     if len(fmt_data) >= 16:
                         audio_format, num_channels, sample_rate, byte_rate, block_align, bits_per_sample = (
                             struct.unpack("<HHIIHH", fmt_data[:16])
@@ -173,11 +176,15 @@ class AudioParser(BaseParser):
                         metadata["bitrate"] = round(byte_rate * 8 / 1000)  # kbps
                         if block_align > 0:
                             metadata["block_align"] = block_align
+                    if padded_size > len(fmt_data):
+                        f.seek(padded_size - len(fmt_data), 1)
 
                 elif chunk_id == b"data":
                     data_size = chunk_size
-
-                pos += 8 + chunk_size
+                    break
+                else:
+                    if padded_size > 0:
+                        f.seek(padded_size, 1)
 
             metadata["data_size"] = data_size
 
@@ -286,13 +293,17 @@ class AudioParser(BaseParser):
                 # 估算时长
                 file_size = metadata["file_size"]
                 id3v2_size = metadata.get("id3v2_size", 0)
-                audio_size = file_size - id3v2_size - 10
+                # H9/audit: 微型 MP3（< id3 头大小）会得到负 audio_size → 负时长
+                audio_size = max(0, file_size - id3v2_size - 10)
 
                 # 检查 ID3v1 (尾部 128 字节)
-                f.seek(-128, os.SEEK_END)
-                tail = f.read(3)
-                if tail == b"TAG":
-                    audio_size -= 128
+                # FF-L-audio/audit: 文件 < 128 字节时 seek(-128, SEEK_END) 直接
+                # OSError，把后续解析一并拖进 except —— 先确认文件够长。
+                if metadata["file_size"] >= 128:
+                    f.seek(-128, os.SEEK_END)
+                    tail = f.read(3)
+                    if tail == b"TAG":
+                        audio_size = max(0, audio_size - 128)
 
                 if br > 0:
                     duration_sec = (audio_size * 8) / (br * 1000)
@@ -300,10 +311,12 @@ class AudioParser(BaseParser):
                     metadata["duration_formatted"] = self._format_duration(duration_sec)
 
             # 尝试从尾部读取 ID3v1 (128 字节)
-            f.seek(-128, os.SEEK_END)
-            tail = f.read(128)
-            if tail[:3] == b"TAG":
-                self._parse_id3v1(tail, metadata)
+            # FF-L-audio/audit: < 128 字节的小文件直接跳过（seek 会 OSError）。
+            if metadata["file_size"] >= 128:
+                f.seek(-128, os.SEEK_END)
+                tail = f.read(128)
+                if tail[:3] == b"TAG":
+                    self._parse_id3v1(tail, metadata)
 
         except Exception as e:
             logger.debug("MP3 解析细节错误: %s", e)
@@ -428,6 +441,7 @@ class AudioParser(BaseParser):
                 metadata["block_size_min"] = min_block
                 metadata["block_size_max"] = max_block
 
+                duration_sec = 0.0  # H9/audit: 采样率非法时不再 NameError（被 except 吞成静默失败）
                 if sample_rate > 0:
                     duration_sec = total_samples / sample_rate
                     metadata["duration"] = round(duration_sec, 2)
@@ -529,7 +543,12 @@ class AudioParser(BaseParser):
                     if chunk_size < 8:
                         break
 
+                    # H8/audit: chunk_size 不可信（16 字节的 M4A 声称 0xFFFFFF00 = ~4GiB
+                    # 分配）——超出上限的 chunk 放弃解析，不做巨型 f.read
                     if chunk_type == "moov":
+                        if chunk_size - 8 > self._MAX_MP4_CHUNK:
+                            logger.warning("M4A moov chunk 过大 (%d 字节)，跳过深层解析", chunk_size)
+                            break
                         moov_data = f.read(chunk_size - 8)
                         self._parse_mp4_moov(moov_data, metadata)
                         break

@@ -395,3 +395,37 @@ class TestPDFParserIntegration:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v', '--tb=short'])
+
+
+class TestH13H16PageSelection:
+    """H13/H16/audit: 页选择统一解析、页数边界校验、请求顺序保留。"""
+
+    FIXTURE_PAGES = 3  # test/fixtures/mixed_content_test.pdf
+
+    @pytest.fixture()
+    def sample_pdf(self):
+        import pdfplumber  # noqa: F401
+        return Path(__file__).resolve().parents[1] / "fixtures" / "mixed_content_test.pdf"
+
+    def test_bounds_check_rejects_page_beyond_count(self, sample_pdf):
+        """--pages 9999 不再返回 0 页空文档假成功，而是干净的 bad_request 错误。"""
+        parser = PDFParser()
+        with pytest.raises(ValueError, match="pages 参数"):
+            parser.parse(sample_pdf, pages="9999")
+
+    def test_zero_page_rejected(self, sample_pdf):
+        parser = PDFParser()
+        with pytest.raises(ValueError, match="pages 参数"):
+            parser.parse(sample_pdf, pages="0")
+
+    def test_reverse_range_rejected(self, sample_pdf):
+        parser = PDFParser()
+        with pytest.raises(ValueError, match="pages 参数"):
+            parser.parse(sample_pdf, pages="5-1")
+
+    def test_request_order_preserved(self, sample_pdf):
+        """pages "3,1" 输出顺序 = 请求顺序（不再按 set 升序重排）。"""
+        parser = PDFParser()
+        pages = parser.parse(sample_pdf, pages="3,1")
+        numbers = [p.pageNumber for p in pages]
+        assert numbers == [3, 1]

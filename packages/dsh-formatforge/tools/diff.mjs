@@ -81,9 +81,12 @@ export function createDiffTool({ repoRoot, maxBytes, timeoutMs, log = () => {} }
       const maxChars = Math.max(500, Number(args.max_chars) || 12000)
 
       log(`[ff_diff] A=${args.path_a || '(auto)'} B=${args.path_b} against_dir=${args.against_dir || '-'} since_mtime=${args.since_mtime ?? '-'} context=${contextLines} maxChars=${maxChars}`)
-      // v0.14.0/B-P0-2: path_b 变 optional（argparse 限制），CLI 端也允许省略
-      // 顺序：path_b path_a（argparse 中 path_b 在前，因 path_a 是 optional + 中间夹 option 会失败——见 Python CLI 注册注释）
-      const cliArgs = ['diff', String(args.path_b || ''), args.path_a ? String(args.path_a) : '', '--format', args.format || 'text', '--context', String(contextLines), '--max-chars', String(maxChars)]
+      // H12/audit 镜像（与 formatforge/diff.py::_resolve_paths 同步修复）：
+      // 双文件时按文档顺序传 path_a path_b（diff.py 现按位置语义解析：首个实参 = path_a）。
+      // 增量模式（path_a 缺省）只传 path_b 一个 positional。
+      const cliArgs = ['diff', '--format', args.format || 'text', '--context', String(contextLines), '--max-chars', String(maxChars)]
+      if (args.path_a) cliArgs.push(String(args.path_a))
+      cliArgs.push(String(args.path_b))
       if (args.against_dir) cliArgs.push('--against-dir', String(args.against_dir))
       if (args.since_mtime !== undefined && args.since_mtime !== null) {
         cliArgs.push('--since-mtime', String(args.since_mtime))

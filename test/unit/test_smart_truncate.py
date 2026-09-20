@@ -37,6 +37,23 @@ class TestSmartTruncate:
         assert len(chunk) == 50
         assert nxt == 50
 
+    def test_hard_cut_paginated_recovers_all_content(self):
+        """H2/audit: 硬切分支不得 double-count start——1000 字符单行按页轮转应完整还原。"""
+        text = "y" * 1000
+        parts, off = [], 0
+        pages = 0
+        while True:
+            chunk, nxt = smart_truncate(text, 100, off)
+            assert chunk
+            parts.append(chunk)
+            pages += 1
+            if nxt is None:
+                break
+            off = nxt
+            assert pages < 20  # 防退化兜底：最多 ~10 页
+        assert "".join(parts) == text  # 无内容丢失、无重复
+        assert pages == 10  # 正好 10 页，而不是 4 页后假 EOF
+
     def test_roundtrip_lossless(self):
         parts, off = [], 0
         while True:

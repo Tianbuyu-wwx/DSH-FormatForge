@@ -327,3 +327,46 @@ class TestODFParserErrors:
         path.write_bytes(buf.getvalue())
         with pytest.raises(ValueError, match="ODF XML 解析失败"):
             parser.parse(path)
+
+class TestH15IntegerBombs:
+    """H15/audit: int 属性扩展钳制 —— text:c / number-columns-repeated / outline-level。"""
+
+    @pytest.fixture
+    def parser(self):
+        return ODFParser()
+
+    def _make_odt(self, body_xml: str, tmp_path) -> Path:
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("mimetype", "application/vnd.oasis.opendocument.text", compress_type=zipfile.ZIP_STORED)
+            full = _make_content_xml(body_xml, office_type="text")
+            zf.writestr("content.xml", full)
+            zf.writestr(
+                "META-INF/manifest.xml",
+                '<?xml version="1.0"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2"/>',
+            )
+        path = tmp_path / "doc.odt"
+        path.write_bytes(buf.getvalue())
+        return path
+
+    def test_text_c_expansion_bomb(self, parser, tmp_path):
+        file = self._make_odt('<text:p><text:s text:c="99999999999999"/>ok</text:p>', tmp_path)
+        result = parser.parse(file)  # 此前是 " " * 10^14 分配
+        assert result and "ok" in result[0].rawText
+
+    def test_repeat_bomb_cell(self, parser, tmp_path):
+        file = self._make_odt(
+            '<table:table><table:table-row><table:table-cell '
+            'table:number-columns-repeated="99999999999">a</table:table-cell></table:table-row></table:table>',
+            tmp_path,
+        )
+        result = parser.parse(file)  # 不应 OOM/永久卡死
+        assert result
+
+    def test_non_numeric_outline_level_does_not_abort_doc(self, parser, tmp_path):
+        file = self._make_odt(
+            '<text:h text:outline-level="NaN">标题</text:h><text:p>正文</text:p>', tmp_path
+        )
+        result = parser.parse(file)  # 一个畸形 attribute 不让整个文档中止
+        raw = result[0].rawText
+        assert "正文" in raw  # 后续段落仍然被解析

@@ -27,6 +27,9 @@ FURNITURE_RATIO = 0.6
 #: 参与页眉判定的页首行数 / 页尾行数
 HEAD_LINES = 2
 TAIL_LINES = 2
+#: 单次显式页选择的硬上限。范围在 materialize 前校验，避免 CLI/batch 输入
+#: 通过 ``1-1000000000`` 一类表达式制造巨型 set/list 分配。
+MAX_SELECTED_PAGES = 10_000
 
 _PAGE_NO_PATTERNS = [
     re.compile(r"^\s*\d+\s*$"),
@@ -37,13 +40,14 @@ _PAGE_NO_PATTERNS = [
 ]
 
 
-def parse_pages_spec(spec: str | None) -> set[int] | None:
-    """把 "1-3,7" 解析为 {1,2,3,7}；None/空 返回 None（表示不过滤）。"""
+def _validated_page_parts(spec: str | None, max_page: int | None = None) -> list[tuple[int, int]]:
+    """只解析并校验页选择端点，不展开范围。"""
     if not spec or not spec.strip():
-        return None
-    pages: set[int] = set()
-    for part in spec.split(","):
-        part = part.strip()
+        return []
+    parts: list[tuple[int, int]] = []
+    selected_count = 0
+    for raw_part in spec.split(","):
+        part = raw_part.strip()
         if not part:
             continue
         if "-" in part:
@@ -52,15 +56,64 @@ def parse_pages_spec(spec: str | None) -> set[int] | None:
                 lo, hi = int(a), int(b)
             except ValueError:
                 raise ValueError(f"pages 参数格式错误: {part!r}（示例：1-3,7）") from None
-            if lo > hi:
-                lo, hi = hi, lo
-            pages.update(range(lo, hi + 1))
+            if lo < 1 or hi < lo:
+                raise ValueError(f"pages 参数格式错误: {part!r}（页号从 1 开始、范围需递增，如 1-3）") from None
         else:
             try:
-                pages.add(int(part))
+                lo = hi = int(part)
             except ValueError:
                 raise ValueError(f"pages 参数格式错误: {part!r}") from None
+            if lo < 1:
+                raise ValueError(f"pages 参数格式错误: {part!r}（页号从 1 开始）")
+
+        if max_page is not None and hi > max_page:
+            raise ValueError(f"pages 参数格式错误: 请求页 {hi} 超出范围（PDF 共 {max_page} 页）")
+        selected_count += hi - lo + 1
+        if selected_count > MAX_SELECTED_PAGES:
+            raise ValueError(f"pages 参数格式错误: 选择页数超过上限 {MAX_SELECTED_PAGES}")
+        parts.append((lo, hi))
+    return parts
+
+
+def validate_pages_spec(spec: str | None, max_page: int | None = None) -> bool:
+    """无范围展开地校验页选择；有至少一个有效选择时返回 True。"""
+    return bool(_validated_page_parts(spec, max_page=max_page))
+
+
+def parse_pages_spec(spec: str | None, max_page: int | None = None) -> set[int] | None:
+    """把 "1-3,7" 解析为 {1,2,3,7}；None/空 返回 None（表示不过滤）。
+
+    H13/audit: 这是唯一的页选择解析器——pdf_parser 也走这里。规则：
+      - 页号从 1 开始（拒绝 0 / 负数）
+      - 递减范围是用户输入错误，直接拒绝（不再静默互换 5-1 → 1-5）
+      - 展开前限制选择数量，并可用 max_page 对照真实 PDF 页数
+      - 所有错误统一携带 "pages 参数格式错误" marker，保证 ParseStep 能按
+        bad_request 上抛，而不是被当解析失败吞掉
+    """
+    parts = _validated_page_parts(spec, max_page=max_page)
+    if not parts:
+        return None
+    pages: set[int] = set()
+    for lo, hi in parts:
+        pages.update(range(lo, hi + 1))
     return pages or None
+
+
+def parse_pages_spec_ordered(spec: str | None, max_page: int | None = None) -> list[int]:
+    """按请求出现顺序展开页选择（去重保留首次出现；spec 为空 → []）。
+
+    H16/audit: 之前选择是 set → 输出按文档升序而非请求顺序（"3,1" 得 1 然后 3）。
+    与 parse_pages_spec 共用同一条端点、页数和选择上限校验路径。
+    """
+    parts = _validated_page_parts(spec, max_page=max_page)
+    ordered: list[int] = []
+    seen: set[int] = set()
+    for lo, hi in parts:
+        for n in range(lo, hi + 1):
+            if n not in seen:
+                seen.add(n)
+                ordered.append(n)
+    return ordered
 
 
 def is_page_number_line(line: str) -> bool:

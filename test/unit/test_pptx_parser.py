@@ -18,7 +18,12 @@ class TestPPTXParserBasic:
     def test_supported_extensions(self):
         parser = PPTXParser()
         assert ".pptx" in parser.supported_extensions
-        assert ".ppt" in parser.supported_extensions
+
+    def test_ppt_no_longer_advertised(self):
+        """H18/audit: .ppt（OLE2 旧格式）python-pptx 无法解析——宣称已收缩。"""
+        parser = PPTXParser()
+        assert ".ppt" not in parser.supported_extensions
+        assert b"\xd0\xcf\x11\xe0" not in parser.supported_magic
 
     def test_supported_magic(self):
         parser = PPTXParser()

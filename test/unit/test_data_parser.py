@@ -74,6 +74,16 @@ class TestDataParserJSON:
         assert len(result[0].elements) > 1
         assert "user" in result[0].rawText
 
+    def test_deep_dict_extraction_is_capped(self, parser):
+        data = {"leaf": "value"}
+        for _ in range(1100):
+            data = {"nested": data}
+
+        elements = parser._extract_dict_elements(data, "root")
+
+        assert len(elements) <= parser._DICT_MAX_DEPTH + 2
+        assert any(e.metadata.get("depth_capped") is True for e in elements)
+
     def test_parse_invalid_json(self, parser, tmp_path):
         """测试无效 JSON"""
         json_path = tmp_path / "invalid.json"

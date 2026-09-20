@@ -209,10 +209,10 @@ class ParseStep:
                 # pages 表达式非法属用户输入错误，先本地校验以便精确报错
                 pdf_options = None
                 if getattr(ctx, "pages", None):
-                    from core.pdf_enhance import parse_pages_spec
+                    from core.pdf_enhance import validate_pages_spec
 
-                    selected_pages = parse_pages_spec(ctx.pages)  # 非法时抛 ValueError
-                    if selected_pages:
+                    # T2-4: 入口只校验端点/选择数量，不在 PDF 页数已知前展开范围。
+                    if validate_pages_spec(ctx.pages):  # 非法时抛 ValueError
                         pdf_options = {"pages": ctx.pages}
                 # R3.3: 自愈重试的编码覆写（TXT 解析器消费；其他解析器忽略）
                 enc = getattr(ctx, "encoding", None)
@@ -238,6 +238,15 @@ class ParseStep:
             # E2: pages 表达式非法等用户输入错误 —— 以协议错误上抛（bad_request）
             logger.warning("[result_id=%s] 解析参数错误: %s", ctx.result_id, e)
             if "pages 参数格式错误" in str(e):
+                raise
+            if "不支持的文件类型" in str(e) and any(ext in str(e) for ext in (".doc", ".ppt", ".xlsb")):
+                # H18/audit: 收缩格式（.doc/.ppt/.xlsb）无解析器——必须以失败上抛，
+                # 不能吞掉后走 raw 透传假装成功；入口分类为 unsupported_format。
+                # 注意 .tmp 是 stream 输入的自有后缀，不属于此列（保持原跳过行为）。
+                raise
+            if "password-protected" in str(e):
+                # FF-M-pdf/audit: 加密 PDF 同理——吞掉后 ConvertStep 会把原始
+                # PDF 字节当 content 返回（confidence 1.0）。上抛，入口报 parse_failed。
                 raise
             ctx.logs.append(create_processing_log("parse", f"解析失败: {e}", "warning"))
         except Exception as e:
@@ -381,17 +390,38 @@ class ConvertStep:
                 ctx.confidence = result.get("confidence", 0.0)
                 ctx.logs.append(create_processing_log("convert", f"转换完成，置信度: {ctx.confidence:.2f}"))
             except Exception as e:
-                ctx.logs.append(create_processing_log("convert", f"转换失败: {e}", "error"))
-                ctx.content = f"转换失败: {e}"
+                error_message = f"转换失败: {e}"
+                ctx.logs.append(create_processing_log("convert", error_message, "error"))
+                ctx.content = error_message
                 ctx.structured_data = None
                 ctx.confidence = 0.0
+                # T2-10: 通过 pipeline 的统一错误通道生成 structuredData.error，
+                # 让 translate 与 batch 入口都把策略异常识别为失败。
+                ctx.error = error_message
         elif ctx.input_data.data and len(ctx.input_data.data) > 0 and not ctx.parsed_file:
             data = ctx.input_data.data
             text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else str(data)
             ctx.content = text
             ctx.structured_data = None
-            ctx.confidence = 1.0
-            ctx.logs.append(create_processing_log("convert", f"raw 文本输入，直接透传 ({len(text)} 字符)"))
+            if ctx.input_data.source_type == "file":
+                # H1: 解析失败被吞掉后字节原样透传（含本文档二进制）——不能伪装成
+                # 置信度 1.0 的成功；纯文本 stdin 透传保持 1.0。
+                ctx.confidence = 0.3
+                ctx.structured_data = {"raw_passthrough": True}
+                logger.warning(
+                    "[result_id=%s] 解析失败回退为 raw 透传（confidence 降为 0.3，raw_passthrough=True）",
+                    ctx.result_id,
+                )
+                ctx.logs.append(
+                    create_processing_log(
+                        "convert",
+                        f"解析失败，原始字节透传（置信度 0.3，raw_passthrough）({len(text)} 字符)",
+                        "warning",
+                    )
+                )
+            else:
+                ctx.confidence = 1.0
+                ctx.logs.append(create_processing_log("convert", f"raw 文本输入，直接透传 ({len(text)} 字符)"))
         else:
             ctx.content = _build_raw_content(ctx.input_data, ctx.detected)
             ctx.structured_data = {"raw_data": True, "size": ctx.input_data.size}

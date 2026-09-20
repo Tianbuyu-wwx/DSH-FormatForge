@@ -1,146 +1,238 @@
+// packages/dsh-formatforge/test-inbox.mjs
+//
 // 本地开发测试 inbox watcher（不依赖 dsh 运行时）：
-// 建临时 FF_HOME → 拷 fixture 进 inbox → 等 watcher 转换 → 校验产物与通知回调。
+// 建临时 FF_HOME → 拷 fixture 进 inbox → 等 watcher 转换 → **断言**产物与 onDone 载荷。
+//
+// v1.0.3/JS-H8 修复：本文件此前硬编码作者的机器路径（`E:/项目/DSH-FormatForge`）、
+// 从不调用 ff_result、且只 printf 不 assert —— 头条 JS-H1 的协议键漂移就是这样漏掉的。
+// 现在：路径从仓库布局推导、真实调用 ff_result 取回正文、每条检查都是断言且失败非零退出。
+//
 // 用法：node packages/dsh-formatforge/test-inbox.mjs
 
-import { mkdirSync, writeFileSync, copyFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, writeFileSync, copyFileSync, rmSync, existsSync, readFileSync, utimesSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
-import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const repoRoot = 'E:/项目/DSH-FormatForge'
+// 本文件在包根（<repo>/packages/dsh-formatforge）→ 仓库根（含 formatforge/ core/ test/fixtures）在上两层
+const repoRoot = join(here, '..', '..')
 
-// stub @deepseek-ai/*（watcher 本身不需要，但 import 链上的 index 不在此测试中）
+// ─── 断言工具 ───
+let failures = 0
+function check(name, cond, detail = '') {
+  if (cond) {
+    console.log(`✅ ${name}`)
+  } else {
+    failures++
+    console.error(`❌ ${name}  ${detail}`)
+  }
+}
+function section(title) {
+  console.log(`\n--- ${title} ---`)
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// ─── @deepseek-ai/dsh-tools stub（只为让 tools/result.mjs 能在裸 Node 下导入；
+//     M19 教训：只在包根 node_modules 不存在时建，且只清理自己建的目录） ───
+const stubRoot = join(here, 'node_modules', '@deepseek-ai')
+const stubOwned = !existsSync(join(here, 'node_modules'))
+if (stubOwned) {
+  const dir = join(stubRoot, 'dsh-tools')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'index.mjs'), `export function defineTool(spec) { return spec }\n`)
+  writeFileSync(
+    join(dir, 'package.json'),
+    JSON.stringify({ name: '@deepseek-ai/dsh-tools', version: '0.0.0', type: 'module', main: './index.mjs' }),
+  )
+}
+
+// ─── 隔离环境 ───
 const testHome = join(tmpdir(), `ffinbox-test-${Date.now()}`)
 process.env.FF_HOME = testHome
 process.env.FF_INBOX_NOTIFY = 'true'
-process.env.FF_INBOX_TTL_DAYS = '999'  // 关闭 TTL：fixture mtime 古老会被 retention 判过期
-
+process.env.FF_INBOX_TTL_DAYS = '999' // 关闭 TTL：fixture mtime 古老会被 retention 判过期
+process.env.FF_INBOX_MAX_MB = '0'
 mkdirSync(join(testHome, 'inbox'), { recursive: true })
 
-const { createInboxWatcher, inboxDir } = await import('./services/inbox-watcher.mjs')
-console.log('inbox at:', inboxDir())
-if (inboxDir() !== join(testHome, 'inbox')) {
-  console.error('FAIL: FF_HOME not honored')
-  process.exit(1)
+const cleanup = () => {
+  if (stubOwned) rmSync(join(here, 'node_modules'), { recursive: true, force: true })
+  rmSync(testHome, { recursive: true, force: true })
 }
+process.on('exit', cleanup)
 
+const { createInboxWatcher, inboxDir } = await import('./services/inbox-watcher.mjs')
+const { createResultTool } = await import('./tools/result.mjs')
+const resultTool = createResultTool({ log: () => {} })
+
+console.log('\n=== inbox watcher E2E (JS-H3/H4/H8) ===')
+console.log('inbox at:', inboxDir())
+
+section('S0 FF_HOME honored')
+check('FF_HOME honored', inboxDir() === join(testHome, 'inbox'), inboxDir())
+
+// ─── 主 watcher：真实转换 ───
 const events = []
 const watcher = createInboxWatcher({
   repoRoot,
   maxBytes: 100 * 1024 * 1024,
   timeoutMs: 120_000,
-  log: (l) => console.log('  ', l),
-  onDone: (r) => {
-    console.log('onDone:', JSON.stringify(r))
-    events.push(r)
-  },
+  log: () => {},
+  onDone: (r) => events.push(r),
 })
 watcher.start()
+// 启动预检先跑一遍再投文件，避免与首轮 scanStable 抢时序
+await sleep(2200)
 
-// 场景1：拖入一个 txt
-copyFileSync(join(repoRoot, 'test', 'fixtures', 'gbk_chinese.txt'), join(inboxDir(), 'sample.txt'))
-await new Promise((r) => setTimeout(r, 6000))
+section('S1 真实转换（txt → markdown）+ ff_result 取回')
+const fixture = join(repoRoot, 'test', 'fixtures', 'gbk_chinese.txt')
+check('fixture exists', existsSync(fixture), fixture)
+copyFileSync(fixture, join(inboxDir(), 'sample.txt'))
+await sleep(7000)
 
-const jsonPath = join(inboxDir(), 'sample.ff.json')
-const mdPath = join(inboxDir(), 'sample.ff.md')
-console.log('json exists:', existsSync(jsonPath), '| md exists:', existsSync(mdPath))
-if (existsSync(mdPath)) {
-  const md = readFileSync(mdPath, 'utf8')
-  console.log('md head:', md.slice(0, 60).replace(/\n/g, '\\n'))
-}
-console.log('events so far:', events.length)
-console.log('last event:', JSON.stringify(events[events.length - 1]))
+const jsonPath = join(inboxDir(), 'sample.txt.ff.json')
+const mdPath = join(inboxDir(), 'sample.txt.ff.md')
+check('artifact keyed by source name + ext (sample.txt.ff.json)', existsSync(jsonPath), JSON.stringify(readdirSafe()))
+check('markdown artifact written', existsSync(mdPath))
+check('legacy stem-only key NOT used', !existsSync(join(inboxDir(), 'sample.ff.json')))
 
-// R3.2: onDone payload 必须含 resultId（会话模型据此 ff_result 取回）
 const translated = events.find((e) => e.file === 'sample.txt' && e.ok === true)
-const hasResultId = translated && typeof translated.resultId === 'string' && translated.resultId.startsWith('cvt')
-console.log('R3.2 onDone.resultId present:', hasResultId, '(id=', translated?.resultId, ')')
+check('onDone fired ok:true for sample.txt', !!translated, JSON.stringify(events.slice(-2)))
+check('onDone.resultId present (cvt…)', typeof translated?.resultId === 'string' && translated.resultId.startsWith('cvt'), String(translated?.resultId))
+check('onDone.parser reported', !!translated?.parser, String(translated?.parser))
 
-// 场景2：重复拷贝同内容不同名 → 应各自转换（名字不同）；同名覆盖 mtime 变 → 也重转
-// 场景3：不支持的扩展名 → error 文件
+// JS-H1 头条回归：通知里广告的 result_id 必须真的能取回正文
+const fetched = await resultTool.execute({ id: translated?.resultId })
+check('ff_result(resultId) → ok', fetched.ok === true, JSON.stringify(fetched).slice(0, 300))
+check('ff_result returns NON-EMPTY content', typeof fetched.data?.content === 'string' && fetched.data.content.length > 0, `len=${fetched.data?.content?.length}`)
+check('ff_result content matches the .ff.md artifact', readFileSync(mdPath, 'utf8').startsWith(fetched.data?.content?.slice(0, 20)), JSON.stringify(fetched.data?.content?.slice(0, 40)))
+check('ff_result reports parser from meta.parser', fetched.data?.parser === translated?.parser, JSON.stringify({ tool: fetched.data?.parser, notify: translated?.parser }))
+check('ff_result reports confidence from meta.confidence', fetched.data?.confidence === translated?.confidence, JSON.stringify({ tool: fetched.data?.confidence, notify: translated?.confidence }))
+check('ff_result reports meta.file_size', typeof fetched.data?.file_size === 'number' && fetched.data.file_size > 0, String(fetched.data?.file_size))
+const listed = await resultTool.execute({ list: true })
+const row = listed.data?.items?.find((it) => it.file === 'sample.txt.ff.json')
+check('ff_result list shows the artifact as valid', !!row && row.valid === true && row.parser === translated?.parser, JSON.stringify(row))
+
+section('S2 JS-H4 同 stem 不同扩展名不互相覆盖')
+writeFileSync(join(inboxDir(), 'dup.txt'), 'dup txt body\n'.repeat(5), 'utf-8')
+writeFileSync(join(inboxDir(), 'dup.md'), '# dup md body\n'.repeat(5), 'utf-8')
+await sleep(7000)
+check('dup.txt artifact exists', existsSync(join(inboxDir(), 'dup.txt.ff.json')))
+check('dup.md artifact exists', existsSync(join(inboxDir(), 'dup.md.ff.json')))
+check('no shared stem-only artifact (dup.ff.json)', !existsSync(join(inboxDir(), 'dup.ff.json')))
+const dupTxt = readFileSync(join(inboxDir(), 'dup.txt.ff.md'), 'utf8')
+const dupMd = readFileSync(join(inboxDir(), 'dup.md.ff.md'), 'utf8')
+check('both dup conversions kept their own content', dupTxt.includes('dup txt body') && dupMd.includes('dup md body'), JSON.stringify({ txt: dupTxt.slice(0, 30), md: dupMd.slice(0, 30) }))
+
+section('S3 不支持扩展名：不转换、不写错误文件（实际契约）')
 writeFileSync(join(inboxDir(), 'junk.exe'), Buffer.from([0x4d, 0x5a, 0x00]))
-await new Promise((r) => setTimeout(r, 5000))
-const errPath = join(inboxDir(), 'junk.ff.error.txt')
-console.log('unsupported ext produces no output (exe not in whitelist):', !existsSync(errPath))
+await sleep(4000)
+check('unsupported ext: no error artifact', !existsSync(join(inboxDir(), 'junk.exe.ff.error.txt')))
+check('unsupported ext: no conversion artifact', !existsSync(join(inboxDir(), 'junk.exe.ff.json')))
 
-// 场景4：重启 watcher —— 已有产物的文件不再重放
+section('S4 重启：已有产物不重放')
 watcher.stop()
+const before = events.filter((e) => e.file === 'sample.txt').length
 const w2 = createInboxWatcher({ repoRoot, log: () => {}, onDone: (r) => events.push(r) })
 w2.start()
-await new Promise((r) => setTimeout(r, 4000))
+await sleep(4000)
 w2.stop()
-console.log('after restart, no re-processing:', events.filter((e) => e.file === 'sample.txt').length === 1)
+check('restart does not re-process sample.txt', events.filter((e) => e.file === 'sample.txt').length === before, JSON.stringify({ before, after: events.filter((e) => e.file === 'sample.txt').length }))
 
-// 场景5（v0.14.0/B-P1-3）：retention 清理通知降噪
-// 预期：retention=true 的事件 → broadcast 收到空文本（notify.broadcast 跳过），
-// 而 onDone 回调仍然被 inbox-watcher 触发（行为不丢，仅日志层面降噪）。
+// ─── S5 too_large（JS-H3：终态必须记 doneAt，否则每个 tick 重通知） ───
+section('S5 too_large：只通知一次（JS-H3）')
+const home5 = join(tmpdir(), `ffinbox-test-tooLarge-${Date.now()}`)
+mkdirSync(join(home5, 'inbox'), { recursive: true })
+writeFileSync(join(home5, 'inbox', 'huge.txt'), 'x'.repeat(4000), 'utf-8')
+process.env.FF_HOME = home5
+const tooLargeEvents = []
+const w5 = createInboxWatcher({ repoRoot, maxBytes: 1000, timeoutMs: 60_000, log: () => {}, onDone: (r) => tooLargeEvents.push(r) })
+w5.start()
+await sleep(11_000) // setInterval 首触发在 2s；11s 覆盖 5 个 tick
+w5.stop()
+const tooLarge = tooLargeEvents.filter((e) => e.kind === 'too_large')
+check('too_large notified exactly once across 5 ticks', tooLarge.length === 1, `count=${tooLarge.length}`)
+check('too_large error artifact written', existsSync(join(home5, 'inbox', 'huge.txt.ff.error.txt')))
+check('too_large error artifact is source-keyed', !existsSync(join(home5, 'inbox', 'huge.ff.error.txt')))
+process.env.FF_HOME = testHome
+rmSync(home5, { recursive: true, force: true })
+
+// ─── S6 CLI 失败 → .ff.error.txt（此前零覆盖的分支） ───
+section('S6 转换失败 → .ff.error.txt（timeoutMs=50 强制超时）')
+const home6 = join(tmpdir(), `ffinbox-test-fail-${Date.now()}`)
+mkdirSync(join(home6, 'inbox'), { recursive: true })
+writeFileSync(join(home6, 'inbox', 'slow.txt'), 'y'.repeat(200), 'utf-8')
+process.env.FF_HOME = home6
+const failEvents = []
+const w6 = createInboxWatcher({ repoRoot, maxBytes: 100 * 1024 * 1024, timeoutMs: 50, log: () => {}, onDone: (r) => failEvents.push(r) })
+w6.start()
+await sleep(7000)
+w6.stop()
+const failure = failEvents.find((e) => e.file === 'slow.txt' && e.ok === false)
+check('CLI failure reported as ok:false', !!failure, JSON.stringify(failEvents))
+check('failure kind is timeout', failure?.kind === 'timeout', String(failure?.kind))
+check('failure wrote .ff.error.txt', existsSync(join(home6, 'inbox', 'slow.txt.ff.error.txt')))
+check('failure did not write a result artifact', !existsSync(join(home6, 'inbox', 'slow.txt.ff.json')))
+process.env.FF_HOME = testHome
+rmSync(home6, { recursive: true, force: true })
+
+// ─── S7 通知器：retention 降噪 + 正常转换广播 ───
+section('S7 通知器降噪')
 const { makeNotifier } = await import('./services/notify.mjs')
 const capturedTexts = []
 const fakeCtx = {
-  sessions: {
-    get: (id) => ({
-      append: (type, msg, opts) => {
-        if (type === 'user/message' && msg?.content?.[0]?.text) {
-          capturedTexts.push(msg.content[0].text)
-        }
-      },
-    }),
-  },
+  sessions: { get: () => ({ append: (_type, msg) => { if (msg?.content?.[0]?.text) capturedTexts.push(msg.content[0].text) } }) },
   agents: { list: () => [{ id: 'session-A' }] },
 }
 const notifier = makeNotifier({ log: () => {} })
 notifier.broadcast(fakeCtx, notifier.buildNotice({ retention: true, count: 5 }))
 notifier.broadcast(fakeCtx, notifier.buildNotice({ ok: true, file: 'r.txt', parser: 'txt', confidence: 0.9 }))
-console.log('retention broadcast captured:', capturedTexts.filter((t) => t.includes('收件箱清理')).length, '(expect 0)')
-console.log('normal conversion broadcast captured:', capturedTexts.filter((t) => t.includes('已锻好')).length, '(expect 1)')
+check('retention broadcast suppressed', capturedTexts.filter((t) => t.includes('清理')).length === 0, JSON.stringify(capturedTexts))
+check('normal conversion broadcast once', capturedTexts.filter((t) => t.includes('已锻好')).length === 1, JSON.stringify(capturedTexts))
 
-// 场景6（v0.14.0/B-P1-4）：retention 清理后 .ff.retired.log 应有 entry
-// 测：在新 FF_HOME 里造一个旧文件 + 触发 retention → 验证 .ff.retired.log 存在
-import { readFileSync as _rfs, writeFileSync as _wfs, utimesSync } from 'node:fs'
-const home6 = join(tmpdir(), `ffinbox-test-r6-${Date.now()}`)
-const inbox6 = join(home6, 'inbox')
-process.env.FF_HOME = home6
-mkdirSync(inbox6, { recursive: true })
-// v0.14.0 enforceRetention: MAX_BYTES=0 短路 return；用 0.001 MB (~1024 bytes) cap
-// 让任何非空文件都超 cap → 全部标 doomed 走清理。
+// ─── S8 retention → .ff.retired.log ───
+section('S8 retention 清理写 .ff.retired.log')
+const home8 = join(tmpdir(), `ffinbox-test-r8-${Date.now()}`)
+const inbox8 = join(home8, 'inbox')
+mkdirSync(inbox8, { recursive: true })
+process.env.FF_HOME = home8
 process.env.FF_INBOX_TTL_DAYS = '0'
 process.env.FF_INBOX_MAX_MB = '0.001'
-
-const oldFile = join(inbox6, 'old-report.txt')
-_wfs(oldFile, '这是将被清理的旧文件\n'.repeat(50), 'utf-8')  // ~1KB
-utimesSync(oldFile, 946684800, 946684800)  // 2000-01-01
-
-const { createInboxWatcher: createW6 } = await import('./services/inbox-watcher.mjs')
-const retiredOnDoneEvents = []
-const w6 = createW6({
-  repoRoot,
-  maxBytes: 100 * 1024 * 1024,
-  timeoutMs: 30_000,
-  log: () => {},
-  onDone: (r) => { retiredOnDoneEvents.push(r) },
-})
-w6.start()
-// 等待 retention tick（默认 SCAN_INTERVAL_MS=2000ms 后 enforceRetention 跑）
-await new Promise((r) => setTimeout(r, 5000))
-w6.stop()
-
-const retiredLog = join(inbox6, '.ff.retired.log')
-const logExists = existsSync(retiredLog)
-console.log('.ff.retired.log created:', logExists, '(expect true)')
-if (logExists) {
-  const content = _rfs(retiredLog, 'utf-8').trim()
-  const lines = content.split('\n').length
-  console.log('.ff.retired.log lines:', lines, '(expect 1)')
-  // 验证 entry 含必要字段
-  const entry = JSON.parse(content.split('\n')[0])
-  console.log('retired entry has sha256:', typeof entry.sha256 === 'string' && entry.sha256.length === 64)
-  console.log('retired entry has path:', entry.path === oldFile)
-  console.log('retired entry has ts:', typeof entry.ts === 'string')
-  console.log('file deleted:', !existsSync(oldFile))
+const oldFile = join(inbox8, 'old-report.txt')
+writeFileSync(oldFile, '这是将被清理的旧文件\n'.repeat(50), 'utf-8') // ~1KB > 0.001MB cap
+utimesSync(oldFile, 946684800, 946684800) // 2000-01-01
+const w8 = createInboxWatcher({ repoRoot, maxBytes: 100 * 1024 * 1024, timeoutMs: 30_000, log: () => {}, onDone: () => {} })
+w8.start()
+await sleep(5000)
+w8.stop()
+process.env.FF_HOME = testHome
+process.env.FF_INBOX_TTL_DAYS = '999'
+process.env.FF_INBOX_MAX_MB = '0'
+const retiredLog = join(inbox8, '.ff.retired.log')
+check('.ff.retired.log created', existsSync(retiredLog))
+if (existsSync(retiredLog)) {
+  const lines = readFileSync(retiredLog, 'utf-8').trim().split('\n')
+  check('.ff.retired.log has one entry', lines.length === 1, `lines=${lines.length}`)
+  const entry = JSON.parse(lines[0])
+  check('retired entry has sha256', typeof entry.sha256 === 'string' && entry.sha256.length === 64)
+  check('retired entry path matches', entry.path === oldFile, String(entry.path))
+  check('retired entry has ts', typeof entry.ts === 'string')
 }
-rmSync(home6, { recursive: true, force: true })
+check('expired file deleted', !existsSync(oldFile))
+rmSync(home8, { recursive: true, force: true })
 
-rmSync(testHome, { recursive: true, force: true })
-console.log('INBOX-E2E-DONE')
+function readdirSafe() {
+  try {
+    const { readdirSync } = process.getBuiltinModule('node:fs')
+    return readdirSync(inboxDir())
+  } catch {
+    return []
+  }
+}
+
+console.log('')
+if (failures > 0) {
+  console.error(`❌ ${failures} assertion(s) failed`)
+  process.exit(1)
+}
+console.log('✅ INBOX-E2E-DONE — all assertions passed')

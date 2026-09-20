@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 from core.models import ExtractedElement, PageContent
+from core.table_semantics import escape_md_cell
 from parsers import BaseParser
 
 logger = logging.getLogger("parsers.pptx")
@@ -34,13 +35,13 @@ class PPTXParser(BaseParser):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return [".pptx", ".ppt"]
+        # H18/audit: .ppt（OLE2 旧格式）从未被 python-pptx 支持——宣称已收缩
+        return [".pptx"]
 
     @property
     def supported_magic(self) -> list[bytes]:
-        # PPTX 是 ZIP 格式
-        # PPT 是 OLE2 格式
-        return [b"PK\x03\x04", b"\xd0\xcf\x11\xe0"]
+        # PPTX 是 ZIP 格式；OLE2 魔数属于旧版 .ppt/.xls/.doc，不属于本解析器
+        return [b"PK\x03\x04"]
 
     def parse(self, file_path: Path) -> list[PageContent]:
         """解析 PPTX 文件"""
@@ -176,10 +177,13 @@ class PPTXParser(BaseParser):
         )
 
     def _extract_table(self, table) -> str:
-        """提取表格文本内容"""
+        """提取表格文本内容
+
+        FF-M-table/audit: 单元格内的 | / 换行会撕开伪 Markdown 表格几何。
+        """
         rows = []
         for row in table.rows:
-            cells = [cell.text.strip() for cell in row.cells]
+            cells = [escape_md_cell(cell.text.strip()) for cell in row.cells]
             rows.append(" | ".join(cells))
         return "\n".join(rows)
 

@@ -113,7 +113,8 @@ class TestTXTParserRealFile:
         txt_path.write_text("中文GBK", encoding='gbk')
 
         encoding = parser._detect_encoding(txt_path)
-        assert encoding == 'gbk'
+        # FF-M-txt: 回退链改用 gb18030（GBK/GB2312 超集），三者都能正确解码
+        assert encoding in ('gbk', 'gb2312', 'gb18030')
 
 
 class TestTXTParserStream:

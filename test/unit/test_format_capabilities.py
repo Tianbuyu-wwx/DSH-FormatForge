@@ -1,10 +1,11 @@
 """v0.14.0/B-P0-1: format capabilities 检测单测。"""
 
 from core.format_capabilities import (
+    _CAPABILITY_PROBES,
     build_format_details,
     detect_capabilities,
-    _CAPABILITY_PROBES,
 )
+from core.format_detector import FormatDetector
 
 
 class TestCapabilityProbes:
@@ -53,8 +54,9 @@ class TestBuildFormatDetails:
     """build_format_details 必须与 cmd_formats 输出对齐。"""
 
     def test_returns_sorted_unique_format_list(self):
-        from core.file_parser import FileParser
         from pathlib import Path
+
+        from core.file_parser import FileParser
 
         fp = FileParser(upload_dir=Path("./uploads"))
         details = build_format_details(fp.registry)
@@ -64,8 +66,9 @@ class TestBuildFormatDetails:
         assert len(formats) == len(set(formats))
 
     def test_pdf_has_all_known_capabilities(self):
-        from core.file_parser import FileParser
         from pathlib import Path
+
+        from core.file_parser import FileParser
 
         fp = FileParser(upload_dir=Path("./uploads"))
         details = build_format_details(fp.registry)
@@ -77,23 +80,44 @@ class TestBuildFormatDetails:
         assert "two_column" in pdf["capabilities"]
 
     def test_only_real_extmap_formats_included(self):
-        """不要冒 cfg/conf/log 等非 DataFormat 的扩展。"""
-        from core.file_parser import FileParser
+        """不要冒 cfg/conf/log 等非 DataFormat 的扩展。
+
+        FF-M-misc/audit: 原断言把允许集合硬编码成一份手抄快照，注册表新增
+        `7z`/`rar`/`rtf`（三者都是 `DataFormat` 成员且各有真实 parser）后必然
+        过期失败。改为按权威来源断言意图：advertised ⊆ DataFormat 值、不含
+        扩展名别名、且每个 format 都有 parser 声明。
+        """
         from pathlib import Path
+
+        from core.file_parser import FileParser
+        from core.format_detector import DataFormat
 
         fp = FileParser(upload_dir=Path("./uploads"))
         details = build_format_details(fp.registry)
         formats = {d["format"] for d in details}
-        # cmd_formats 总共输出 34 种；我们只放有 parser 注册的（约 29）
-        assert formats <= {"pdf", "docx", "xlsx", "pptx", "csv", "txt", "epub", "html",
-                          "json", "yaml", "xml", "toml", "sql", "odt", "ods", "odp",
-                          "eml", "msg", "svg", "png", "jpeg", "gif", "webp", "bmp",
-                          "tiff", "zip", "srt", "latex", "audio"}
+
+        # 1) 只能出现 DataFormat 的正式值（cfg/conf/log 之类扩展名别名不得出现）
+        assert formats <= {m.value for m in DataFormat}, sorted(formats - {m.value for m in DataFormat})
+        assert not formats & {"cfg", "conf", "log", "md", "text", "markdown", "yml", "tif", "htm", "vtt", "tex", "ltx"}
+
+        # 2) 每个 advertised format 都必须真有 parser 声明（否则是空宣称）
+        ext_map = {ext.lower(): fmt.value for ext, (fmt, _mime) in FormatDetector.EXTENSION_MAP.items()}
+        declared = {
+            ext_map[ext.lower()]
+            for parser in fp.registry.parsers
+            for ext in getattr(parser, "supported_extensions", [])
+            if ext.lower() in ext_map
+        }
+        assert formats == declared
+
+        # 3) H18 Option C 决策：收缩格式不得再被宣称
+        assert not formats & {"doc", "ppt", "xlsb"}
 
     def test_capabilities_are_sorted(self):
         """capabilities 列表必须按字母序排列（输出稳定）。"""
-        from core.file_parser import FileParser
         from pathlib import Path
+
+        from core.file_parser import FileParser
 
         fp = FileParser(upload_dir=Path("./uploads"))
         details = build_format_details(fp.registry)
@@ -114,7 +138,5 @@ class TestCapabilityProbesRegistry:
         seen: dict[str, str] = {}
         for cap_id, probes in _CAPABILITY_PROBES.items():
             for m in probes:
-                assert m not in seen, (
-                    f"method {m} 被 {seen[m]} 和 {cap_id} 共享"
-                )
+                assert m not in seen, f"method {m} 被 {seen[m]} 和 {cap_id} 共享"
                 seen[m] = cap_id

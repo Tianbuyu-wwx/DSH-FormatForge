@@ -156,13 +156,28 @@ CLI     ── python -m … ──► formatforge 内核（30+ 解析器 × 7 �
 
 ```bash
 pip install -e ".[dev]"
-pytest test/                                   # 444 passed
+pytest test/
 ruff check . && ruff format --check .
 mypy core/ parsers/ formatforge/
 node packages/dsh-formatforge/test-manifest.mjs   # bundle 契约自检
 node packages/dsh-formatforge/test-local.mjs      # stub 环境 e2e（需本机 Python）
 node packages/dsh-formatforge/test-inbox.mjs      # inbox watcher e2e
 ```
+
+截至 **2026-09-20**，当前分支在本机的可复现结果为 **686 passed / 24 failed / 12 skipped**：
+
+```powershell
+$env:PYTHONPATH = 'D:\Deepseek-harness\tools\pytest-win-mkdir-shim'
+$env:PYTEST_PLUGINS = 'pytest_win_mkdir_shim'
+cd D:\Deepseek-harness\DSH-FormatForge
+& '.\.venv-fg\Scripts\python.exe' -m pytest test/ -q --timeout=180
+```
+
+这 24 项均为已有的、依赖 Windows 控制台编码环境的
+`test_cli_protocol.py` 失败，并非本分支新增回归。同一环境中的干净
+`origin/main` 对照运行记录为 **533 passed / 25 failed / 11 skipped**，因此
+当前分支没有增加失败，并修复了一个既有失败。该数字是带日期的运行快照，
+不是永久不变的测试总数。
 
 设计文档：[PLUGIN_PLAN.md](PLUGIN_PLAN.md)（插件化实施）· [EVOLUTION_PLAN.md](EVOLUTION_PLAN.md)（v0.4–v0.7 演进）· [ROADMAP.md](ROADMAP.md)（后续计划）
 

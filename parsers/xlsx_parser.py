@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.models import ExtractedElement, PageContent
+from core.table_semantics import escape_md_cell
 from parsers import BaseParser
 
 logger = logging.getLogger("parsers.xlsx")
@@ -36,19 +37,22 @@ class XLSXParser(BaseParser):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return [".xlsx", ".xls", ".xlsm", ".xlsb"]
+        # H18/audit: .xlsb 需要 pyxlsb（未声明依赖）——宣称已收缩；.xls 保留
+        # （有 xlrd 代码路径，未安装时报「请安装 xlrd」的明确指引）
+        return [".xlsx", ".xls", ".xlsm"]
 
     @property
     def supported_magic(self) -> list[bytes]:
-        # XLSX 是 ZIP 格式
-        # XLS 是 OLE2 格式
-        return [b"PK\x03\x04", b"\xd0\xcf\x11\xe0"]
+        # H18/audit: 仅 PK/ZIP（XLSX 真实魔数）。OLE2 魔数被移除——它无法区分
+        # .doc/.ppt/.xls，曾在无扩展名/收缩格式上把文件误路由到本解析器。
+        # 真正的 .xls 由扩展名匹配（xlrd 路径，未安装时报明确指引）。
+        return [b"PK\x03\x04"]
 
     def parse(self, file_path: Path) -> list[PageContent]:
         """解析 Excel 文件"""
         ext = file_path.suffix.lower()
 
-        if ext in [".xlsx", ".xlsm", ".xlsb"]:
+        if ext in [".xlsx", ".xlsm"]:
             return self._parse_xlsx(file_path)
         elif ext == ".xls":
             return self._parse_xls(file_path)
@@ -123,11 +127,12 @@ class XLSXParser(BaseParser):
                 continue
 
             # 格式化表格文本 —— Markdown 表格（含表头分隔行）
+            # FF-M-table/audit: 单元格内的 | / 换行会撕开 Markdown 表格几何
             table_lines = []
             for _row_idx, row_data in enumerate(sheet_data):
                 while len(row_data) < max_col:
                     row_data.append("")
-                table_lines.append("| " + " | ".join(row_data) + " |")
+                table_lines.append("| " + " | ".join(escape_md_cell(c) for c in row_data) + " |")
             if len(table_lines) > 1:
                 table_lines.insert(1, "|" + "---|" * max_col)
 
@@ -208,7 +213,8 @@ class XLSXParser(BaseParser):
 
             table_lines = []
             for row_data in sheet_data:
-                line = " | ".join(row_data)
+                # FF-M-table/audit: 同上——单元格内的 | / 换行会撕开表格几何
+                line = " | ".join(escape_md_cell(c) for c in row_data)
                 table_lines.append(line)
 
             table_text = "\n".join(table_lines)

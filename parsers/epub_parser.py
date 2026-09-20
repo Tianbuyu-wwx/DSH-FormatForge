@@ -1,10 +1,10 @@
-"""
-EPUB 电子书解析器
+"""EPUB 电子书解析器
 支持解析 .epub 格式电子书
-纯 Python 标准库实现（zipfile + xml.etree.ElementTree + html.parser），零外部依赖
+纯 Python 标准库实现（zipfile + xml.etree.ElementTree + html.parser + posixpath），零外部依赖
 """
 
 import logging
+import posixpath
 import xml.etree.ElementTree as ET
 import zipfile
 from html.parser import HTMLParser
@@ -29,17 +29,22 @@ class _HTMLTextExtractor(HTMLParser):
     def __init__(self):
         super().__init__()
         self._parts: list[str] = []
-        self._skip_tag = False
+        # H6/audit: 记录当前跳过的标签名——未闭合 <script>/<style> 之前会让
+        # _skip_tag 永远为 True，后面整章都被静默丢弃
+        self._skip_tag: str | None = None
 
     def handle_starttag(self, tag, attrs):
-        if tag in ("script", "style"):
-            self._skip_tag = True
+        if tag in ("script", "style") and self._skip_tag is None:
+            self._skip_tag = tag
+            return
         if tag in ("br", "p", "div", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6"):
             self._parts.append("\n")
 
     def handle_endtag(self, tag):
-        if tag in ("script", "style"):
-            self._skip_tag = False
+        # 只有配对的结束标签才解除跳过（未闭合则到文档尾自然失效）
+        if self._skip_tag and tag == self._skip_tag:
+            self._skip_tag = None
+            return
         if tag in ("p", "div", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6"):
             self._parts.append("\n")
 
@@ -66,14 +71,26 @@ def _extract_html_text(html_content: str | bytes) -> str:
     """从 HTML/XHTML 中提取纯文本"""
     text: str
     if isinstance(html_content, bytes):
-        # 尝试检测编码（始终对原始字节解码，不回写参数）
-        for encoding in ("utf-8", "utf-16", "gbk", "latin-1"):
+        # FF-L-epub-odf/audit: latin-1 对任意字节都解码成功，放在候选链里会
+        # 静默「赢」过真实编码（gbk 字节解成 latin-1 得到合法乱码）。先用 XML
+        # 声明的 encoding（XHTML 章节通常自带），再严格尝试候选；全部失败才用
+        # utf-8/replace 兜底并以 U+FFFD 显式标记低置信，绝不裸回退 latin-1。
+        declared = None
+        head = html_content[:1024].decode("ascii", errors="ignore")
+        import re
+
+        m = re.search(r"""encoding\s*=\s*['"]([A-Za-z0-9._-]+)['"]""", head)
+        if m:
+            declared = m.group(1)
+        candidates = ([declared] if declared else []) + ["utf-8", "utf-16", "gbk"]
+        for encoding in candidates:
             try:
                 text = html_content.decode(encoding)
                 break
-            except (UnicodeDecodeError, UnicodeError):
+            except (UnicodeDecodeError, UnicodeError, LookupError):
                 continue
         else:
+            logger.debug("EPUB 章节编码检测失败，以 utf-8/replace 低置信兜底")
             text = html_content.decode("utf-8", errors="replace")
     else:
         text = html_content
@@ -144,10 +161,10 @@ class EPUBParser(BaseParser):
                 # 3. 按 spine 顺序解析各章节
                 pages: list[PageContent] = []
                 for page_num, (item_id, href) in enumerate(spine_items, 1):
-                    content_path = f"{opf_dir}/{href}" if opf_dir and "/" not in href else href
-                    # 去除相对路径中的 ./
-                    if content_path.startswith("./"):
-                        content_path = content_path[2:]
+                    # H6/audit: 无条件 join opf_dir 与 href——标准 OEBPS/content.opf +
+                    # Text/ch1.xhtml 布局的 href 带 "/"，此前被直接丢掉 opf_dir 导致
+                    # 每章都 KeyError、整本书只剩空占位。normpath 顺带去掉 "./"、"/.." 与斜杠。
+                    content_path = posixpath.normpath(f"{opf_dir}/{href}")
 
                     try:
                         raw_content = zf.read(content_path)
@@ -285,7 +302,9 @@ class EPUBParser(BaseParser):
                     break
             if not ncx_href:
                 return result
-            ncx_path = f"{opf_dir}/{ncx_href}" if opf_dir else ncx_href
+            # H6/audit: 同样无条件 join + normpath——根目录 OPF（opf_dir='.'）时
+            # f"{opf_dir}/{href}" 是 './toc.ncx'，逐一字符串 ZIP 查找必 KeyError。
+            ncx_path = posixpath.normpath(f"{opf_dir}/{ncx_href}")
             try:
                 ncx_xml = zf.read(ncx_path)
             except KeyError:

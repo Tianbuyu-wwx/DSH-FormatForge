@@ -64,7 +64,9 @@ def setup_logging(level: str = "INFO", json_format: bool = True) -> None:
         root_logger.removeHandler(handler)
 
     # 控制台输出
-    console = logging.StreamHandler(sys.stdout)
+    # FF-M-logging/audit: 必须绑 stderr——stdout 是协议 JSON 的唯一出口，
+    # 任何日志写进 stdout 都会污染 JS 侧 python-runner 的首行解析。
+    console = logging.StreamHandler(sys.stderr)
     console.setLevel(getattr(logging, level.upper(), logging.INFO))
 
     # 两个分支都产出 Formatter 子类，统一按基类标注。

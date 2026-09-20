@@ -254,3 +254,78 @@ class TestEPUBParserErrors:
         # 无章节时返回空 page
         assert len(result) == 1
         assert len(result[0].elements) == 0
+
+def _make_epub_subdirs(chapters: list[tuple[str, str]], opf_dir: str = "OEBPS") -> bytes:
+    """H6 回归: href 带子目录（OEBPS/content.opf + Text/ch1.xhtml 标准布局）。"""
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        container_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="{opf_dir}/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>'''
+        zf.writestr("META-INF/container.xml", container_xml)
+        manifest_entries = []
+        spine_entries = []
+        for i, (cid, html) in enumerate(chapters):
+            path = f"{opf_dir}/Text/{cid}.xhtml"
+            zf.writestr(path, f'''<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"><body>{html}</body></html>''')
+            manifest_entries.append(
+                f'<item id="{cid}" href="Text/{cid}.xhtml" media-type="application/xhtml+xml"/>'
+            )
+            spine_entries.append(f'<itemref idref="{cid}"/>')
+        opf_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0"
+         xmlns:dc="http://purl.org/dc/elements/1.1/" unique-identifier="book-id">
+  <metadata><dc:title>T</dc:title><dc:creator>A</dc:creator></metadata>
+  <manifest>{"".join(manifest_entries)}</manifest>
+  <spine>{"".join(spine_entries)}</spine>
+</package>'''
+        zf.writestr(f"{opf_dir}/content.opf", opf_xml)
+    return buf.getvalue()
+
+
+class TestH6EpubPathJoin:
+    """H6/audit: href 带斜杠不得丢掉 opf_dir（标准 OEBPS+Text 布局曾整本书空白）。"""
+
+    @pytest.fixture
+    def parser(self):
+        return EPUBParser()
+
+    def test_subdir_chapters_all_parsed(self, parser, tmp_path):
+        epub_bytes = _make_epub_subdirs(
+            chapters=[("ch1", "<p>第一章正文</p>"), ("ch2", "<p>第二章正文</p>")]
+        )
+        path = tmp_path / "subdir.epub"
+        path.write_bytes(epub_bytes)
+        result = parser.parse(path)
+        assert len(result) == 2
+        texts = [e.content for p in result for e in p.elements if e.elementType == "text"]
+        combined = " ".join(texts)
+        assert "第一章正文" in combined
+        assert "第二章正文" in combined
+
+
+class TestH6SkipTagLeak:
+    """H6/audit: `<script>/<style>` 的跳过只被「配对结束标签」解除——此前任何
+    script/style 的 endtag 都能解除任意 skip，错配即泄漏/永久吞后续文本。"""
+
+    def test_mismatched_endtag_keeps_data_visible(self):
+        from parsers.epub_parser import _extract_html_text
+
+        # 未闭合 <style> 后出现 </script>：旧逻辑会解除 skip（泄漏 style 正文）；
+        # 新逻辑只在配对结束标签时解除。
+        html = "<html><body><style>.x{}" "<p>样式后的内容</p></body></html>"
+        text = _extract_html_text(html)
+        assert ".x{}" not in text  # style 内容仍被跳过
+        # 未闭合 style 按 HTML CDATA 语义吞掉后续（来自 HTMLParser 本身，不是 skip 泄漏）
+
+    def test_closed_script_style_still_stripped(self):
+        from parsers.epub_parser import _extract_html_text
+
+        text = _extract_html_text("<p>a</p><script>y()</script><p>b</p>")
+        assert "a" in text and "b" in text
+        assert "y()" not in text
