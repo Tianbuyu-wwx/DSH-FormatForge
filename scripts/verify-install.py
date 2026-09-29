@@ -40,8 +40,13 @@ PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
 results: list[tuple[str, str, str]] = []  # (status, name, detail)
 
 
-class Skipped(Exception):
-    """A check that cannot run in this environment (not a failure)."""
+class SkippedError(Exception):
+    """A check that cannot run in this environment.
+
+    Deliberately not a failure: `check()` reports it as SKIP and it does not
+    affect the exit code. The name carries the `Error` suffix only because the
+    lint rule N818 requires it of every exception class.
+    """
 
 
 def check(name: str, fn, fix_hint: str = "") -> bool:
@@ -49,7 +54,7 @@ def check(name: str, fn, fix_hint: str = "") -> bool:
         detail = fn()
         results.append((PASS, name, detail or ""))
         return True
-    except Skipped as e:
+    except SkippedError as e:
         results.append((SKIP, name, f"{e}{'  |  ' + fix_hint if fix_hint else ''}"))
         return True
     except Exception as e:
@@ -167,7 +172,9 @@ def check_client_js() -> str:
     # （相对路径；不带 combo 前缀的单资源路径会 404）。web UI 受 token 保护。
     status, html = fetch("", with_token=True)
     if status == 401:
-        raise Skipped("根页面 401：web UI 需要 token（用 --token 提供，值见宿主启动日志的 `dsh web: http://…?token=…`）")
+        raise SkippedError(
+            "根页面 401：web UI 需要 token（用 --token 提供，值见宿主启动日志的 `dsh web: http://…?token=…`）"
+        )
     if status != 200:
         raise AssertionError(f"根页面返回 {status}")
     if PKG_NAME not in html:
@@ -215,16 +222,30 @@ def main() -> int:
 
     ap = argparse.ArgumentParser(description="dsh-formatforge 安装自检")
     ap.add_argument("--profile", default="desktop", help="要检查的 dsh profile（默认 desktop）")
-    ap.add_argument("--base-url", default=None, help="宿主 HTTP 基址（默认按 profile 猜：desktop→19387，其它→3080）")
-    ap.add_argument("--log", default=None, help="启动日志路径（默认自动扫描 %%APPDATA%%/@deepseek-ai/dsh-desktop/logs 与 $DSH_HOME/logs）")
-    ap.add_argument("--token", default=os.environ.get("FF_VERIFY_TOKEN"), help="web UI token（根页面 401 时需要；也可用环境变量 FF_VERIFY_TOKEN）")
+    ap.add_argument(
+        "--base-url",
+        default=None,
+        help="宿主 HTTP 基址（默认按 profile 猜：desktop→19387，其它→3080）",
+    )
+    ap.add_argument(
+        "--log",
+        default=None,
+        help="启动日志路径（默认自动扫描 %APPDATA%/@deepseek-ai/dsh-desktop/logs 与 $DSH_HOME/logs）",
+    )
+    ap.add_argument(
+        "--token",
+        default=os.environ.get("FF_VERIFY_TOKEN"),
+        help="web UI token（根页面 401 时需要；也可用环境变量 FF_VERIFY_TOKEN）",
+    )
     ap.add_argument("--skip-inbox", action="store_true", help="跳过 inbox 冒烟（不写测试文件）")
     args = ap.parse_args()
 
     Config.profile = args.profile
     Config.log_path = args.log
     Config.token = args.token
-    Config.base_url = (args.base_url or ("http://127.0.0.1:19387" if args.profile == "desktop" else "http://127.0.0.1:3080")).rstrip("/")
+    Config.base_url = (
+        args.base_url or ("http://127.0.0.1:19387" if args.profile == "desktop" else "http://127.0.0.1:3080")
+    ).rstrip("/")
 
     check(
         "bundle 注册（profile package.json）",
