@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-	id: "dsh-formatforge",
+	id: "@tianbuyu-wwx/dsh-formatforge",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
@@ -107,7 +107,7 @@ function showOverlay() {
     'background:rgba(0,0,0,.45);backdrop-filter:blur(2px)'
   const card = document.createElement('div')
   card.style.cssText =
-    'background:var(--dsw-alias-bg-primary, #fff);color:var(--dsw-alias-text-primary, #111);' +
+    'background:var(--dsw-alias-bg-base, #fff);color:var(--dsw-alias-label-primary, #111);' +
     'padding:22px 34px;border-radius:14px;font-size:15px;font-weight:600;text-align:center;' +
     'box-shadow:0 8px 30px rgba(0,0,0,.35)'
   card.textContent = 'FormatForge：松手即锻造成 AI 可读数据'
@@ -257,13 +257,34 @@ function activate() {
   document.addEventListener('paste', onPaste, true)
 
   log('v0.3 active — decide-once drag state machine (no mid-drag capture flips)')
+
+  // Teardown: the host's client module system can reload this bundle (client-hmr
+  // → tearDownEntryFiber → the fiber's effect cleanups). Without a disposer every
+  // reload would stack another listener set and one drop would upload N times,
+  // because stopPropagation does not stop sibling listeners on the same node.
+  return function deactivate() {
+    document.removeEventListener('dragenter', onDragEnter, true)
+    document.removeEventListener('dragover', onDragOver, true)
+    document.removeEventListener('dragleave', onDragLeave, true)
+    document.removeEventListener('drop', onDrop, true)
+    window.removeEventListener('dragend', endDrag, true)
+    window.removeEventListener('blur', endDrag, true)
+    document.removeEventListener('paste', onPaste, true)
+    decision = null
+    hideOverlay()
+  }
 }
 
 
-		// cordis plugin contract: host treats each client module as a plugin —
-		// exports must carry { inject: [...], apply(ctx) }.
+		// cordis client-plugin contract: the host mounts each client module as a
+		// plugin, so exports must carry { inject: [...], apply(ctx) }. The disposer
+		// returned by activate() goes to ctx.effect so an HMR reload unregisters
+		// the listeners instead of stacking a second set.
 		exports.inject = [];
-		exports.apply = function () { activate(); };
+		exports.apply = function (ctx) {
+			if (ctx && typeof ctx.effect === "function") ctx.effect(() => activate());
+			else activate();
+		};
 		return exports;
 	},
 });

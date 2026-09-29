@@ -1,7 +1,7 @@
 {
   "name": "@tianbuyu-wwx/dsh-formatforge",
-  "version": "1.0.1",
-  "description": "FormatForge for DeepSeek Harness: forge any file format (pdf/docx/xlsx/pptx/eml/toml/...) into AI-readable structured data. v1.0.0 (PRODUCTION-READY, protocol frozen): 协议冻结（v1.x 向后兼容）+ v0.14.0 全部 7 项 P0+P1 + 5 项 audit 修复（4 bug + 1 性能）。测试基线 567 passed。Thin bundle spawns local Python CLI (`python -m formatforge`) returning protocol JSON; enhancement delegated to current session model via enhance hints.",
+  "version": "2.0.0",
+  "description": "FormatForge for DeepSeek Harness: forge any file format (pdf/docx/xlsx/pptx/eml/toml/...) into AI-readable structured data. v2.0.0: 适配 DSH 0.2.0-rc.2（peer 区间收紧为 >=0.2.0-rc.1 <0.3.0-0；peer-aware linked 解析取代包内 junction；client 模块 HMR 监听器泄漏修复）。协议仍为 v1。Thin bundle spawns local Python CLI (`python -m formatforge`) returning protocol JSON; enhancement delegated to current session model via enhance hints.",
   "type": "module",
   "main": "./index.mjs",
   "exports": {
@@ -30,7 +30,8 @@
     "document-parsing"
   ],
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.13.0",
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
   },
   "os": [
     "win32",
@@ -40,6 +41,7 @@
   "dependencies": {},
   "peerDependenciesMeta": {},
   "dsh": {
+    "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
@@ -58,7 +60,7 @@
     "url": "https://github.com/Tianbuyu-wwx/DSH-FormatForge/issues"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-tools": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-skill-filesystem": ">=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0"
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-skill-filesystem": ">=0.2.0-rc.1 <0.3.0-0"
   }
 }

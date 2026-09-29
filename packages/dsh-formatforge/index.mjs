@@ -6,12 +6,13 @@
 //   2. Python runner bootstrap: resolve interpreter (FF_PYTHON → .venv-fg → PATH)
 //      and repo root (walk up from this file; contains formatforge/ + core/).
 //   3. Cordis tools: ff_translate, ff_formats.
-//   4. Inbox watcher (v0.2): drop files into ~/.dsh/formatforge/inbox/ → auto
+//   4. Inbox watcher (v0.2): drop files into <DSH_HOME>/formatforge/inbox/ → auto
 //      forge → lightweight notice appended to every live session
 //      (FF_INBOX_NOTIFY=false to disable). No full-content injection.
 
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { readFileSync } from 'node:fs'
 
 import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import { createTranslateTool } from './tools/translate.mjs'
@@ -24,11 +25,11 @@ import { createInboxWatcher, inboxDir } from './services/inbox-watcher.mjs'
 import { registerUploadRoute } from './http/upload.mjs'
 import { makeNotifier } from './services/notify.mjs'
 
-const VERSION = '0.12.0'
-
 const here = dirname(fileURLToPath(import.meta.url))
 const pluginDir = join(here)
 const skillDir = join(pluginDir, 'skills')
+// 版本单一来源：package.json（避免与 plugins 目录里的日志行漂移）
+const VERSION = JSON.parse(readFileSync(join(pluginDir, 'package.json'), 'utf8')).version
 // packages/dsh-formatforge → 仓库根在两级之上（发布形态下可能不在，则退化为 CWD 探测）
 const defaultRepoRoot = findRepoRoot(join(pluginDir, '..', '..'))
 
@@ -93,7 +94,7 @@ export function apply(ctx) {
     console.error(`[dsh-formatforge v${VERSION}] upload route failed:`, (e && e.message) || e)
   }
 
-  // 5. Inbox watcher — drop files into ~/.dsh/formatforge/inbox/ → auto forge.
+  // 5. Inbox watcher — drop files into <DSH_HOME>/formatforge/inbox/ → auto forge.
   //    Never crashes boot; sessions injection is best-effort.
   try {
     const notifier = makeNotifier({ log })

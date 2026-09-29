@@ -7,6 +7,98 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-30 — 适配 DeepSeek Harness 0.2.0-rc.2
+
+> 主题：宿主从「npx 拉的 dsh web」换成 **Electron 桌面版 dsh-desktop-runtime 0.2.0-rc.2**，
+> 安装目标 profile 从 `web` 变为 `desktop`。插件契约几乎未变，但**版本闸门**会让不修就装不上。
+> 详见 [ADAPTATION_PLAN.md](ADAPTATION_PLAN.md)。
+
+### 为什么是 major（2.0.0）而不是 1.1.0
+
+- **宿主要求被收紧**：peer 区间从「0.0.x / 0.1.x」改为「0.2.x」，pre-0.2.0 宿主不再受支持。
+  这不是白收的——0.2.0 的 launcher 才内建 peer-aware linked 解析，
+  正是它让包内 junction 桥接可以删除；而保留 junction 的旧宿主，本来就是靠它解析 peer 的。
+- **编号冲突**：`v1.1.0` 这个 git tag 已被 2026-06-12 的旧 Web 版占用
+  （`4dcab67 chore: v1.1.0 架构精简…`），CHANGELOG 里也已有 `## [1.1.0] - 2026-06-12`
+  与 `## [1.2.0] - 2026-06-12` 两条历史条目。2.0.0 在 npm、git tag、CHANGELOG 三处都不冲突。
+- **协议没有变**：`packages/dsh-formatforge/protocol/v1/` 保持 v1，工具签名与协议 JSON 逐字段兼容。
+  变的只是「跑在哪个宿主上」。
+
+### 破坏性阻塞（不修则 `dsh plugin add` 直接拒绝）
+
+1. **peer 版本区间未覆盖 0.2.x**
+   - 文件：`packages/dsh-formatforge/package.json`
+   - 现象：宿主的 `evaluatePluginCompatibility()`
+     （`dsh-app-boot`）对每个 `@deepseek-ai/dsh*` peer 做
+     `semver.satisfies(runtime, range, {includePrerelease:true})`；旧区间
+     `>=0.0.1-rc.1 <0.1.0 || >=0.1.0-rc.1 <0.2.0-0` 对 `0.2.0-rc.2` 判 false，
+     `dsh plugin add` 在 pnpm 之前就 `installation rejected … nothing was installed`（exit 1）。
+   - 修法：两个 peer 区间改为 `>=0.2.0-rc.1 <0.3.0-0`。
+
+2. **包内 `node_modules` junction 指向已消失的 npx 缓存**
+   - 现象：`node_modules/@deepseek-ai/{dsh-tools,dsh-skill-filesystem}` 是
+     `scripts/rebuild-plugin-junctions.py` 留下的 junction，目标
+     `%LOCALAPPDATA%\npm-cache\_npx\<hash>\…` 已被宿主重装清掉。
+   - 根因已消失：0.2.0 的 launcher 为 linked profile 包内建 **peer-aware 解析**
+     （`dsh-app-boot::routeLinked()`），peer 位置优先于物理 `node_modules`，
+     因此包内 bridge 不再需要，且残留会遮蔽宿主副本。
+   - 修法：删除两个失效 junction；`rebuild-plugin-junctions.py` 标注为 0.1.x 时代遗留。
+
+### 变更
+
+1. **清单补齐当前公开字段**：`dsh.manifestVersion: 1`、`engines.dsh: ">=0.2.0-rc.1 <0.3.0-0"`。
+2. **`cordis.patch.yml`**：删掉 0.2.0 loader 不认的 `package:` 死字段（只保留 `id` + `name`）。
+3. **inbox 跟随 `DSH_HOME`**：`services/inbox-watcher.mjs::ffHome()` 优先级变为
+   `FF_HOME` → `$DSH_HOME/formatforge` → `~/.dsh/formatforge`，
+   与宿主 `@deepseek-ai/dsh-home-paths::resolveDshHome()` 一致（自定义 home 不再往 `~/.dsh` 写）。
+4. **inbox 轮询定时器 `unref()`**：插件不该成为宿主进程存活的原因。
+5. **`index.mjs` 版本号改为读 `package.json`**（原先硬编码 `0.12.0`，与包版本漂移）。
+
+### 修复（浏览器侧）
+
+6. **client 模块监听器泄漏（HMR 下重复上传）**——`lib/client.source.js`
+   - 现象：`apply(ctx)` 忽略 `ctx`，`activate()` 注册 7 个监听器且无清理；
+     宿主每次 HMR reload（`client-hmr` → `tearDownEntryFiber` → `entry.refresh()`）
+     都会再注册一套，一次拖拽触发 N 次上传（`stopPropagation` 不拦同节点兄弟监听器）。
+   - 修法：`activate()` 返回 disposer（移除全部 7 个监听器 + 收起 overlay）；
+     `scripts/build-client.mjs` 生成 `exports.apply = ctx => ctx.effect(() => activate())`，
+     无 `ctx.effect` 时退化为直接激活。
+7. **overlay 设计 token 失效**：`--dsw-alias-bg-primary` / `--dsw-alias-text-primary`
+   在宿主里根本不存在 → 改为 `--dsw-alias-bg-base` / `--dsw-alias-label-primary`（深色主题生效）。
+
+### 工具与脚本
+
+8. **`test-manifest.mjs` 断言纠正**：原断言要求 client bundle 的 load id == `cordis.patch.yml`
+   的 entry id；实际 0.2.0 的 graph row 以**包名**为键
+   （`dsh-client-modules::graphRow(packageName, …)`），浏览器半边按该 id 查表。
+   现断言 id == 包名 + entry `name` == 包名 + entry id 保持短 id，并校验 `engines.dsh`。
+9. **`test-local.mjs` 不再破坏性删目录**：原 `process.on('exit')` 会 `rmSync` 整个
+   `node_modules`；现在只清理自己创建的 stub（按 `0.0.0-local-stub` 版本标记识别），
+   真实依赖存在时不动。
+10. **新增 `test-client-bundle.mjs`**：用 `node:vm` + 假 DOM 按宿主方式执行 `lib/client.js`，
+    断言 load id、factory exports 形状、以及「apply → ctx.effect → disposer 清空监听器」
+    与二次 apply 不叠加。
+11. **`test/test-truncate-consistency.mjs`**：去掉无用的宿主 stub 与破坏性清理；
+    解释器与仓库根改用插件自身的 `resolvePython`/`findRepoRoot`
+    （原先用 PATH 上的 `python`，在只有 Windows Store 别名的机器上必然失败，
+    且 `repoRoot` 层数算错）。
+12. **`scripts/verify-install.py` 适配 0.2.0**：支持 `--profile`/`--base-url`/`--token`，
+    默认 `desktop` + `19387`；bundle 检查读 `dsh.profile.bundles`；
+    尊重 `$DSH_HOME`；artifact 路径改为宿主发布的 combo URL；
+    URL token 走 cookie jar（token 交换是 303 + Set-Cookie）；输出强制 UTF-8。
+13. **`scripts/rebuild-plugin-junctions.py`**：顶部标注 0.2.0 起废弃及其原因，profile 可配。
+
+### 验证
+
+- 真实宿主模块进程内契约自检 **17/17 通过**（`dsh-tools` 0.2.0-rc.2 的 `defineTool` 编译器 +
+  `FileSystemSkillProvider` + `webServer` 路由 + Python 内核 e2e）。
+- 宿主自带 `evaluatePluginCompatibility()` 判定 **compatible**。
+- 隔离 `DSH_HOME` 冷启动真实 `dsh web`：启动日志出现
+  `tools registered: ff_translate, ff_formats, ff_result, ff_batch, ff_diff`；
+  `GET /formatforge/health` 200；boot graph 收录并成功取到 client bundle；
+  `POST /formatforge/upload` → inbox → 产出 `.ff.md/.ff.json`（`.exe` 被 415 拒绝）。
+- `scripts/verify-install.py` 对隔离实例 **ALL GREEN**。
+
 ## [1.0.1] - 2026-08-31 — Hotfix（description + argparse JSON 化）
 
 > 基线：v1.0.0（567 测试）→ v1.0.1（569 测试，+2）

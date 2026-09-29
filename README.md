@@ -36,47 +36,67 @@ dsh 的 `read` 工具读 PDF/DOCX 这类二进制是乱码；官方附件通道�
 
 ## 安装
 
+> **适配目标：DeepSeek Harness 0.2.0-rc.2**（Electron 桌面版）。
+> 0.2.0 起 profile 由应用托管：桌面端用 `desktop` profile，普通 web/tui 用各自 profile。
+> 兼容性与安装拒绝规则见 [ADAPTATION_PLAN.md](ADAPTATION_PLAN.md)。
+
 ### 前置
 
 | 依赖 | 说明 |
 |---|---|
 | Python ≥ 3.10 | 运行转换内核；解释器探测顺序 `FF_PYTHON` → `<repo>/.venv-fg` → PATH |
-| Node ≥ 22 | dsh web 本身的要求 |
+| Node ≥ 22 | dsh 本身的要求 |
 
-### 方式一：从 npm 安装（推荐）
+### 方式一：从源码安装（本地开发，推荐用于本仓库）
 
 ```bash
-npx @deepseek-ai/dsh plugin add --profile web @tianbuyu-wwx/dsh-formatforge
-# 重启 dsh web 生效
-npx @deepseek-ai/dsh web
+git clone https://github.com/Tianbuyu-wwx/DSH-FormatForge.git DSH-FormatForge
+cd DSH-FormatForge
+pip install -e .                 # 或 python -m venv .venv-fg && .venv-fg/Scripts/pip install -e .
+
+# 装进桌面端 profile（0.2.0：add ≠ 激活，重启桌面端才生效）
+dsh plugin --profile desktop add "$(pwd)/packages/dsh-formatforge"
+
+# 检查
+dsh plugin --profile desktop ls          # 依赖里应出现 @tianbuyu-wwx/dsh-formatforge
+python scripts/verify-install.py --skip-inbox   # 重启之后跑，应 ALL GREEN
 ```
 
-npm 包是插件壳。还需要一份可运行的 Python 内核（本仓库），两种给法：
+`add` 成功后宿主会把本包**自动追加**进 profile `package.json` 的
+`dsh.profile.bundles`（`reconcileProfilePlugins`），无需手工编辑。
+
+**不需要**再跑 junction 修复脚本：0.2.0 的 launcher 为 linked profile 包内建了
+peer-aware 解析（`dsh-app-boot::routeLinked()`），`@deepseek-ai/dsh-tools` 等 peer
+直接命中宿主运行时那一份。`scripts/rebuild-plugin-junctions.py` 只对 0.1.x 宿主有意义。
+
+### 方式二：从 npm 安装
+
+```bash
+npx @deepseek-ai/dsh plugin --profile desktop add @tianbuyu-wwx/dsh-formatforge
+# 重启 DeepSeek Harness 生效
+```
+
+npm 包只是插件壳，仍需一份可运行的 Python 内核（本仓库）并告知位置：
 
 ```bash
 # 给法 A：clone 本仓库并安装内核（推荐，含全部解析器依赖）
 git clone https://github.com/Tianbuyu-wwx/DSH-FormatForge.git DSH-FormatForge
-cd DSH-FormatForge
-pip install -e .
-# 告诉插件内核在哪（或用 FF_PYTHON 指向任一已装依赖的解释器）
+cd DSH-FormatForge && pip install -e .
 setx FF_REPO_ROOT "D:\DSH-FormatForge"
 
 # 给法 B：已有环境？只要它 import 得到 core/parsers：
 setx FF_PYTHON "C:\path\to\your\python.exe"
 ```
 
-### 方式二：从源码安装（开发）
+### 生效验证
 
-```bash
-git clone https://github.com/Tianbuyu-wwx/DSH-FormatForge.git DSH-FormatForge
-cd DSH-FormatForge
-pip install -e .
+重启后在启动日志里找这一行：
 
-# link 插件壳到 profile（路径含中文时装完跑一次 junction 修复脚本）
-npx @deepseek-ai/dsh plugin add --profile web ./packages/dsh-formatforge
-python scripts/rebuild-plugin-junctions.py   # 重建 peer 依赖 junction
-# 重启 dsh web → 启动日志看到 "tools registered: ff_translate, ff_formats"
 ```
+[dsh-formatforge v2.0.0] tools registered: ff_translate, ff_formats, ff_result, ff_batch, ff_diff
+```
+
+再跑 `python scripts/verify-install.py`（桌面端需 `--token`，见脚本 `--help`）。
 
 ## 使用
 
@@ -132,6 +152,7 @@ SKILL.md 会指导当前会话模型：**按 hint 直接用自己的能力完成
 | `FF_MAX_BYTES` | 104857600 | 单文件上限（100MB） |
 | `FF_TIMEOUT_S` | 120 | 单次转换超时（秒） |
 | `FF_INBOX_NOTIFY` | true | 锻造完成后是否向会话注入轻量通知 |
+| `FF_HOME` | `$DSH_HOME/formatforge` → `~/.dsh/formatforge` | 收件箱根目录（优先于 `DSH_HOME`） |
 | `OCR_ENABLED` | true | 启用本地 OCR（tesseract/paddleocr/easyocr 任一） |
 
 ## 架构
@@ -159,9 +180,11 @@ pip install -e ".[dev]"
 pytest test/                                   # 444 passed
 ruff check . && ruff format --check .
 mypy core/ parsers/ formatforge/
-node packages/dsh-formatforge/test-manifest.mjs   # bundle 契约自检
-node packages/dsh-formatforge/test-local.mjs      # stub 环境 e2e（需本机 Python）
-node packages/dsh-formatforge/test-inbox.mjs      # inbox watcher e2e
+node packages/dsh-formatforge/test-manifest.mjs        # bundle 清单/契约自检
+node packages/dsh-formatforge/test-client-bundle.mjs   # client bundle 按宿主方式执行自检
+node packages/dsh-formatforge/test-local.mjs           # stub 环境 e2e（需本机 Python）
+node packages/dsh-formatforge/test-inbox.mjs           # inbox watcher e2e
+node packages/dsh-formatforge/test/test-truncate-consistency.mjs  # JS↔Python 分页一致性
 ```
 
 设计文档：[PLUGIN_PLAN.md](PLUGIN_PLAN.md)（插件化实施）· [EVOLUTION_PLAN.md](EVOLUTION_PLAN.md)（v0.4–v0.7 演进）· [ROADMAP.md](ROADMAP.md)（后续计划）
@@ -169,8 +192,14 @@ node packages/dsh-formatforge/test-inbox.mjs      # inbox watcher e2e
 ## 已知限制
 
 - 扫描件 PDF 无文字层时依赖本机 OCR 引擎；都没有则返回 `enhance=image_only` 提示由会话模型兜底
-- Windows 下以 `link:` 方式安装的插件需要 `rebuild-plugin-junctions.py`（pnpm 重装后复发）
-- 宿主升级可能改变 client 模块内部契约——本插件带特征检测，失败时静默降级为纯路径模式
+- 拖拽模块挂在宿主**未导出**的内部实现上（`dsh-client-ui-attachment` 的 document 冒泡期
+  drop 监听）：插件用捕获期先手 `stopPropagation` 完成分流。宿主若改到捕获期或 window 级，
+  分流会静默失效（插件不会报错，只是拖拽不再被接管）——已用特征检测思路保守实现，但无公开契约。
+- 混合粘贴（剪贴板同时含文件与文本）只取文件，文本不会进入输入框——与宿主自身分支的差异是有意为之。
+- 上传地址用根绝对路径 `/formatforge/upload`，与宿主注册的 exact 路由一致；若将来宿主支持子路径
+  托管，客户端与服务端需要同时改。
+- Windows 下以中文路径 `link:` 安装时，profile 里的 `package.json`/`pnpm-lock.yaml` 均为正确 UTF-8，
+  但用 PowerShell `Get-Content` 查看可能显示为乱码（控制台编码问题，非文件问题）。
 
 ## License
 

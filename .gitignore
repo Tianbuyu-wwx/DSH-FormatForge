@@ -62,3 +62,8 @@ logs/
 data/
 probe_*.md
 probe_*.txt
+
+# ==================== 扫描/适配脚手架（本机专用） ====================
+# 宿主 app.asar 解包出的契约比对材料 + 验证脚本，不入库
+.scan/
+packages/*/cordis.patch.yml.bak-*

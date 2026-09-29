@@ -1,7 +1,15 @@
 # dsh-formatforge — DSH bundle profile patch.
+#
 # Activates this plugin via:
-#   dsh plugin --profile <profile> add ./packages/dsh-formatforge
+#   dsh plugin --profile <profile> add <path-to-this-package>
+#
+# The `name` is the module specifier the Cordis loader imports: the scoped npm
+# package name. The `id` is only the row id inside the composed entry tree.
+#
+# Peer dependencies (@deepseek-ai/dsh-tools, @deepseek-ai/dsh-skill-filesystem)
+# are resolved by the host: since DSH 0.2.0 the launcher installs peer-aware
+# resolution for linked profile packages, so the host runtime copy is used and
+# no node_modules bridge is needed inside this package.
 - insert:
     - id: dsh-formatforge
-      name: 'dsh-formatforge'
-      package: '@tianbuyu-wwx/dsh-formatforge'
+      name: '@tianbuyu-wwx/dsh-formatforge'

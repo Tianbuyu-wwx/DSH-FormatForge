@@ -1,6 +1,6 @@
 // services/inbox-watcher.mjs
 //
-// FormatForge Inbox — 用户把文件拖进 ~/.dsh/formatforge/inbox/ 即自动转换。
+// FormatForge Inbox — 用户把文件拖进 <DSH_HOME>/formatforge/inbox/ 即自动转换。
 //
 // 行为：
 //   1. 轮询扫描 inbox（2s 间隔，简单可靠，不依赖 chokidar）。
@@ -20,8 +20,19 @@ import { runFormatForge } from './python-runner.mjs'
 const SCAN_INTERVAL_MS = 2_000
 const STABLE_CHECK_MS = 700
 
+/**
+ * FormatForge home directory.
+ *
+ * Precedence mirrors the host's own `resolveDshHome()`
+ * (@deepseek-ai/dsh-home-paths): an explicit FF_HOME, then `$DSH_HOME`, then
+ * `~/.dsh`. A custom DSH_HOME must move this plugin's inbox with the rest of
+ * the harness home — otherwise a relocated install still writes into the
+ * default `~/.dsh`.
+ */
 function ffHome() {
-  return process.env.FF_HOME || join(homedir(), '.dsh', 'formatforge')
+  const fromEnv = process.env.DSH_HOME
+  const dshHome = fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv.trim() : join(homedir(), '.dsh')
+  return process.env.FF_HOME || join(dshHome, 'formatforge')
 }
 
 export function inboxDir() {
@@ -306,6 +317,11 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
         }
       } catch { /* noop */ }
       timer = setInterval(tick, SCAN_INTERVAL_MS)
+      // A plugin's poll loop must not be the reason the host process stays
+      // alive: the web/headless carrier owns the process lifetime, and an
+      // unref'd interval keeps this watcher from pinning a short-lived run
+      // (also lets the self-tests exit on their own).
+      timer.unref?.()
       log(`[ff-inbox] watching ${inbox}`)
     },
     stop() {

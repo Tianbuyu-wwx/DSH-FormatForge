@@ -1,11 +1,27 @@
-# Rebuild peer-dependency junctions for dsh-formatforge (run as needed).
+# rebuild-plugin-junctions.py — OBSOLETE on DSH >= 0.2.0. Kept for reference.
 #
-# Why: this package is installed into dsh web via `link:`, so Node cannot resolve
-# its peer deps (@deepseek-ai/dsh-tools, @deepseek-ai/dsh-skill-filesystem) from
-# the profile's hoisted node_modules. Junctions inside the package bridge the gap.
-# They are environment-specific artifacts (gitignored) and get wiped by git clean /
-# pnpm reinstalls — rerun this script then:
-#   python scripts/rebuild-plugin-junctions.py
+# ---------------------------------------------------------------------------
+# WHY THIS IS NO LONGER PART OF THE INSTALL PROCEDURE
+#
+# This script bridged peer dependencies (@deepseek-ai/dsh-tools,
+# @deepseek-ai/dsh-skill-filesystem) with junctions inside the plugin package,
+# because the pre-0.2.0 launcher could not resolve a peer for a `link:`-installed
+# plugin: Node walked up from the plugin's real path and found nothing.
+#
+# DSH 0.2.0 installs peer-aware resolution for linked profile packages
+# (dsh-app-boot: findInterceptionLayer() -> routeLinked()). At each ancestor
+# `node_modules` position it reads the *current* directory's package.json
+# `peerDependencies`; a peer name that exists in the runtime table is routed to
+# the host's own bundled copy, and that check runs BEFORE the physical candidate
+# at the same position. So declaring the peers in package.json is sufficient —
+# no node_modules bridge, and a stale one is actively harmful (it shadows the
+# host copy with whatever it points at).
+#
+# Junction dirs left over from this script were removed during the 0.2.0
+# adaptation. Do NOT re-run this unless you are targeting a pre-0.2.0 host.
+#
+#   python scripts/rebuild-plugin-junctions.py            # only for dsh < 0.2.0
+# ---------------------------------------------------------------------------
 import _winapi
 import contextlib
 import glob
@@ -14,17 +30,18 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUR_BASE = os.path.join(REPO, "packages", "dsh-formatforge", "node_modules", "@deepseek-ai")
-PROFILE = os.path.expandvars(r"%USERPROFILE%\.dsh\profiles\web\node_modules")
+PROFILE_NAME = os.environ.get("FF_PROFILE", "desktop")
+PROFILE = os.path.expandvars(rf"%USERPROFILE%\.dsh\profiles\{PROFILE_NAME}\node_modules")
 
 
 def discover_sources() -> list[str]:
     sources = [
-        # preferred: hermes-link already ships verified junctions to the npx cache
+        # preferred: a sibling plugin that already ships verified junctions
         os.path.join(PROFILE, "dsh-hermes-link", "node_modules", "@deepseek-ai"),
-        # fallback: profile-level hoisted copies (if pnpm layout changes)
+        # fallback: profile-level hoisted copies (if the pnpm layout changes)
         os.path.join(PROFILE, "@deepseek-ai"),
-        # fallback (2026-08-27): 宿主重装后 hermes-link 的 npx 缓存会被清，
-        # 但新拉的 dsh web 自带含 @deepseek-ai 依赖的新 npx cache 目录
+        # fallback (2026-08-27): a host reinstall clears the old npx cache but
+        # the newly fetched dsh web ships a fresh one that carries @deepseek-ai
         *sorted(glob.glob(os.path.expandvars(r"%LOCALAPPDATA%\npm-cache\_npx\*\node_modules\@deepseek-ai"))),
     ]
     return [s for s in sources if os.path.isdir(s)]
@@ -39,13 +56,18 @@ def find_source(name: str) -> str | None:
 
 
 def main() -> int:
+    print(
+        f"WARNING: this script is obsolete for DSH >= 0.2.0 (peer-aware linked\n"
+        f"         resolution now handles these peers). Only run it for a pre-0.2.0 host.\n"
+        f"         target profile: {PROFILE_NAME}\n"
+    )
     ok = True
     os.makedirs(OUR_BASE, exist_ok=True)
     for name in ("dsh-tools", "dsh-skill-filesystem"):
         src = find_source(name)
         dst = os.path.join(OUR_BASE, name)
         if not src:
-            print(f"[MISS] no resolvable source for {name}; check dsh web install")
+            print(f"[MISS] no resolvable source for {name}; check the dsh installation")
             ok = False
             continue
         with contextlib.suppress(OSError):

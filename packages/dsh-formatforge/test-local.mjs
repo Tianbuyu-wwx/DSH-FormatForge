@@ -1,19 +1,47 @@
-// 本地开发测试：stub @deepseek-ai/dsh-tools 与 dsh-skill-filesystem（ESM loader
-// 不吃 Module._resolveFilename，直接在包旁生成 node_modules stub 目录），
+// 本地开发测试：stub @deepseek-ai/dsh-tools 与 dsh-skill-filesystem
+// （ESM loader 不吃 Module._resolveFilename，直接在包旁生成 node_modules stub 目录），
 // 验证 index.mjs 能注册工具、schema 契约合规、且 execute() 真实跑通 Python CLI。
+//
+// 真实环境由宿主提供这两个 peer（DSH ≥0.2.0 的 launcher 为 linked profile 包做
+// peer-aware 解析），所以本脚本只在缺依赖时补 stub，退出时只删自己建的 stub。
+//
 // 用法：node packages/dsh-formatforge/test-local.mjs
 
-import { mkdirSync, writeFileSync, rmSync, statSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, statSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url)) // packages/dsh-formatforge
 const repoRoot = dirname(here) // 仓库根
 
-// ---- stub @deepseek-ai/*（真实环境由 cordis/npx cache 提供）----
+// ---- stub @deepseek-ai/*（仅在缺失时创建；退出时只清理 stub 目录）----
+//
+// 安全约束：stub 绝不能留在包里。宿主按 peer 名把 @deepseek-ai/* 路由到运行时
+// 那一份，但那份路由在 peer 位置命中前会先看本目录；一个残留的 stub 会让插件
+// 拿到 `defineTool = spec => spec`（未编译的裸 spec），工具静默失效。
+const STUB_MARKER = '0.0.0-local-stub'
+const STUB_NAMES = ['dsh-tools', 'dsh-skill-filesystem']
 const stubRoot = join(here, 'node_modules', '@deepseek-ai')
-for (const name of ['dsh-tools', 'dsh-skill-filesystem']) {
+const created = []
+
+function isOurStub(dir) {
+  try {
+    return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version === STUB_MARKER
+  } catch {
+    return false
+  }
+}
+
+for (const name of STUB_NAMES) {
   const dir = join(stubRoot, name)
+  const manifestPath = join(dir, 'package.json')
+  if (existsSync(manifestPath) && !isOurStub(dir)) {
+    // 真实依赖（宿主 peer 副本）——不动它，也不删它。
+    console.log(`[stub] real dependency present, left untouched: ${name}`)
+    continue
+  }
+  // 上次崩溃可能留下自己的 stub：重建并登记，保证退出时一定清干净。
+  if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
   const body =
     name === 'dsh-tools'
@@ -21,11 +49,34 @@ for (const name of ['dsh-tools', 'dsh-skill-filesystem']) {
       : `export class FileSystemSkillProvider { constructor() {} }\n`
   writeFileSync(join(dir, 'index.mjs'), body)
   writeFileSync(
-    join(dir, 'package.json'),
-    JSON.stringify({ name: `@deepseek-ai/${name}`, version: '0.0.0-local-stub', type: 'module', main: './index.mjs' }),
+    manifestPath,
+    JSON.stringify({
+      name: `@deepseek-ai/${name}`,
+      version: STUB_MARKER,
+      type: 'module',
+      main: './index.mjs',
+    }),
   )
+  created.push(dir)
 }
-process.on('exit', () => rmSync(join(here, 'node_modules'), { recursive: true, force: true }))
+function cleanupStubs() {
+  for (const dir of created) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch { /* best effort */ }
+  }
+  // 只在没有别的内容时收掉外层目录，绝不 rmSync 整个 node_modules。
+  for (const outer of [stubRoot, join(here, 'node_modules')]) {
+    try {
+      if (existsSync(outer) && readdirSync(outer).length === 0) rmSync(outer, { recursive: true, force: true })
+    } catch { /* best effort */ }
+  }
+}
+process.on('exit', cleanupStubs)
+process.on('SIGINT', () => {
+  cleanupStubs()
+  process.exit(130)
+})
 
 // ---- fake ctx ----
 const registered = []
@@ -90,3 +141,6 @@ try {
 }
 
 console.log('LOCAL-E2E-DONE')
+// 显式退出：index.mjs 的 inbox watcher 是 unref'd 的，但 python 探测/子进程
+// 仍可能留下句柄；测试脚本不该依赖事件循环自然排空。
+process.exit(0)

@@ -10,28 +10,19 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const repoRoot = join(here, '..', '..')
 
-// 把 ESM stub 装一下（与 test-local.mjs 一致：这是测试工具，不依赖 dsh 运行时）
-const stubRoot = join(here, 'node_modules', '@deepseek-ai')
-for (const name of ['dsh-tools', 'dsh-skill-filesystem']) {
-  const dir = join(stubRoot, name)
-  mkdirSync(dir, { recursive: true })
-  const body = name === 'dsh-tools'
-    ? `export function defineTool(spec) { return spec }\n`
-    : `export class FileSystemSkillProvider { constructor() {} }\n`
-  writeFileSync(join(dir, 'index.mjs'), body)
-  writeFileSync(
-    join(dir, 'package.json'),
-    JSON.stringify({ name: `@deepseek-ai/${name}`, version: '0.0.0', type: 'module', main: './index.mjs' }),
-  )
-}
-process.on('exit', () => rmSync(join(here, 'node_modules'), { recursive: true, force: true }))
-
+// 这是纯 JS ↔ Python 的算法一致性测试：`_truncate.mjs` 不 import 任何宿主包，
+// 因此不需要 @deepseek-ai/* stub（旧版在这里造 stub 并在退出时 rmSync 整个
+// node_modules，会连同真实 peer 一起删掉）。
 const { smartTruncate } = await import('../tools/_truncate.mjs')
+// 解释器探测复用插件自身的链路（FF_PYTHON → .venv-fg → .venv → PATH），
+// 避免 PATH 上的 python 只是 Windows Store 别名时报 "Python was not found"。
+// 仓库根同样复用插件的向上探测：本文件在 packages/dsh-formatforge/test/，
+// 相对层数是 3 级，硬编码层数会随目录搬动而失效。
+const { resolvePython, findRepoRoot } = await import('../services/python-runner.mjs')
+const repoRoot = findRepoRoot(join(here, '..', '..', '..'))
 
 // --- 测例矩阵（与 test_smart_truncate.py 同源） ---
 const cases = [
@@ -87,7 +78,7 @@ for c in cases:
 print(json.dumps(out, ensure_ascii=False))
 `
 
-const python = process.env.FF_PYTHON || 'python'
+const python = await resolvePython(repoRoot)
 const proc = spawnSync(python, ['-c', pyScript], {
   input: JSON.stringify(cases),
   encoding: 'utf-8',
@@ -95,7 +86,7 @@ const proc = spawnSync(python, ['-c', pyScript], {
   env: { ...process.env, PYTHONPATH: repoRoot, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
 })
 if (proc.status !== 0) {
-  console.error('PYTHON FAIL:', proc.stderr.slice(-500))
+  console.error('PYTHON FAIL:', (proc.stderr || String(proc.error || '')).slice(-500))
   process.exit(1)
 }
 
