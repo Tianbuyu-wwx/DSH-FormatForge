@@ -38,13 +38,22 @@ when_to_use: |
   | `conversion_type` | `ff_translate {path, type:"<value>"}`（如 `ocr` 兜底扫描件） |
   | `prompt` | `ff_translate {path, prompt:"<value>"}`（结构化重建） |
 
-  ## 收件箱产物消费（N1 / R3.2）
+  ## 收件箱产物消费（N1 / R3.2 / v2.0.1 改为拉取式）
 
-  会话收到「[FormatForge] 收件箱文件已锻好」通知后：
+  **收件箱是共享目录，任何会话、任何时刻都能读**——不依赖"当前对话收到过通知"。
+
+  - 用户说「我刚拖了个文件 / 把文件放进去了 / 上传了 X」→ **先调 `ff_result {list:true}`**
+    看有什么，再决定取哪份。
   - 要列全部产物 → `ff_result {list:true}`
-  - 取某份内容 → `ff_result {id:"<通知中的 id>"}`（通知文末附 `- 结果 id：xxx`）
+  - 取某份内容 → `ff_result {id:"<list 里的 id>"}`
   - **批量取多份** → `ff_result {ids:"id1,id2,id3"}`（R3.2：一次拿多产物，≤20）
   - 内容被截断时按提示带 `offset` 翻页（仅单 id 生效）
+  - 用户直接给了本地路径时，`ff_translate {path}` 更省事，不必先查收件箱。
+
+  > v2.0.1：默认**不再**往会话里推送「已锻好」通知（`FF_INBOX_NOTIFY=true` 可开）。
+  > 宿主没有临时通知通道，推送只能落成一条 `user/message`，会永久留在 transcript 里
+  > 反复重发、被当成用户发言，而且只有当时正在运行的会话收得到。
+  > 因此改为拉取式：产物躺在收件箱里，谁需要谁去 `ff_result` 取。
 
   ## 使用时机
 
@@ -55,7 +64,7 @@ when_to_use: |
     内容超长用 max_chars/offset 分页读取。
   - 用户粘贴一段结构化文本（TOML/YAML/CSV/JSON...）希望整理为 JSON 或 Markdown。
   - 用户询问某格式是否支持 → 先调 `ff_formats`。
-  - 通知里说"收件箱文件已锻好"+ 多个 id 时 → 用 `ff_result {ids:...}` 批量取回。
+  - 用户提到刚拖入/上传了文件（没有给路径）→ `ff_result {list:true}` 找最近的产物。
 
   ## 约定
 
@@ -85,6 +94,6 @@ FormatForge 的 DSH 插件壳：把 `python -m formatforge` CLI 包装为原生�
 `ff_translate` / `ff_formats` / `ff_result`。Python 内核负责 30+ 格式解析与策略选择；
 模型增强通过 enhance 协议交给当前会话完成。
 
-**版本**：v2.0.0（2026-09-30）—— 适配 DeepSeek Harness 0.2.0-rc.2（peer 区间收紧为 `>=0.2.0-rc.1 <0.3.0-0`、
+**版本**：v2.0.1（2026-09-30）—— 适配 DeepSeek Harness 0.2.0-rc.2（peer 区间收紧为 `>=0.2.0-rc.1 <0.3.0-0`、
 清单补 `engines.dsh`/`manifestVersion`、client 模块 HMR 监听器泄漏修复、inbox 跟随 `DSH_HOME`）。
 **变更点**：见 CHANGELOG v2.0.0 节。协议仍是 v1（`protocol/v1/` 未变）。

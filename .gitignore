@@ -67,3 +67,6 @@ probe_*.txt
 # 宿主 app.asar 解包出的契约比对材料 + 验证脚本，不入库
 .scan/
 packages/*/cordis.patch.yml.bak-*
+
+# 根目录 node_modules：本地脚手架可能创建（junction），不入库
+node_modules/

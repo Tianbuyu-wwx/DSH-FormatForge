@@ -7,6 +7,51 @@
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-30 — 修掉「通知污染会话 + 跨会话失效」
+
+> 用户现场反馈：*「拖入文件的上下文只生效于当前的对话，别的对话不生效，也不用再显示一遍」*
+> 完整自检报告：[SELF_CHECK_v2.0.0.md](SELF_CHECK_v2.0.0.md) · 后续计划：[ROADMAP.md](ROADMAP.md) R6
+
+### 修复
+
+**收件箱通知不再是 `user/message`（推送默认关闭）。**
+
+根因：宿主**没有临时通知通道**——`KNOWN_SESSION_EVENT_TYPES` 里所有模型可见事件都会持久化。
+所以 `services/notify.mjs` 原来 append 的那条 `user/message` 必然带来三个后果：
+
+1. **永久写进 transcript** —— 之后每一轮都重新发给模型、UI 里反复出现（用户说的「又显示一遍」），
+   并且成为永久的上下文成本；
+2. **被署名为用户** —— `role: 'user'` + `source.kind: 'user'`，对话里出现了用户从没说过的话；
+3. **只送达当时持有 live agent 的会话** —— `ctx.agents.list()` 只包含正在运行的会话，
+   用户在别的对话里工作时拖的文件永远不会有任何提示（用户说的「别的对话不生效」）。
+
+改动：
+
+| 改动 | 文件 |
+|---|---|
+| 推送**默认关闭**（`FF_INBOX_NOTIFY=true` 才开） | `services/notify.mjs` |
+| 按 `resultId` **去重**，同一产物每会话最多播报一次 | `services/notify.mjs` + `index.mjs` |
+| 通知文案 6 行 → **1 行**（transcript 是永久成本） | `services/notify.mjs` |
+| **拉取式**取代推送：`ff_result {list:true}` 任何会话任何时候都能读 | `skills/dsh-formatforge/SKILL.md` |
+| 启动日志 `notify=` → `push-notify=`（语义更准） | `index.mjs` |
+
+**为什么拉取式是对的**：收件箱本来就是**共享目录**，任意对话都能用 `ff_result` 取到产物。
+缺的是「知道去看」，而不是「被推一条消息」——后者的代价是永久上下文污染加错误署名。
+
+### 新增测试
+
+`test-inbox.mjs` 增加 3 项断言：
+
+- 通知必须是单行（`notice is a single line`）
+- 同一 `resultId` 重复播报被抑制（3 次调用只出 1 条）
+- **默认关闭**且不向 transcript 写任何消息
+
+### 文档
+
+- 新增 **`SELF_CHECK_v2.0.0.md`** —— 30 个真实文件 × 实机插件的全面自检报告
+- **`ROADMAP.md` 重写** —— R1–R5 归档，新增 R6「用户体验优先」（含收件箱数据库方案）
+- README：`FF_INBOX_NOTIFY` 默认值与原因；测试数 `444` → `564`
+
 ## [2.0.0] - 2026-09-30 — 适配 DeepSeek Harness 0.2.0-rc.2
 
 > 主题：宿主从「npx 拉的 dsh web」换成 **Electron 桌面版 dsh-desktop-runtime 0.2.0-rc.2**，

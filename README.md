@@ -151,7 +151,7 @@ SKILL.md 会指导当前会话模型：**按 hint 直接用自己的能力完成
 | `FF_PYTHON` | 探测链兜底 PATH | 指定解释器（≥3.10） |
 | `FF_MAX_BYTES` | 104857600 | 单文件上限（100MB） |
 | `FF_TIMEOUT_S` | 120 | 单次转换超时（秒） |
-| `FF_INBOX_NOTIFY` | true | 锻造完成后是否向会话注入轻量通知 |
+| `FF_INBOX_NOTIFY` | **false** | 是否把「已锻好」推进会话 transcript。v2.0.1 起默认关：宿主没有临时通知通道，推送只能落成 `user/message`，会被当成用户发言、永久留在上下文里、且只有运行中的会话收得到。收件箱是共享目录，改用 `ff_result {list:true}` 拉取 |
 | `FF_HOME` | `$DSH_HOME/formatforge` → `~/.dsh/formatforge` | 收件箱根目录（优先于 `DSH_HOME`） |
 | `OCR_ENABLED` | true | 启用本地 OCR（tesseract/paddleocr/easyocr 任一） |
 
@@ -177,7 +177,7 @@ CLI     ── python -m … ──► formatforge 内核（30+ 解析器 × 7 �
 
 ```bash
 pip install -e ".[dev]"
-pytest test/                                   # 444 passed
+pytest test/                                   # 本地 564 passed（CI 为权威门禁）
 ruff check . && ruff format --check .
 mypy core/ parsers/ formatforge/
 node packages/dsh-formatforge/test-manifest.mjs        # bundle 清单/契约自检

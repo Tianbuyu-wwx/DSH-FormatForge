@@ -95,6 +95,33 @@ notifier.broadcast(fakeCtx, notifier.buildNotice({ retention: true, count: 5 }))
 notifier.broadcast(fakeCtx, notifier.buildNotice({ ok: true, file: 'r.txt', parser: 'txt', confidence: 0.9 }))
 console.log('retention broadcast captured:', capturedTexts.filter((t) => t.includes('收件箱清理')).length, '(expect 0)')
 console.log('normal conversion broadcast captured:', capturedTexts.filter((t) => t.includes('已锻好')).length, '(expect 1)')
+console.log('notice is a single line:', notifier.buildNotice({ ok: true, file: 'r.txt', resultId: 'cvt1' }).split('\n').length === 1, '(expect true)')
+
+// 场景5b（v2.0.1）：同一 resultId 每个会话最多播报一次
+const dedupTexts = []
+const dedupCtx = {
+  sessions: { get: () => ({ append: (t, m) => { if (m?.content?.[0]?.text) dedupTexts.push(m.content[0].text) } }) },
+  agents: { list: () => [{ id: 'session-A' }] },
+}
+notifier.broadcast(dedupCtx, 'same file', 'cvt-dup')
+notifier.broadcast(dedupCtx, 'same file', 'cvt-dup')
+notifier.broadcast(dedupCtx, 'same file', 'cvt-dup')
+console.log('duplicate notice suppressed:', dedupTexts.length, '(expect 1)')
+
+// 场景5c（v2.0.1）：默认关闭推送 —— transcript 里不该出现任何 FormatForge 消息
+// 收件箱是共享目录，任何会话用 ff_result {list:true} 拉取即可，
+// 往 user/message 里塞东西会永久污染 transcript 并只有运行中的会话收得到。
+const prevNotify = process.env.FF_INBOX_NOTIFY
+delete process.env.FF_INBOX_NOTIFY
+const defaultTexts = []
+const defaultCtx = {
+  sessions: { get: () => ({ append: (t, m) => { if (m?.content?.[0]?.text) defaultTexts.push(m.content[0].text) } }) },
+  agents: { list: () => [{ id: 'session-A' }] },
+}
+const defaultNotifier = makeNotifier({ log: () => {} })
+defaultNotifier.broadcast(defaultCtx, defaultNotifier.buildNotice({ ok: true, file: 'x.txt', resultId: 'cvt-default' }), 'cvt-default')
+console.log('push disabled by default:', defaultTexts.length === 0 && defaultNotifier.enabled === false, '(expect true)')
+process.env.FF_INBOX_NOTIFY = prevNotify
 
 // 场景6（v0.14.0/B-P1-4）：retention 清理后 .ff.retired.log 应有 entry
 // 测：在新 FF_HOME 里造一个旧文件 + 触发 retention → 验证 .ff.retired.log 存在

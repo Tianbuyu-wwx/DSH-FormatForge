@@ -95,7 +95,10 @@ export function apply(ctx) {
   }
 
   // 5. Inbox watcher — drop files into <DSH_HOME>/formatforge/inbox/ → auto forge.
-  //    Never crashes boot; sessions injection is best-effort.
+  //    Never crashes boot. Transcript push is OPT-IN (see services/notify.mjs):
+  //    the inbox is a shared directory, so any conversation can discover a new
+  //    artefact with ff_result {list:true} — no message has to be pushed into
+  //    anyone's transcript.
   try {
     const notifier = makeNotifier({ log })
     const watcher = createInboxWatcher({
@@ -107,14 +110,15 @@ export function apply(ctx) {
         try {
           const text = notifier.buildNotice(result)
           // v0.14.0/B-P1-3: buildNotice 内部对 retention 通知降噪（只 log 返回 ''）
-          if (text) notifier.broadcast(ctx, text)
+          // v2.0.1: 第三参是去重键——同一份产物每个会话最多播报一次。
+          if (text) notifier.broadcast(ctx, text, result.resultId)
         } catch (e) {
           log(`[dsh-formatforge] notify failed: ${(e && e.message) || e}`)
         }
       },
     })
     watcher.start()
-    console.log(`[dsh-formatforge v${VERSION}] inbox watching: ${inboxDir()} (notify=${notifier.enabled})`)
+    console.log(`[dsh-formatforge v${VERSION}] inbox watching: ${inboxDir()} (push-notify=${notifier.enabled})`)
   } catch (e) {
     console.error(`[dsh-formatforge v${VERSION}] inbox watcher init failed:`, (e && e.message) || e)
   }
