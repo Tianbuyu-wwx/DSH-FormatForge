@@ -7,6 +7,95 @@
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-10-02 — 拖拽文件夹不再卡死
+
+> 用户现场反馈：*「当拖拽文件夹时也会激活这个插件，但是会卡死，请放行文件夹并在那个拖动到的界面上加入 × 来退出防止卡死」*
+
+### 修复
+
+**根因：客户端拖拽分流没认出「目录」。** Chrome 把目录交给页面的就是一个
+**没有 MIME、没有扩展名、0 字节的 `File`**，与空文件无法区分，于是 v0.3 的 `partition()` 把它当普通文件：
+`dragenter` 时 `preventDefault()/stopPropagation()` 抢下整个拖拽并弹出全屏遮罩，松手后还去 POST 一个
+0 字节幽灵文件。而宿主的 `DropOverlay`（`@deepseek-ai/dsh-client-ui-attachment`）用**它自己的
+`dragDepth` 计数器**显示，且只在**它自己的** drop/dragleave/dragend 里归零 —— 终止事件一旦被我们吞掉，
+计数就停在 >0，全屏遮罩挂到刷新为止（用户说的「卡死」）。顺带，宿主本来就会把拖入的文件夹变成
+`@路径` 引用，接管等于把这个能力也一起弄坏了。
+
+| 改动 | 位置 |
+|---|---|
+| 一次拖拽里出现**目录**即整体放行：不接管、不显示遮罩、不上传，宿主自己的目录 intake 原样运行 | `lib/client.source.js` `directoryFiles()` / `classify()` / `onDrop()` |
+| 目录判定用 `DataTransferItem.webkitGetAsEntry()`（与宿主 `droppedDirectories()` 同一判据），**逐个条目**判定；该 API 无应答的条目退化为「无 MIME + 0/4096 字节」特征（**不再要求"无扩展名"**：目录叫 `报告.pdf`、`archive.zip` 同样要放行） | `directoryFiles()` / `looksLikeDirectory()` |
+| 遮罩加 **×**（`#ff-drop-close`）+ **Esc**；另有一枚 **× 逃生按钮**（`#ff-drop-escape`）随每次文件拖拽出现（含放行的文件夹），拖拽结束后再留 8 秒 | `showOverlay()` / `showEscape()` |
+| 凡是我们吞掉的终止事件（drop、×、Esc、看门狗、卸载）都补发宿主自己的复位路径：合成 `window.dragend` + 指向 `body` 的视口边缘 `dragleave` | `releaseHostDrag()` |
+| **只要 stopPropagation 掉一次 drop，就无条件补发宿主复位**（"首次 `dragenter` 读不到文件 → 松手时才分类"这条路径里宿主已经计过数，漏发就会留下卡住的全屏遮罩） | `onDrop()` |
+| × / Esc 之后**这一段拖拽整体交回宿主**（含它的 drop），不再"表面退出、松手仍然偷偷接管"；只有**拖拽进行中**的逃逸才上锁，拖拽结束后点残留的 × 不会污染下一次拖拽 | `escapeDrag()` / `onDrop()` |
+| 逃生按钮 8 秒后自动退场时**再补一次宿主复位**：连续 8 秒没有任何拖拽事件，说明宿主遮罩若还在就是陈旧的 | `retireEscape()` |
+| 混合拖拽（文件夹 + 文件）整体交回宿主，不做半接管（合成 drop 无法携带目录的 entry，半接管必然出错） | `onDrop()` |
+| 不再按形状二次过滤 `handleOthers()`：被我们吞下的 drop 必须有人接——0 字节/无类型文件照常锻造，绝不再"既不锻造也不交回" | `handleOthers()` |
+
+### 新增测试
+
+**`test-client-drag.mjs`**：用 `node:vm` + 迷你 DOM **按宿主方式**（含 `dragDepth` 计数器、
+`dragover` 的 `preventDefault` 与 `droppedDirectories()` 语义）重放 16 组真实拖拽序列、117 条断言。
+两种浏览器方言都跑：`spec`（MDN：`webkitGetAsEntry()` 只在 `dragstart`/`drop` 阶段可读）与
+`chrome`（各阶段都能读）——两边的外部行为必须一致：
+
+- 文件夹拖拽：entry API / 无 API 特征 / 带扩展名的目录名（`报告.pdf`）/ 首次 `dragenter` 不带 files
+  四条路径 → 宿主全程收到事件、计数归零、零上传、无遮罩
+- 真文件拖拽 → 遮罩 + ×、上传恰好一次（含文件名头与字节数）、宿主计数被复位
+- **未定性即松手**（首次 `dragenter` 读不到文件）→ 仍然恰好锻造一次，且宿主计数归零（卡死回归点）
+- **× / Esc / 看门狗**：遮罩与逃生按钮消失、宿主计数归零、**这一段拖拽的 drop 交回宿主且零上传**；
+  1.5s 时间闸门两端都测（同段拖拽靠 `dragover` 保活 → 仍不上锁；新拖拽 → 照常接管）
+- 松开后残留的 × 点掉 → 宿主计数归零，且**不**污染下一次拖拽
+- 空文件 / 无类型文件 / 无类型空文件 → 三者都不再"静默消失"
+- 混合拖拽（部分条目 entry 无应答）→ 整段放行、零上传；离开视口 / 真实 `dragend` → 遮罩与 × 退场
+- 卸载后监听器与逃生元素全部清除（HMR 不叠加）
+
+**变异自检**：对 `lib/client.js` 注入 8 个人为回归（去掉宿主复位、恢复"带扩展名不当目录"、
+drop 忽略逃逸状态、复位改成条件触发、取消 `releasingHost` 守卫、去掉逐个条目兜底……），
+套件 8/8 全部报错——这些断言不是摆设。
+
+### 修复（全盘自检追加）
+
+**① 协议 stdout 在中文 Windows 控制台下会把「编码崩了」伪装成 internal 错误。**
+
+`python -m formatforge translate <含 ¥/emoji 的文件>`（README 里写明的直接用法）在 cp936 控制台返回
+`{"ok": false, "code": 4070, "error": {"kind": "internal", "message": "'gbk' codec can't encode ..."}}`
+——内容没问题，是**字节流**撞了控制台代码页。宿主插件侧 spawn 时本来就设了
+`PYTHONIOENCODING=utf-8`/`PYTHONUTF8=1`（`services/python-runner.mjs`），所以只有直接跑 CLI 会踩；
+本地 `pytest` 也因此红了 2 个协议用例（父进程按 GBK 解码 → reader 线程 UnicodeDecodeError → `stdout=None`）。
+CI 是 UTF-8 locale，所以一直是绿的。
+
+| 改动 | 文件 |
+|---|---|
+| CLI 入口把协议 stdout 固定成 UTF-8（不再随控制台代码页漂移） | `formatforge/__main__.py` `_ensure_utf8_stdout()` |
+| 测试侧显式按 UTF-8 解码子进程 stdout / stderr | `test/unit/test_cli_protocol.py`（2 处 `subprocess.run`） |
+| Python 内核版本 2.0.1 → **2.0.2**（`__version__.py` 是单一版本来源，与 npm 侧两处必须同值；CLI `version` 也读这里） | `formatforge/__version__.py` · `packages/dsh-formatforge/package.json` |
+
+**② 版本对齐**：CLI `version` 现在与 npm 包一致报 `2.0.2`。
+
+### 全盘自检（2026-10-02）
+
+| 门禁 | 命令 | 结果 |
+|---|---|---|
+| Python 单测 | `pytest test/ -q` | **564 passed / 5 skipped / 0 failed**（修编码前是 562 passed + 2 failed） |
+| Lint / 格式 | `ruff check .` · `ruff format --check .` | All checks passed · 69 files already formatted |
+| 类型检查 | `mypy core/ parsers/ formatforge/ --ignore-missing-imports` | ⚠️ 本机不可复现 CI（见下）；**CI 门禁在上一次推送为绿** |
+| 安全扫描 | `bandit -r core/ parsers/ formatforge/ -ll` | 10 medium / 0 high（全是既有的 pickle 缓存与 `xml.etree` 解析，非本次改动文件；CI 该步 warning-only） |
+| Bundle 语法 | `node --check`（index + lib + tools + services + http） | 全过 |
+| Client 契约 | `test-client-bundle.mjs` | `CLIENT-BUNDLE-OK`（+8 监听器，disposer 后归零） |
+| Client 拖拽行为 | `test-client-drag.mjs` | **117 断言全过** + 8/8 变异全被抓 |
+| Bundle 清单 | `test-manifest.mjs` | `MANIFEST-OK` |
+| 插件 e2e | `test-local.mjs` · `test-inbox.mjs` · `test/test-truncate-consistency.mjs` | `LOCAL-E2E-DONE` · `INBOX-E2E-DONE` · 13 cases consistent |
+| 实机宿主 | `GET /plugins/??@tianbuyu-wwx/dsh-formatforge/client.js&rev=…` | 200，rev 与新 mtime/size 匹配，含 `ff-drop-escape`/`retireEscape`/`wasEscaped` |
+| npm 包内容 | `npm pack --dry-run` | 17 files / 40.5 kB，含修好的 `lib/client.js` |
+
+> **mypy 的本机差异**：`python_version = "3.10"` 配置下，本机 venv 能看到全局 Python 3.12 的
+> 可选包（numpy 2.5.2 的 `.pyi` 需要 3.12 语法；`tomllib` 可被解析），mypy 因此在
+> `site-packages/numpy/__init__.pyi` 与 `parsers/toml_parser.py`（既有文件，本次未改动）上报错；
+> **同一份改动 `git stash` 到干净树后报同样的错**，而 CI（同 mypy 2.3.1、同配置、未装这些可选包）
+> 上一次推送 7/7 全绿。其余门禁均为本机实跑。
+
 ## [2.0.1] - 2026-09-30 — 修掉「通知污染会话 + 跨会话失效」
 
 > 用户现场反馈：*「拖入文件的上下文只生效于当前的对话，别的对话不生效，也不用再显示一遍」*

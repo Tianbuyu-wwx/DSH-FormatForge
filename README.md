@@ -182,6 +182,7 @@ ruff check . && ruff format --check .
 mypy core/ parsers/ formatforge/
 node packages/dsh-formatforge/test-manifest.mjs        # bundle 清单/契约自检
 node packages/dsh-formatforge/test-client-bundle.mjs   # client bundle 按宿主方式执行自检
+node packages/dsh-formatforge/test-client-drag.mjs     # 拖拽行为回放（文件夹放行 / × 逃生 / 宿主计数复位）
 node packages/dsh-formatforge/test-local.mjs           # stub 环境 e2e（需本机 Python）
 node packages/dsh-formatforge/test-inbox.mjs           # inbox watcher e2e
 node packages/dsh-formatforge/test/test-truncate-consistency.mjs  # JS↔Python 分页一致性
@@ -195,6 +196,15 @@ node packages/dsh-formatforge/test/test-truncate-consistency.mjs  # JS↔Python 
 - 拖拽模块挂在宿主**未导出**的内部实现上（`dsh-client-ui-attachment` 的 document 冒泡期
   drop 监听）：插件用捕获期先手 `stopPropagation` 完成分流。宿主若改到捕获期或 window 级，
   分流会静默失效（插件不会报错，只是拖拽不再被接管）——已用特征检测思路保守实现，但无公开契约。
+  宿主的 `DropOverlay` 同样只用它自己的 `dragDepth` 计数复位，所以插件在吞掉终止事件时会补发
+  一次宿主复位（合成 `dragend` + 视口边缘 `dragleave`），并常驻 ×/Esc 逃生入口。
+- 文件夹不参与锻造（v2.0.2 起整条拖拽放行给宿主）：一个拖拽里只要出现目录，同批文件也不会被接管——
+  要么单独拖文件，要么先打包成 zip。目录判定以 `webkitGetAsEntry()` 为准（与宿主同一判据），
+  该 API 在 `dragenter` 阶段可能无应答（MDN：只在 `dragstart`/`drop` 可读），此时按「无 MIME + 0/4096 字节」
+  特征**保守放行**：目录名带扩展名（`报告.pdf`）也算目录；代价是一个 0 字节且无 MIME 的真实文件
+  在拖动中会被当成疑似目录，松手时再以 entry API 复核并照常锻造。
+- ×/Esc 逃生入口只管**当前这一段**拖拽（清遮罩 + 补发宿主复位 + 把剩余事件交回宿主），
+  不影响下一次拖拽；拖拽结束后残留的 × 再点一次也只是清场。
 - 混合粘贴（剪贴板同时含文件与文本）只取文件，文本不会进入输入框——与宿主自身分支的差异是有意为之。
 - 上传地址用根绝对路径 `/formatforge/upload`，与宿主注册的 exact 路由一致；若将来宿主支持子路径
   托管，客户端与服务端需要同时改。

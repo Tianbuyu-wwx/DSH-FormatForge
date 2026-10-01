@@ -83,6 +83,11 @@ jobs:
           done
           echo "all bundle files OK"
 
+      - name: Client module contract + drag behaviour (fake DOM, no runtime)
+        run: |
+          node packages/dsh-formatforge/test-client-bundle.mjs
+          node packages/dsh-formatforge/test-client-drag.mjs
+
       - name: Protocol contract — CLI JSON shape (via stubbed runner e2e is local-only;
               here we verify version & formats against the installed Python)
         run: node packages/dsh-formatforge/test-manifest.mjs

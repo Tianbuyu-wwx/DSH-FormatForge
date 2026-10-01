@@ -25,6 +25,12 @@ def run_cli(*args: str, stdin: str | None = None) -> tuple[dict, int]:
         [PY, "-m", "formatforge", *args],
         capture_output=True,
         text=True,
+        # 协议 stdout 固定 UTF-8（formatforge.__main__._ensure_utf8_stdout）。
+        # 不显式声明的话 Windows 会按控制台 locale（cp936/GBK）解码，
+        # 一旦 JSON 里有 GBK 表示不了的字符（¥ 等）reader 线程就会 UnicodeDecodeError，
+        # proc.stdout 变成 None —— 与 CI（UTF-8 locale）行为不一致。
+        encoding="utf-8",
+        errors="replace",
         input=stdin,
         cwd=REPO_ROOT,
         timeout=180,
@@ -293,7 +299,8 @@ class TestR10FormatsCategory:
         """argparse choices 校验在 CLI 层拒绝；非 0 退出码 + stderr 信息。"""
         proc = subprocess.run(
             [PY, "-m", "formatforge", "formats", "--category", "no_such_thing"],
-            capture_output=True, text=True, cwd=REPO_ROOT, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=REPO_ROOT, timeout=30,
             env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
         )
         assert proc.returncode != 0

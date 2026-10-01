@@ -257,7 +257,8 @@ def main() -> int:
     check(
         "client.js 模块契约",
         check_client_js,
-        "跑 node packages/dsh-formatforge/test-manifest.mjs 与 test-client-bundle.mjs 定位",
+        "跑 node packages/dsh-formatforge/test-manifest.mjs 与 test-client-bundle.mjs 定位；"
+        "拖拽行为单跑 test-client-drag.mjs",
     )
     if not args.skip_inbox:
         check(

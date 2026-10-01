@@ -10,6 +10,7 @@ FormatForge CLI 入口
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import sys
@@ -46,6 +47,22 @@ def _emit(payload: dict[str, Any]) -> None:
     """stdout 唯一出口：单行协议 JSON"""
     sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
     sys.stdout.flush()
+
+
+def _ensure_utf8_stdout() -> None:
+    """协议输出固定 UTF-8（不随控制台代码页漂移）。
+
+    Windows 中文控制台（cp936/GBK）下，`ensure_ascii=False` 的 JSON 只要含有
+    GBK 表示不了的字符（¥、emoji、生僻字……）就会 UnicodeEncodeError，CLI 只好
+    把它当 internal 错误返回（ok=false / exit 4）——协议本身没错，错在字节流。
+    宿主插件侧 spawn 时本来就设了 PYTHONIOENCODING/PYTHONUTF8（python-runner.mjs），
+    这里让**直接跑 CLI**（README 的用法）也一样可靠。
+    """
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        # 已关闭/不可重配的流：保持原样，交给调用方处理
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(encoding="utf-8")
 
 
 def _fail(kind: str, message: str, *, code: ErrorCode | None = None) -> int:
@@ -474,6 +491,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ensure_utf8_stdout()
     parser = build_parser()
 
     # v1.0.1: argparse 错误包成协议 JSON 输出（保持 stdout 唯一出口约定）。

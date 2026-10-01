@@ -94,6 +94,6 @@ FormatForge 的 DSH 插件壳：把 `python -m formatforge` CLI 包装为原生�
 `ff_translate` / `ff_formats` / `ff_result`。Python 内核负责 30+ 格式解析与策略选择；
 模型增强通过 enhance 协议交给当前会话完成。
 
-**版本**：v2.0.1（2026-09-30）—— 适配 DeepSeek Harness 0.2.0-rc.2（peer 区间收紧为 `>=0.2.0-rc.1 <0.3.0-0`、
-清单补 `engines.dsh`/`manifestVersion`、client 模块 HMR 监听器泄漏修复、inbox 跟随 `DSH_HOME`）。
-**变更点**：见 CHANGELOG v2.0.0 节。协议仍是 v1（`protocol/v1/` 未变）。
+**版本**：v2.0.2（2026-10-02）—— 拖拽分流修好「拖文件夹卡死」：文件夹整体放行给宿主、
+遮罩带 ×/Esc 逃生入口、吞掉终止事件时补发宿主 dragDepth 复位；顺带把协议 stdout 固定为 UTF-8。
+**变更点**：见 CHANGELOG v2.0.2 节（v2.0.1 见该节）。协议仍是 v1（`protocol/v1/` 未变）。
