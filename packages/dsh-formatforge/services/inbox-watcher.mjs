@@ -16,6 +16,7 @@ import { homedir } from 'node:os'
 import { readdirSync, statSync, existsSync, writeFileSync, unlinkSync, readFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { runFormatForge } from './python-runner.mjs'
+import { dbDisabled, inboxDir as ffInboxDir } from './ff-paths.mjs'
 
 const SCAN_INTERVAL_MS = 2_000
 const STABLE_CHECK_MS = 700
@@ -35,8 +36,13 @@ function ffHome() {
   return process.env.FF_HOME || join(dshHome, 'formatforge')
 }
 
+/** v3.0.0: 索引库与只读查询层共用（services/ff-paths.mjs 是单一来源）。 */
+export function ffHomeDir() {
+  return ffHome()
+}
+
 export function inboxDir() {
-  return join(ffHome(), 'inbox')
+  return ffInboxDir()
 }
 
 /** 支持的扩展名白名单（与 parsers 能力对齐的保守清单；未知扩展交给 CLI 报 unsupported_format）。
@@ -147,8 +153,60 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
     return stable
   }
 
-  async function processOne({ full, name, size }) {
-    log(`[ff-inbox] converting ${name} (${size}B)`)
+  // ─── v3.0.0: 索引库写入（单写者是 Python；Node 侧只排队 + spawn） ───
+  // 产物落盘后把 .ff.json 交给 `formatforge inbox index`；批量合并以减少 Python 冷启动次数。
+  const INDEX_FLUSH_MS = 1_000
+  const INDEX_BATCH_MAX = 20
+  let indexTimer = null
+  let pendingArtifacts = []
+  let pendingPrune = false
+
+  function scheduleIndexFlush() {
+    if (indexTimer) return
+    indexTimer = setTimeout(() => {
+      indexTimer = null
+      void flushIndex()
+    }, INDEX_FLUSH_MS)
+    indexTimer.unref?.()
+  }
+
+  function queueIndex(jsonPath) {
+    if (dbDisabled()) return
+    pendingArtifacts.push(jsonPath)
+    if (pendingArtifacts.length >= INDEX_BATCH_MAX) {
+      if (indexTimer) clearTimeout(indexTimer)
+      indexTimer = null
+      void flushIndex()
+      return
+    }
+    scheduleIndexFlush()
+  }
+
+  function queuePrune() {
+    if (dbDisabled()) return
+    pendingPrune = true
+    scheduleIndexFlush()
+  }
+
+  async function flushIndex() {
+    const batch = pendingArtifacts.splice(0, INDEX_BATCH_MAX)
+    const wantPrune = pendingPrune
+    pendingPrune = false
+    if (batch.length > 0) {
+      const args = ['inbox', 'index']
+      for (const item of batch) args.push('--artifact', item)
+      const res = await runFormatForge({ cliArgs: args, repoRoot, stdinText: null, timeoutMs, log })
+      if (res.ok) log(`[ff-inbox] indexed ${res.data?.indexed?.length ?? 0} artifact(s)`)
+      else log(`[ff-inbox] index failed: ${res.error?.message || 'unknown'}`)
+    }
+    if (wantPrune) {
+      const res = await runFormatForge({ cliArgs: ['inbox', 'prune'], repoRoot, stdinText: null, timeoutMs, log })
+      if (res.ok && (res.data?.retired ?? 0) > 0) log(`[ff-inbox] pruned ${res.data.retired} retired artifact(s)`)
+    }
+    if (pendingArtifacts.length > 0 || pendingPrune) scheduleIndexFlush()
+  }
+
+  async function processOne({ full, name, size }) {    log(`[ff-inbox] converting ${name} (${size}B)`)
     const stem = name.slice(0, -extname(name).length)
     const jsonPath = join(inbox, `${stem}.ff.json`)
     const mdPath = join(inbox, `${stem}.ff.md`)
@@ -180,6 +238,7 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
       const enhance = res.data?.enhance && res.data.enhance.needed ? `；enhance=${res.data.enhance.reason}` : ''
       log(`[ff-inbox] done ${name}: parser=${meta.parser}, confidence=${meta.confidence}${enhance}`)
       doneAt.set(name, statSync(full).mtimeMs)
+      queueIndex(jsonPath) // v3.0.0: 落盘后进索引库（幂等；库不可用时静默跳过）
       onDone?.({
         file: name,
         ok: true,
@@ -298,6 +357,7 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
     }
     if (removed.length > 0) {
       log(`[ff-inbox] retention: removed ${removed.length} file(s)`)
+      queuePrune() // v3.0.0: 磁盘上没了的产物在索引里标 retired
       onDone?.({ file: removed.join(', '), ok: true, retention: true, count: removed.length })
     }
   }
@@ -327,6 +387,30 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
     stop() {
       if (timer) clearInterval(timer)
       timer = null
+      // 尽力把排队中的索引写完（不阻塞关闭）
+      if (indexTimer) {
+        clearTimeout(indexTimer)
+        indexTimer = null
+      }
+      if (pendingArtifacts.length > 0 || pendingPrune) void flushIndex()
+    },
+    /**
+     * v3.0.0: 忘掉某个文件的完成记录 → 下一个 tick 重新锻造（API 的 retry 用）。
+     * @param {string} nameOrStem 文件名（`a.pdf`）或 stem（`a`）
+     * @returns {boolean} 是否忘掉了记录
+     */
+    forget(nameOrStem) {
+      const wanted = String(nameOrStem || '')
+      if (!wanted) return false
+      let hit = false
+      for (const key of [...doneAt.keys()]) {
+        const stem = key.slice(0, -extname(key).length)
+        if (key === wanted || stem === wanted) {
+          doneAt.delete(key)
+          hit = true
+        }
+      }
+      return hit
     },
     get dir() {
       return inbox

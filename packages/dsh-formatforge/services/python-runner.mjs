@@ -118,7 +118,14 @@ function killTree(child) {
  * @returns {Promise<{ok:true,code:number,data:object}|{ok:false,code:number,error:{kind:string,message:string}}>}
  */
 export async function runFormatForge({ cliArgs, repoRoot, stdinText, timeoutMs = DEFAULT_TIMEOUT_MS, log }) {
-  const python = await resolvePython(repoRoot)
+  // v3.0.0: 解释器解析失败不再抛异常 —— 调用方（工具/索引查询/健康检查）拿到的应当是
+  // 协议形状的失败对象，而不是让整个宿主进程吃一个未捕获 rejection。
+  let python
+  try {
+    python = await resolvePython(repoRoot)
+  } catch (e) {
+    return { ok: false, code: -1, error: { kind: 'python_missing', message: (e && e.message) || 'Python 不可用' } }
+  }
   const args = ['-m', 'formatforge', ...cliArgs]
 
   return await new Promise((resolve) => {

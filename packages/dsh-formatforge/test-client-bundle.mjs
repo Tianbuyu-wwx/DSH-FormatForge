@@ -92,25 +92,31 @@ if (typeof exports.apply !== 'function') fail('exports.apply must be a function 
 console.log('exports.inject  :', JSON.stringify(exports.inject))
 
 // ── 4. apply(ctx) → ctx.effect → disposer removes every listener ────────────
+// v3.0.0: apply 现在挂两个 effect（拖拽 + 右侧栏面板）。面板在没有 slots/inject 的
+// ctx 下自行降级，不注册任何监听器；拖拽那一路必须完整、可卸载。
 const effects = []
 const ctx = { effect: (cb) => { const d = cb(); effects.push(d); return d } }
 const before = doc.listeners.length + win.listeners.length
 exports.apply(ctx)
 const added = doc.listeners.length + win.listeners.length - before
-if (effects.length !== 1) fail(`apply(ctx) must route activation through ctx.effect exactly once, got ${effects.length}`)
+if (effects.length < 1) fail('apply(ctx) must route activation through ctx.effect')
 if (added === 0) fail('apply(ctx) registered no listeners — the divert is inert')
-if (typeof effects[0] !== 'function') fail('the effect callback must return a disposer function')
+const dragEffect = effects.find((d) => typeof d === 'function')
+if (typeof dragEffect !== 'function') fail('the drag activation must return a disposer function')
 
-effects[0]()
+dragEffect()
 const after = doc.listeners.length + win.listeners.length
 if (after !== before) fail(`disposer left ${after - before} listener(s) registered (HMR would stack duplicates)`)
-console.log('listeners       : +%d on activate, %d left after disposer', added, after - before)
+console.log('listeners       : +%d on activate, %d left after disposer (effects: %d)', added, after - before, effects.length)
 
 // ── idempotence: a reload replaces, never doubles ───────────────────────────
+const mark = effects.length
 exports.apply(ctx)
 const doubled = doc.listeners.length + win.listeners.length - before
 if (doubled !== added) fail(`a second apply() must not change the listener count (got ${doubled}, first was ${added})`)
-effects[1]()
+for (const dispose of effects.slice(mark)) {
+  if (typeof dispose === 'function') dispose()
+}
 console.log('reload cycle    : clean (%d listeners after two activate/dispose cycles)', doc.listeners.length + win.listeners.length - before)
 
 // ── fallback path: no ctx.effect available (still must activate) ────────────
@@ -118,5 +124,24 @@ const beforeFb = doc.listeners.length + win.listeners.length
 exports.apply(undefined)
 if (doc.listeners.length + win.listeners.length - beforeFb !== added) fail('apply() without a ctx must still activate')
 console.log('no-ctx fallback : ok (activates without a disposer, by design)')
+
+// ── panel degradation: a throwing slots service must not break the drag ─────
+const hostileEffects = []
+const hostileCtx = {
+  effect: (cb) => { const d = cb(); hostileEffects.push(d); return d },
+  inject: (_deps, cb) => cb({ get: () => ({ inject() { throw new Error('slot undeclared') }, register() { throw new Error('slot undeclared') } }) }),
+}
+const beforeHostile = doc.listeners.length + win.listeners.length
+try {
+  exports.apply(hostileCtx)
+} catch (e) {
+  fail(`apply() must swallow panel failures, threw: ${e.message}`)
+}
+const hostileAdded = doc.listeners.length + win.listeners.length - beforeHostile
+if (hostileAdded !== added) fail(`drag must still activate when the panel fails (got +${hostileAdded}, want +${added})`)
+for (const dispose of hostileEffects) {
+  if (typeof dispose === 'function') dispose()
+}
+console.log('panel degrade   : ok (slot failure swallowed, drag unaffected)')
 
 console.log('CLIENT-BUNDLE-OK:', pkg.name, '|', pkg.version)

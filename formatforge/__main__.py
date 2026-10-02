@@ -41,6 +41,7 @@ _LEGACY_KIND = {
 
 from formatforge.batch import cmd_batch  # noqa: E402  (须在 sys.path 注入之后)
 from formatforge.diff import register as register_diff  # noqa: E402  (v0.12.0/B10)
+from formatforge.inbox import register as register_inbox  # noqa: E402  (v3.0.0: 收件箱索引库)
 
 
 def _emit(payload: dict[str, Any]) -> None:
@@ -474,6 +475,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # B10/v0.12.0: 文件差异对比
     register_diff(sub)
+
+    # v3.0.0: 收件箱索引库（SQLite）
+    register_inbox(sub)
 
     p_fm = sub.add_parser("formats", help="列出支持的格式")
     p_fm.add_argument(

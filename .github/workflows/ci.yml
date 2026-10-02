@@ -83,10 +83,13 @@ jobs:
           done
           echo "all bundle files OK"
 
-      - name: Client module contract + drag behaviour (fake DOM, no runtime)
+      - name: Client module contract + drag + panel + ff_result contract (fake DOM/host)
         run: |
           node packages/dsh-formatforge/test-client-bundle.mjs
           node packages/dsh-formatforge/test-client-drag.mjs
+          node packages/dsh-formatforge/test-client-panel.mjs
+          node packages/dsh-formatforge/test-result-contract.mjs
+          node packages/dsh-formatforge/test-plugin-boot.mjs
 
       - name: Protocol contract — CLI JSON shape (via stubbed runner e2e is local-only;
               here we verify version & formats against the installed Python)
@@ -109,6 +112,24 @@ jobs:
           python -m formatforge version | python -c "import json,sys; d=json.load(sys.stdin); assert d['ok'] and d['data']['name']=='dsh-formatforge'"
           python -m formatforge formats | python -c "import json,sys; d=json.load(sys.stdin); assert d['ok'] and d['data']['count']>20"
           printf 'hello forge\n' | python -m formatforge translate --stdin-text --format text | python -c "import json,sys; d=json.load(sys.stdin); assert d['ok'] and 'hello forge' in d['data']['content']"
+
+      - name: Inbox index DB (init/index/query/stats) round-trip
+        run: |
+          export FF_HOME="$RUNNER_TEMP/ff-ci-home"
+          mkdir -p "$FF_HOME/inbox"
+          python -m formatforge inbox init | python -c "import json,sys; d=json.load(sys.stdin); assert d['ok'] and d['data']['schema_version']>=1"
+          printf '付款条款：月结30天\n' > "$FF_HOME/inbox/合同2024.txt"
+          python -m formatforge translate "$FF_HOME/inbox/合同2024.txt" --format markdown --output-file "$FF_HOME/inbox/合同2024.ff.md" > "$FF_HOME/inbox/合同2024.ff.json"
+          python -m formatforge inbox index --artifact "$FF_HOME/inbox/合同2024.ff.json" | python -c "import json,sys; d=json.load(sys.stdin); assert d['ok'] and len(d['data']['indexed'])==1"
+          python -m formatforge inbox query --q 付款条款 | python -c "import json,sys; d=json.load(sys.stdin); assert d['ok'] and d['data']['total_returned']==1, d"
+          python -m formatforge inbox query --q 付款 | python -c "import json,sys; d=json.load(sys.stdin); assert d['ok'] and d['data']['search_mode']=='like', d"
+          python -m formatforge inbox stats | python -c "import json,sys; d=json.load(sys.stdin); assert d['ok'] and d['data']['total']==1"
+
+      - name: Read-only API + SSE contract (fake webServer/req/res)
+        run: node packages/dsh-formatforge/test-api.mjs
+
+      - name: Host HTTP contract (real node:http + 宿主语义复刻：两参调用 / prefix 匹配)
+        run: node packages/dsh-formatforge/test-host-http.mjs
 
   security:
     name: Security Scan

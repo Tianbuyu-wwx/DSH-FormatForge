@@ -50,8 +50,10 @@ setx FF_REPO_ROOT "D:\DSH-FormatForge"
 ## 使用方式
 
 - **拖拽**：把**非图片文件**拖进窗口 → 自动上传锻造 → 收件箱产出 `<名字>.ff.md`（可读）+ `<名字>.ff.json`（完整协议），并向会话注入一条轻量通知。**图片与文件夹一律放行**：图片走宿主原生附件通道，文件夹由宿主自己变成 `@路径` 引用——插件不接管（v2.0.2 起，拖文件夹不再卡死）。拖动期间右上角常驻 **× 退出拖拽**，遮罩右上角也有 ×，按 **Esc** 等效：点一下就能清掉卡住的遮罩并复位宿主状态，不必刷新页面；× / Esc 之后**这一段**拖拽整体交回宿主（松手不会再被接管），下一次拖拽照常锻造。
+- **右侧栏面板**（v3.0.0）：宿主右侧栏的 **FormatForge 页签**（或侧栏底部按钮 / 内置 guide 页卡片进入）——搜索产物（中文子串可用）、看正文预览与元数据、复制路径、**重新锻造**、从列表移除；每页条数偏好持久化。面板是增强项：宿主插槽契约变化时只记日志，拖拽与工具不受影响。
+- **收件箱索引库**（v3.0.0）：`<DSH_HOME>/formatforge/index.db`（SQLite）存元数据 + 全文索引 + 偏好；`.ff.md`/`.ff.json` **仍是真相源**，删库可用 `python -m formatforge inbox reindex` 重建。工具侧可用 `ff_result {search:"…"}` / `{stats:true}` / `{list:true, limit:20}`。
 - **路径**：在对话里给本地路径，agent 会先 `ff_translate` 再回答。
-- **CLI**：`python -m formatforge translate doc.pdf --format markdown`（stdout 单行协议 JSON，退出码 0/2/3/4）。
+- **CLI**：`python -m formatforge translate doc.pdf --format markdown`（stdout 单行协议 JSON，退出码 0/2/3/4）；索引库另见 `python -m formatforge inbox --help`。
 
 ## enhance 协议
 

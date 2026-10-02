@@ -94,6 +94,7 @@ FormatForge 的 DSH 插件壳：把 `python -m formatforge` CLI 包装为原生�
 `ff_translate` / `ff_formats` / `ff_result`。Python 内核负责 30+ 格式解析与策略选择；
 模型增强通过 enhance 协议交给当前会话完成。
 
-**版本**：v2.0.2（2026-10-02）—— 拖拽分流修好「拖文件夹卡死」：文件夹整体放行给宿主、
-遮罩带 ×/Esc 逃生入口、吞掉终止事件时补发宿主 dragDepth 复位；顺带把协议 stdout 固定为 UTF-8。
-**变更点**：见 CHANGELOG v2.0.2 节（v2.0.1 见该节）。协议仍是 v1（`protocol/v1/` 未变）。
+**版本**：v3.0.0（2026-10-02）—— 收件箱升级为 SQLite 索引库（元数据 / 全文检索 trigram / 内容去重 / 溯源）
++ 宿主右侧栏面板（搜索、预览、重转）+ 只读 API/SSE；顺带修好 `ff_result` 的字段错配（此前取回正文恒为空、
+`parser` 恒为 `?`）。`ff_result` 新增 `search` / `stats` / `limit` 三个参数。协议仍是 v1（`protocol/v1/` 未变）。
+**变更点**：见 CHANGELOG v3.0.0 节（v2.0.x 见该节）。

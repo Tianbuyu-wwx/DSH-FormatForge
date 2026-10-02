@@ -7,6 +7,166 @@
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-02 — 收件箱升级为「库」+ 宿主右侧栏面板
+
+> 用户拍板：**只做面板**（不做整窗口页/自托管页）· 持久化分层由实现方定 · **从零写**（不复活冻结前端）· **一次性大版本** · 先自检、等审查再发。
+> 计划与取舍依据：[UI_DB_PLAN.md](UI_DB_PLAN.md)
+
+### 新增
+
+**① 收件箱索引库（SQLite，`<DSH_HOME>/formatforge/index.db`）** —— ROADMAP R6.2 的落地：
+
+| 能力 | 实现 |
+|---|---|
+| 元数据索引 | `artifacts` 表 + schema 迁移（`schema_migrations`，幂等；失败自动重建） |
+| 全文检索 | FTS5 **trigram**（中文子串可用）+ **短词 LIKE 兜底**（trigram 只索引 3 字序列，「付款」这类 2 字查询必须走 LIKE） |
+| 内容去重 | `source_sha256`（≤8MB 全文哈希 / 更大取首 1MB+尺寸标记），拖入命中即秒回 |
+| 会话溯源 | `session_id` 列（预留）+ `events` 事件表 |
+| 回填 | `python -m formatforge inbox reindex`：扫 `.ff.json` 幂等回填，**可随时删库重建** |
+| 保留对齐 | `inbox prune`：磁盘上已消失的产物标 `retired_at`（与 watcher 的 TTL/LRU 对齐） |
+| 运维 | `inbox stats / vacuum / backup(VACUUM INTO) / find / delete(软删)` |
+
+新 CLI：`python -m formatforge inbox {init,index,query,stats,reindex,delete,prune,digest,find,vacuum,backup,prefs}`
+（沿用「stdout 唯一出口」单行协议 JSON）。
+
+**② 宿主右侧栏面板 + 侧栏导航入口（从零手写，零构建、零 npm 依赖）**：
+
+- **侧栏导航条目**（用户指定位置）：注册 `sidebar.panellist`（图标 + label，`order=20`）→ 落在
+  「插件 / 自动化任务」下方的导航列表里；点击由宿主 `selectPanel(id)` 切到 `main` 插槽同 key 的**主区页面**
+  （与官方 schedule 插件同一套公开写法）。
+- **右侧栏页签**（保留）：`sidebar.right.pane.tab` + `.title`（keyed 插槽）+ 类型注册
+  `ctx.sidebarRightTabs.register({kind:'formatforge-inbox', priority:'extension', guide:[…]})` + 侧栏底部按钮。
+- 同一个面板组件两种落点：主区页面（`variant=page`，宽屏居中）与右栏页签（`variant=pane`，窄栏自适应）。
+- 功能：搜索（中文子串）、产物列表（来源/解析器/体积/时间/失败标记）、详情预览（正文 + 元数据）、
+  复制路径 / 重新锻造（删产物 + 通知 watcher 重跑）/ 从列表移除（软删）、**每页条数偏好**。
+- 技术：宿主 Module Loader lane 的 `require('react')` + `React.createElement`；图标是内联 SVG（`currentColor`，跟随主题）。
+- **降级**：拿不到 react / 没有 `sidebarRightTabs` / 插槽未声明（register 抛错）/ `slots` 注入失败
+  → 只记日志，**绝不影响拖拽模块与工具**（有专门的降级测试）。
+- **接口未就绪提示**：宿主若还跑着旧的 Node 半（API 404），面板直接提示"完全退出 DSH 后重开"，而不是干瞪眼。
+
+**③ 只读 API + SSE（`/formatforge/api/*`）**：`health`·`stats`·`artifacts`(列表/检索)·`artifacts/:id`(元数据)·`artifacts/:id/content`(分页正文)·
+`artifacts/:id/retry`·`DELETE artifacts/:id`·`events`(SSE)·`settings`(GET/PUT)。
+
+**④ `ff_result` 能力升级**：新增 `search`（全文检索）、`stats`（库状态）、`limit`（列表条数）三个参数；
+列表默认取最新 N 条（缓解 ROADMAP:56「list 把全部条目塞进模型上下文」）。
+
+### 修复
+
+**🔴 面板首屏 401「需要 token 或同源访问」——桌面端的 fetch 不带 `Sec-Fetch-Site` / `Origin`。**
+面板跑在 DSH 桌面端里，它的 fetch 既不发送 `Sec-Fetch-Site: same-origin`，也没有 loopback `Origin`，
+而原策略只认"同源浏览器请求" → 所有接口 401（`/formatforge/api/artifacts?limit=50` 首屏即挂）。
+重定策略（威胁模型不变，只是把判定建在真正可判别的信号上）：
+- Host 必须 loopback（挡局域网直连 / DNS rebinding）；
+- token 正确 → 放行；**token 错误 → 立刻 401，不降级**；
+- 同源页面（`Sec-Fetch-Site: same-origin` 或 loopback `Origin`）→ 放行；
+- **无浏览器信号**（两个头都没有）或 opaque（`site=none` / `origin=null`）视为桌面端/主进程代理/脚本 → **读放行**；
+- **写操作**（retry / delete / `PUT settings`）额外要求 `x-ff-client: panel`：跨站网页带自定义头会触发
+  CORS 预检，而我们从不回 `Access-Control-Allow-*`，所以恶意页面发不出写请求（CSRF 挡住）；
+- 带跨站信号（`cross-site`/`same-site` + 非 loopback Origin）的网页请求 → 401（浏览器另有 CORS 兜底读取）。
+401 文案现在带上观察到的信号（`site=… origin=… client=…`），下次线上失败一眼可定位。
+顺带修：token 文件改为**注册路由时生成**（原先挪进"带 token 才校验"的分支会让文件永不生成，脚本永远拿不到凭证）。
+
+**🔴 大产物按 id 取回全链路 404 —— id 反查只扫产物前 64KB。**
+`http/api.mjs::findArtifact` 用 `readFileSync(...).slice(0, 64*1024)` 后在头部找
+`"result_id": "…"`，但 payload 的顺序是 `content` 在前、`meta.result_id` 在后，watcher 又以
+`JSON.stringify(res, null, 2)` 落盘 —— **正文超过 ~64K 字符的产物，id 就落在窗口之外**：
+详情、正文预览、重转、删除全部 404（接口本身正常，`/artifacts/<stem>` 还能取到，所以极难定位）。
+实测：正文 120,034 字符 → `/artifacts/<id>` = 404 / `code 4002`；小产物 200。
+修复：`findArtifact` 改成三层 —— ① `services/inbox-db.mjs::findArtifactById()` 查库拿 `json_path`
+（O(1)，与正文大小无关，并支持 id 前缀）；② 文件名精确/前缀；③ 全文扫描兜底（正则容忍
+`"k":"v"` 无空格写法，前缀语义保留，单文件 >64MB 跳过）——回滚开关 `FF_DB=off` 时同样可用。
+`tools/result.mjs`（`ff_result`）的同一处 64KB 头部窗口一并修掉；顺带把大文件（>2MB）的元数据兜底
+从「整文件读入再切头部 64KB」改成 **fd 分段读首尾窗口**（`meta` 排在 `content` 之后 → 尾部窗口才是关键），
+既修掉 `parser='?'` 又不再把上百 MB 产物整个读进内存。
+
+**🟡 IPv6 loopback Host 被误判。** `isLoopbackHostHeader` 先 `split(':')` 再去方括号，
+`'[::1]:19387'.split(':')[0]` 是 `'['` → `[::1]` / `::1` 一律判成非 loopback（与 `isLoopbackOrigin` 语义不一致）。
+现在按「方括号优先、单个冒号才算端口」解析，三种写法都放行，外域仍 403。
+
+**🔴 单条产物接口全部 404 —— prefix 路由带尾斜杠，永远不会被命中。**
+宿主 `match()` 的 prefix 规则是 `pathname === prefix || pathname.startsWith(prefix + '/')`
+（`dsh-host-webserver/lib/index.js`），而 `/formatforge/api/artifacts/` 这种**带尾斜杠**的前缀
+只有 `/artifacts//<id>` 能命中；真实的 `/artifacts/<id>`、`/<id>/content`、`/<id>/retry`、DELETE
+全部落到 SPA fallback，变成 **404 且 body 为空**（不是我们自己的 JSON 404）。
+现象：面板列表能出来（exact 路由正常），但**点任意一行都不行**。
+修复：prefix 注册路径改成不带尾斜杠的 `/formatforge/api/artifacts`；基路径被 prefix 表命中时按列表语义处理。
+**测试保真度修正（第二次同类教训）**：`test-api.mjs` 原先直接按 `(kind, path)` 找路由调 handler，
+从不经过宿主的匹配规则；现在新增 `hostMatch()` 复刻宿主 `match()` 语义（exact → 最长 prefix），
+`call()` 在调用前先断言「这个 URL 真的会路由到这条路由」，并新增 `1b` 节钉死 prefix 语义
+（子路径命中、`/artifactsX` 不抢、尾斜杠禁令）；`test-plugin-boot.mjs` 同样加了尾斜杠不变量与匹配仿真。
+
+**🔴 列表行字段对不上 —— 库列名 vs 面板读的客户端形状。**
+SQLite 行是 `source_name` / `source_bytes` / `created_at`（unix 秒），而面板渲染读的是
+`source` / `size_bytes` / `forged_at` → **列表会把产物 id 当文件名显示，大小与时间为空**
+（`bytesLabel(undefined)`、`timeLabel(undefined)`），看起来就像"面板坏了"，但接口全是 200。
+修复分三层：`services/inbox-db.mjs` 新增 `toClientRow()` 在 sqlite 与 CLI 两条路径上统一归一
+（`source_name→source`、`source_bytes→size_bytes`、unix 秒→ISO `forged_at`，原始列名无损保留）；
+面板 `rowOf()` 再做一层兜底（库列名/毫秒时间戳/ISO 都能渲染）；`bytesLabel`/`timeLabel` 对空值与秒级时间戳
+健壮。**测试保真度修正（第三次同类教训）**：`test-api.mjs` 现在用**真实库行**断言列表契约
+（`source` 等于真实文件名、`size_bytes` 是数字、`forged_at` 可被 `Date.parse`）；
+`test-client-panel.mjs` 新增 `2c` 节，用库列名的退化行验证面板仍显示文件名与 `4KB`。
+
+**🔴 面板全部接口 400（空 body）——宿主只以 `handler(req, res)` 调用处理器。**
+`@deepseek-ai/dsh-host-webserver` 的分发是 `await route.handler(req, res)`（`lib/index.js`），
+**不传第三个参数**；而 `http/api.mjs` 的包装器写成 `async (req, res, url)` 并把
+`authorize(req, url)` 放在 `try` 之外 —— 线上 `url === undefined` → `TypeError: Cannot read
+properties of undefined (reading 'searchParams')` 在 try 之外抛出 → 被宿主 `catch` 后
+`res.writeHead(400); res.end()`，于是 `/formatforge/api/*` 全部 **400 + 空 body**；
+老路由 `/formatforge/health`（`(req, res)` 签名）仍然 200，所以现象看起来像「只有面板坏了」。
+修复：新增 `requestUrl(req, provided)` 从 `req.url` + Host 头自建 URL（不再依赖第三参），
+鉴权与 handler 一起纳入 `try`（异常一律回 JSON 500，绝不交给宿主变 400 空 body），
+`sendJson` 在头部已发出时不再二次写。
+**测试保真度修正**：`test-api.mjs` 原先给 handler 传了第三个 `URL` 参数，正是这一「善意」掩盖了缺陷 ——
+现在按宿主真实调用形态只传两参；`test-plugin-boot.mjs` 对全部 8 条路由（含上传/健康）做两参调用回归，
+任何一条依赖第三参都会判失败。面板侧把「400 空 body」与「404」都识别为「Node 半未随本次启动加载」并提示完全退出 DSH 重开。
+
+**🔴 `ff_result` 字段口径错配（P-1.1，实测确认）。** CLI 与 watcher 写出的是
+`data.content` + `data.meta.{parser,result_id,confidence}`，而 `tools/result.mjs` 读的是
+`data.convertedContent` / `data.resultId` / `data.fileInfo.*` —— **取回正文恒为空字符串、`parser` 恒为 `?`、
+`confidence` 恒为 null**，而 SKILL.md 正把 `ff_result` 当作唯一产物消费入口。
+实测方式：往运行中的宿主投真实文件 → 产出 `.ff.json`（键集合 `content/format/meta/…`）→ 对照读代码。
+现在以实际契约为准，旧字段名仅作兜底（历史产物仍可读）；新增 `test-result-contract.mjs` 钉死口径。
+
+**顺带修**：`runFormatForge` 在解释器解析失败时**抛异常**（会让调用方吃未捕获 rejection），
+现在返回协议形状的 `{ok:false, kind:'python_missing'}`；元数据读取从「只读前 2048 字节」改为
+「小文件整体解析 + 大文件 64KB 正则兜底」（长正文会把 `meta` 挤出窗口，导致列表 `parser='?'`）；
+产物名不含 `result_id`，`id` 前缀匹配改为扫 64KB 头。
+
+### 安全
+
+**自定义路由在宿主鉴权围栏之外**（围栏只保护 `GET /` 与 `/api`；`ctx.webServer` 自身「无 TLS、无鉴权、无 origin 策略」）。
+因此 `http/api.mjs` 自建两道门：**loopback Host 校验** + **同源判定**（`Sec-Fetch-Site: same-origin` 或 loopback Origin），
+非浏览器访问需带 `<FF_HOME>/api-token`（首启生成，0600）。写操作同样受这两道门保护。
+
+### 测试
+
+| 套件 | 覆盖 |
+|---|---|
+| `test/unit/test_inbox_db.py`（新增 11 例） | 建库/迁移幂等、协议 JSON 回填、中文 FTS、短词 LIKE、去重键、筛选/游标、软删、reindex 幂等、backup/vacuum、`FF_DB=off` |
+| `test-api.mjs`（新增） | 6 条路由注册（含重复路由防护）、**鉴权矩阵**（非 loopback Host→403 / 跨源无 token→401 / 同源→200 / token→200 / 错 token→401）、列表/检索/元数据/正文、retry/delete、偏好 GET/PUT、SSE 帧、**宿主两参调用形态回归**（`handler(req, res)`，URL 由 `req.url` 还原）、**宿主 prefix 匹配仿真**（exact→最长 prefix、尾斜杠禁令、`/artifactsX` 不抢、子路径命中） |
+| `test-client-panel.mjs`（新增） | 侧栏导航条目（`sidebar.panellist` 的 id/order/label/图标）+ `main` 主区页面 + keyed 右栏插槽 + guide 入口 + zh/en 文案；假 React 渲染冒烟（搜索框/列表/详情/偏好）；**4 条降级路径**；**400 空 body / 后端错误文案 可诊断性**；**库列名行兜底渲染** |
+| `test-plugin-boot.mjs`（新增） | 无宿主启动冒烟：`apply()` 不抛错、5 个工具、8 条路由（含 6 条 API）、**8 条路由逐个两参调用**（不抛错 = 线上不会 400 空 body）、prefix 尾斜杠不变量、disposer 可回收、`inject` 契约 |
+| `test-host-http.mjs`（新增，84 断言） | **真实 `node:http` + 忠实复刻宿主语义的 mini-webServer**：6 条路由全走真实 HTTP；两参调用、exact→最长 prefix 匹配、未知 id 的 JSON 404（区别于宿主 fallback 的空 body 404）、鉴权矩阵、SSE 首帧、disposer/socket/定时器收尾；并含**注入突变自检**（故意把前缀写成带尾斜杠 → 必然复现线上 404，证明这套仿真真的能抓到该缺陷） |
+| `test-result-contract.mjs`（新增） | `ff_result` 字段口径（P-1.1 回归点）+ 分页 + 错误码 + 列表/检索/统计 + 旧形状兜底 |
+| `test-client-bundle.mjs`（扩充） | 双 effect（拖拽 + 面板）注册契约、面板失败不影响拖拽 |
+| 既有套件 | `test-client-drag.mjs`(117)、`test-manifest.mjs`、`test-inbox.mjs`、`test-local.mjs`、分页一致性 全过 |
+
+### 兼容、迁移与回滚
+
+- **文件仍是真相源**：`.ff.md`/`.ff.json` 语义与位置不变；库只是索引，删库可重建。
+- **升级**：首次启动自动建库 + 按需 `reindex`；不动任何既有文件。
+- **回滚**：`FF_DB=off` 一键回到纯文件路径（list/search 自动退回文件扫描与文件名匹配），代码双路径都有测试。
+- 协议仍为 **v1**（新增环境变量与新增路由，不动既有字段语义）。
+
+### 取舍说明（与计划的偏差）
+
+- **面板专项**：按拍板只做面板，`main` 整窗口页与 `/formatforge/ui` 自托管页**未实现**（计划里它们是 P2 的可选项）。
+- **持久化分层**：UI 偏好**没有**走平台 `ctx.storageDomain`，而是与索引同库（`settings` 表）——
+  该域「整域驻内存 + 没有迁移机制」，而这里已有带迁移的 SQLite；单一可写存储、单一迁移故事更简单。
+  触发重新评估的条件：偏好需要与宿主设置界面联动，或需要跨 profile 共享。
+- **产物命名**（R6.1.1 `<name>.<ext>.ff.json`）**未改**：它是值不是 schema，库已存真实路径与源名，
+  改名不阻塞本版；当前用「同 stem 反查源文件」补齐源名（Node/Python 各一份实现，逻辑一致）。
+
 ## [2.0.2] - 2026-10-02 — 拖拽文件夹不再卡死
 
 > 用户现场反馈：*「当拖拽文件夹时也会激活这个插件，但是会卡死，请放行文件夹并在那个拖动到的界面上加入 × 来退出防止卡死」*

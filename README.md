@@ -111,6 +111,32 @@ setx FF_PYTHON "C:\path\to\your\python.exe"
 产物落在收件箱目录（默认 `~/.dsh/formatforge/inbox/`）：
 `<名字>.ff.md`（可直接阅读）+ `<名字>.ff.json`(完整协议数据)。
 
+### 1.5 面板（v3.0.0）
+
+**入口在左侧栏导航里**（「插件 / 自动化任务」下面的 **FormatForge**，点击后主区域打开库页面）；
+同时也注册了宿主右侧栏页签（同一套组件，窄栏自适应）与侧栏底部按钮，随手可用。
+
+- 搜索产物（**中文子串可用**：FTS5 trigram，短词自动走 LIKE 兜底）
+- 列表显示来源 / 解析器 / 体积 / 时间 / 失败标记，点开看正文预览与元数据
+- 行内动作：复制路径 · **重新锻造**（删产物并让 watcher 重跑）· 从列表移除（软删，磁盘文件保留）
+- 每页条数偏好持久化（与索引库同库：`settings` 表）
+
+面板是**增强项**：宿主契约变化（插槽未声明、拿不到 react、没有 `sidebarRightTabs`）时只记日志，
+拖拽与工具完全不受影响。数据来自 `/formatforge/api/*`（同源请求；非浏览器访问需 `~/.dsh/formatforge/api-token`）。
+
+### 1.6 收件箱索引库（v3.0.0）
+
+`.ff.md` / `.ff.json` **仍是真相源**；`index.db`（SQLite，与收件箱同级）只存元数据 + 全文索引，删库可重建：
+
+```bash
+python -m formatforge inbox stats            # 库状态（条数/体积/格式分布/分词器）
+python -m formatforge inbox query --q 付款条款 --limit 20
+python -m formatforge inbox reindex          # 从 .ff.json 幂等回填（首次升级用）
+python -m formatforge inbox backup --out ~/ff-backup.db
+```
+
+工具侧新增 `ff_result {search:"付款条款"}`、`ff_result {stats:true}`、`ff_result {list:true, limit:20}`。
+
 ### 2. 对话内工具
 
 | 工具 | 用途 |
@@ -153,6 +179,8 @@ SKILL.md 会指导当前会话模型：**按 hint 直接用自己的能力完成
 | `FF_TIMEOUT_S` | 120 | 单次转换超时（秒） |
 | `FF_INBOX_NOTIFY` | **false** | 是否把「已锻好」推进会话 transcript。v2.0.1 起默认关：宿主没有临时通知通道，推送只能落成 `user/message`，会被当成用户发言、永久留在上下文里、且只有运行中的会话收得到。收件箱是共享目录，改用 `ff_result {list:true}` 拉取 |
 | `FF_HOME` | `$DSH_HOME/formatforge` → `~/.dsh/formatforge` | 收件箱根目录（优先于 `DSH_HOME`） |
+| `FF_DB` | 不设置（=开） | **v3.0.0**：`off` 时整体停用索引库，回到纯文件路径（list/search 自动退回文件扫描） |
+| `FF_DB_PATH` | `$FF_HOME/index.db` | **v3.0.0**：索引库文件位置（设置/偏好同库） |
 | `OCR_ENABLED` | true | 启用本地 OCR（tesseract/paddleocr/easyocr 任一） |
 
 ## 架构
@@ -177,18 +205,24 @@ CLI     ── python -m … ──► formatforge 内核（30+ 解析器 × 7 �
 
 ```bash
 pip install -e ".[dev]"
-pytest test/                                   # 本地 564 passed（CI 为权威门禁）
+pytest test/                                   # 本地 575 passed（CI 为权威门禁）
 ruff check . && ruff format --check .
 mypy core/ parsers/ formatforge/
 node packages/dsh-formatforge/test-manifest.mjs        # bundle 清单/契约自检
 node packages/dsh-formatforge/test-client-bundle.mjs   # client bundle 按宿主方式执行自检
 node packages/dsh-formatforge/test-client-drag.mjs     # 拖拽行为回放（文件夹放行 / × 逃生 / 宿主计数复位）
+node packages/dsh-formatforge/test-client-panel.mjs    # 右侧栏面板：注册/渲染/降级路径/400 可诊断性（v3.0.0）
+node packages/dsh-formatforge/test-plugin-boot.mjs     # 无宿主启动冒烟 + 8 条路由两参调用（v3.0.0）
+node packages/dsh-formatforge/test-api.mjs             # /formatforge/api/*：路由 + 宿主 prefix 匹配仿真 + 鉴权 + 读写 + SSE（v3.0.0）
+node packages/dsh-formatforge/test-host-http.mjs       # 真实 node:http + 宿主语义复刻（两参调用 / prefix 匹配 / 注入突变自检）
+node packages/dsh-formatforge/scripts/verify-live.mjs  # 对**运行中的**宿主做端到端校验（改完 Node 侧代码、重启后先跑这个）
+node packages/dsh-formatforge/test-result-contract.mjs # ff_result 字段口径 + search/stats/limit（v3.0.0）
 node packages/dsh-formatforge/test-local.mjs           # stub 环境 e2e（需本机 Python）
 node packages/dsh-formatforge/test-inbox.mjs           # inbox watcher e2e
 node packages/dsh-formatforge/test/test-truncate-consistency.mjs  # JS↔Python 分页一致性
 ```
 
-设计文档：[PLUGIN_PLAN.md](PLUGIN_PLAN.md)（插件化实施）· [EVOLUTION_PLAN.md](EVOLUTION_PLAN.md)（v0.4–v0.7 演进）· [ROADMAP.md](ROADMAP.md)（后续计划）
+设计文档：[PLUGIN_PLAN.md](PLUGIN_PLAN.md)（插件化实施）· [EVOLUTION_PLAN.md](EVOLUTION_PLAN.md)（v0.4–v0.7 演进）· [ROADMAP.md](ROADMAP.md)（后续计划）· [UI_DB_PLAN.md](UI_DB_PLAN.md)（v3.0.0 的库 + 面板，含取舍与实测证据）
 
 ## 已知限制
 
@@ -206,6 +240,15 @@ node packages/dsh-formatforge/test/test-truncate-consistency.mjs  # JS↔Python 
 - ×/Esc 逃生入口只管**当前这一段**拖拽（清遮罩 + 补发宿主复位 + 把剩余事件交回宿主），
   不影响下一次拖拽；拖拽结束后残留的 × 再点一次也只是清场。
 - 混合粘贴（剪贴板同时含文件与文本）只取文件，文本不会进入输入框——与宿主自身分支的差异是有意为之。
+- **面板插槽是对等插件私有契约**（v3.0.0）：`sidebar.right.pane.tab` 等插槽名由声明它的插件拥有，
+  注册到未声明的插槽会在加载期抛错。面板已做探测 + try/catch + 降级（失败只记日志），
+  但宿主大版本升级后可能需要对插槽名做适配。
+- **面板与 API 的路由不在宿主鉴权围栏内**（围栏只保护 `GET /` 与 `/api`）：`/formatforge/api/*` 自建
+  loopback Host 校验 + 同源判定，非浏览器访问需 `~/.dsh/formatforge/api-token`；请勿把宿主绑定到 `0.0.0.0`。
+- **索引库需要 `node:sqlite`**（Node ≥22.5；实测宿主 Node 24.18.1 免 flag 可用）：拿不到时 API/面板自动降级为
+  "Node 走 CLI 查询"，功能仍可用但每次查询多一次 Python 冷启动（约 0.5s）。
+- 检索分词：FTS5 **trigram** 只索引 3 字序列，1–2 字的查询（中文里很常见）走 LIKE 兜底，
+  库很大时会退化为扫描（几千条无感；上万条建议用 ≥3 字的检索词）。
 - 上传地址用根绝对路径 `/formatforge/upload`，与宿主注册的 exact 路由一致；若将来宿主支持子路径
   托管，客户端与服务端需要同时改。
 - Windows 下以中文路径 `link:` 安装时，profile 里的 `package.json`/`pnpm-lock.yaml` 均为正确 UTF-8，

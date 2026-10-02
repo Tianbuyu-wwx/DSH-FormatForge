@@ -23,6 +23,7 @@ import { createDiffTool } from './tools/diff.mjs'
 import { findRepoRoot, resolvePython, DEFAULT_TIMEOUT_MS } from './services/python-runner.mjs'
 import { createInboxWatcher, inboxDir } from './services/inbox-watcher.mjs'
 import { registerUploadRoute } from './http/upload.mjs'
+import { registerApiRoutes } from './http/api.mjs'
 import { makeNotifier } from './services/notify.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -76,7 +77,7 @@ export function apply(ctx) {
     if (ctx.tools && ctx.tools.register) {
       ctx.tools.register(createTranslateTool({ repoRoot, maxBytes: maxBytesFromEnv(), timeoutMs: timeoutFromEnv(), log }))
       ctx.tools.register(createFormatsTool({ repoRoot, log }))
-      ctx.tools.register(createResultTool({ log }))
+      ctx.tools.register(createResultTool({ log, repoRoot }))
       ctx.tools.register(createBatchTool({ repoRoot, maxBytes: maxBytesFromEnv(), timeoutMs: timeoutFromEnv(), log }))
       ctx.tools.register(createDiffTool({ repoRoot, maxBytes: maxBytesFromEnv(), timeoutMs: timeoutFromEnv(), log }))
       console.log(`[dsh-formatforge v${VERSION}] tools registered: ff_translate, ff_formats, ff_result, ff_batch, ff_diff`)
@@ -99,9 +100,10 @@ export function apply(ctx) {
   //    the inbox is a shared directory, so any conversation can discover a new
   //    artefact with ff_result {list:true} — no message has to be pushed into
   //    anyone's transcript.
+  let watcher = null
   try {
     const notifier = makeNotifier({ log })
-    const watcher = createInboxWatcher({
+    watcher = createInboxWatcher({
       repoRoot,
       maxBytes: maxBytesFromEnv(),
       timeoutMs: timeoutFromEnv(),
@@ -121,5 +123,30 @@ export function apply(ctx) {
     console.log(`[dsh-formatforge v${VERSION}] inbox watching: ${inboxDir()} (push-notify=${notifier.enabled})`)
   } catch (e) {
     console.error(`[dsh-formatforge v${VERSION}] inbox watcher init failed:`, (e && e.message) || e)
+  }
+
+  // 6. v3.0.0: 只读 API + SSE（面板用）。自定义路由**不在宿主鉴权围栏内**，
+  //    所以 http/api.mjs 自建同源判定 + 一次性 token（见 UI_DB_PLAN.md §8-R10）。
+  try {
+    const disposers = registerApiRoutes(ctx, {
+      repoRoot,
+      timeoutMs: timeoutFromEnv(),
+      log,
+      watcher,
+    })
+    console.log(`[dsh-formatforge v${VERSION}] api routes: ${disposers.length} registered`)
+    if (disposers.length > 0 && ctx.effect) {
+      ctx.effect(() => () => {
+        for (const dispose of disposers) {
+          try {
+            dispose()
+          } catch {
+            /* noop */
+          }
+        }
+      })
+    }
+  } catch (e) {
+    console.error(`[dsh-formatforge v${VERSION}] api routes failed:`, (e && e.message) || e)
   }
 }

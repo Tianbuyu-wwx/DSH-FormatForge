@@ -76,13 +76,18 @@ protocol/v1/
 | 变量 | 默认 | 说明 | 稳定性 |
 |---|---|---|---|
 | `FF_PYTHON` | (auto-detect) | Python 解释器路径 | 稳定 |
-| `FF_HOME` | `~/.dsh/formatforge` | FF 主目录（inbox 等） | 稳定 |
+| `FF_HOME` | `~/.dsh/formatforge` | FF 主目录（inbox、索引库等） | 稳定 |
 | `FF_TIMEOUT_S` | 120 | 单次转换超时（秒） | 稳定 |
 | `FF_MAX_BYTES` | 100MB | 单文件最大字节 | 稳定 |
-| `FF_INBOX_NOTIFY` | true | inbox 完成后通知会话 | 稳定 |
+| `FF_INBOX_NOTIFY` | **false** | inbox 完成后是否把通知推进会话 transcript（v2.0.1 起默认关；宿主没有临时通知通道，推送会落成 `user/message` 并被当作用户发言） | 稳定（**文案修正**：v1.0 冻结表误写为 `true`，实现一直是 `=== 'true'`，即默认关；v3.0.0 只改文档措辞，不改语义） |
 | `FF_INBOX_TTL_DAYS` | 7 | inbox 清理 TTL（天） | 稳定 |
 | `FF_INBOX_MAX_MB` | 500 | inbox 容量上限 | 稳定 |
 | `FF_REPO_ROOT` | (cwd-detect) | 仓库根路径 | 稳定 |
+| `FF_DB` | (unset=on) | `off` 时整体停用索引库，回到纯文件路径（v3.0.0 新增） | 新增 |
+| `FF_DB_PATH` | `$FF_HOME/index.db` | 索引库文件位置（v3.0.0 新增） | 新增 |
+
+> v3.0.0 的 `inbox` 子命令与 `/formatforge/api/*` 属于**新增能力**（新增文件 / 新增路由），
+> 不改既有字段语义，符合 v1 兼容承诺。
 
 ## enhance 协议（v0.13.0 起稳定）
 
@@ -101,6 +106,26 @@ protocol/v1/
 - **失败产物**：`<stem>.ff.error.txt` 含 `[kind] message`
 - **预览机制**：`data.details[]` 在 formats 工具中暴露 capability
 - **历史追溯**：retention 清理前写 `.ff.retired.log`（v0.14.0 起）
+- **索引库（v3.0.0 新增）**：`$FF_HOME/index.db` 只存元数据 + 全文索引，**文件永远是真相源**；
+  检索用 FTS5 trigram（≥3 字）+ LIKE 兜底（<3 字，中文短词必需）；`inbox reindex` 可随时从文件重建
+
+## `/formatforge/api/*` 鉴权（v3.0.0 新增路由）
+
+这些路由在宿主鉴权围栏之外，自带两道门：
+
+| 请求特征 | 读（GET） | 写（POST/DELETE/PUT） |
+|---|---|---|
+| Host 非 loopback | 403 | 403 |
+| 带正确 token（`x-ff-token` 或 `?token=`，见 `$FF_HOME/api-token`） | 200 | 200 |
+| 带错误 token | 401 | 401 |
+| 同源页面（`Sec-Fetch-Site: same-origin` 或 loopback `Origin`） | 200 | 200 |
+| **无浏览器信号**（无 `Sec-Fetch-Site` 与 `Origin`：桌面端 / 主进程代理 / 脚本） | 200 | 401，除非带 `x-ff-client: panel` |
+| opaque（`Sec-Fetch-Site: none` 或 `Origin: null`） | 200 | 同上 |
+| 跨站网页（`cross-site`/`same-site` + 非 loopback `Origin`） | 401 | 401 |
+
+理由：浏览器发起的跨站请求**一定**同时带 `Sec-Fetch-Site` 与 `Origin`，所以"两者都没有"可判定不是网页攻击面；
+写操作要求自定义头 `x-ff-client`，跨站带自定义头会触发 CORS 预检，而服务端从不回 `Access-Control-Allow-*`，
+恶意页面因此发不出写请求（CSRF 挡住）；跨站读取另有浏览器 CORS 兜底。
 
 ## 兼容性承诺
 
