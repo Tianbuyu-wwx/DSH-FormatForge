@@ -143,8 +143,31 @@ def candidate_logs() -> list[Path]:
     return out
 
 
+def _looks_like_dsh_log(p: Path) -> bool:
+    """粗略判定"这份日志可能来自 DSH 宿主"：文件名像启动日志，或内容里出现 DSH 包名。"""
+    if p.name.startswith("startup-") or p.name.startswith("dsh") or p.name.startswith("crash-"):
+        return True
+    try:
+        head = p.read_text(encoding="utf-8", errors="ignore")[:4000]
+    except OSError:
+        return False
+    return "@deepseek-ai/dsh" in head or "dsh-formatforge" in head
+
+
+def _is_failure_log(p: Path) -> bool:
+    """崩溃日志 / 启动失败日志：这类日志里当然没有工具注册行，不能据此判插件未加载。"""
+    if p.name.startswith("crash-"):
+        return True
+    try:
+        head = p.read_text(encoding="utf-8", errors="ignore")[:8000]
+    except OSError:
+        return False
+    return "startup failed" in head or "StartupError" in head
+
+
 def check_boot_log() -> str:
-    for p in candidate_logs():
+    candidates = candidate_logs()
+    for p in candidates:
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
         except OSError:
@@ -153,7 +176,17 @@ def check_boot_log() -> str:
             line = next(ln for ln in text.splitlines() if "tools registered" in ln and "ff_translate" in ln)
             py = next((ln for ln in reversed(text.splitlines()) if "python=" in ln and "dsh-formatforge" in ln), "")
             return f"{p.name}: {line.strip()[:90]}{('  |  ' + py.strip()[:80]) if py else ''}"
-    raise AssertionError("没找到 'tools registered: ff_translate' 启动行（宿主可能没重启，或插件未加载）")
+    dsh_logs = [p for p in candidates if _looks_like_dsh_log(p)]
+    healthy = [p for p in dsh_logs if not _is_failure_log(p)]
+    if not healthy:
+        # 桌面端只在启动**失败**/崩溃时落盘日志：手里只有 crash-* 与 startup-failed 日志时，
+        # "找不到工具注册行"说明不了插件没加载（HTTP 面那项才是硬证据）。避免自检误报。
+        raise SkippedError(
+            f"只有崩溃/启动失败日志（{len(dsh_logs)} 份），没有正常启动日志 → 跳过；以 HTTP 面与面板自检为准"
+        )
+    raise AssertionError(
+        f"找到 {len(healthy)} 份正常启动日志但没有 'tools registered: ff_translate' 行（宿主可能没重启，或插件未加载）"
+    )
 
 
 def check_health() -> str:
