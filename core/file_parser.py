@@ -1,6 +1,7 @@
 """
 通用文件解析模块
-支持解析 .ppt, .pptx, .pdf, .txt, .csv, .doc, .docx, .xls, .xlsx, 图片 等格式
+支持解析 .pptx, .pdf, .txt, .csv, .docx, .xls, .xlsx, 图片 等格式
+（H18/audit: .doc/.ppt/.xlsb 已从宣称中收缩——无可用解析器）
 采用插件化注册表架构，易于扩展新格式
 """
 
@@ -8,6 +9,7 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from core.models import FileType, ParsedFile, TaskStatus
 
@@ -106,6 +108,27 @@ from parsers.svg_parser import SVGParser
 from parsers.toml_parser import TOMLParser
 
 logger = logging.getLogger("file_parser")
+
+
+def _accepted_parse_kwargs(parser: Any, options: dict) -> dict:
+    """
+    FF-M-pages/audit: 只把解析器 ``parse()`` 真正接受的选项转发过去。
+
+    pdf_options 里的 ``pages``/``encoding`` 属于 E2/R3.3 的跨解析器选项，
+    但 22 个解析器里只有 PDF/TXT 声明了对应形参；盲目 ``**options`` 会
+    ``TypeError``，随后被 ParseStep 吞掉并退化为 raw 透传。签名不可内省
+    （C 扩展/``*args``）时保守放行原样选项。
+    """
+    import inspect
+
+    try:
+        sig = inspect.signature(parser.parse)
+    except (TypeError, ValueError):  # pragma: no cover - 不可内省的实现
+        return dict(options)
+    accepts_var_kw = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    if accepts_var_kw:
+        return dict(options)
+    return {k: v for k, v in options.items() if k in sig.parameters}
 
 
 class FileParser:
@@ -261,11 +284,11 @@ class FileParser:
         logger.debug("文件信息: name=%s, size=%d bytes", file_name, file_size)
 
         # 映射文件类型
+        # H18/audit: .doc/.ppt（OLE2 旧格式）无解析器——映射移除，交给
+        # unsupported_format 友好错误；.xls 保留（有 xlrd 代码路径）
         type_mapping = {
-            "ppt": FileType.PPT,
             "pdf": FileType.PDF,
             "image": FileType.IMAGE,
-            "doc": FileType.DOC,
             "txt": FileType.TXT,
             "csv": FileType.CSV,
             "xls": FileType.XLS,
@@ -273,7 +296,6 @@ class FileParser:
         # 根据扩展名补充映射
         ext = file_path.suffix.lower()
         ext_mapping = {
-            ".ppt": FileType.PPT,
             ".pptx": FileType.PPT,
             ".pdf": FileType.PDF,
             ".jpg": FileType.IMAGE,
@@ -284,7 +306,6 @@ class FileParser:
             ".webp": FileType.IMAGE,
             ".tiff": FileType.IMAGE,
             ".tif": FileType.IMAGE,
-            ".doc": FileType.DOC,
             ".docx": FileType.DOC,
             ".txt": FileType.TXT,
             ".text": FileType.TXT,
@@ -337,11 +358,21 @@ class FileParser:
         if plugin_parser:
             logger.info("使用插件解析器: %s", type(plugin_parser).__name__)
             try:
-                pages = (
-                    plugin_parser.parse(file_path, **(pdf_options or {}))
-                    if pdf_options
-                    else plugin_parser.parse(file_path)
-                )
+                if pdf_options:
+                    accepted = _accepted_parse_kwargs(plugin_parser, pdf_options)
+                    dropped = sorted(set(pdf_options) - set(accepted))
+                    if dropped:
+                        # FF-M-pages/audit: 18/22 解析器的 parse() 不接受 pages/encoding；
+                        # 盲目 **kwargs 透传会 TypeError 并被吞掉 → raw 透传垃圾。
+                        logger.info(
+                            "解析器 %s 不接受选项 %s，已丢弃（保留 %s）",
+                            type(plugin_parser).__name__,
+                            dropped,
+                            sorted(accepted) or "无",
+                        )
+                    pages = plugin_parser.parse(file_path, **accepted)
+                else:
+                    pages = plugin_parser.parse(file_path)
                 logger.info("解析完成: parser=%s, pages=%d", type(plugin_parser).__name__, len(pages))
             except Exception as e:
                 logger.error("插件解析器执行失败: %s, error=%s", type(plugin_parser).__name__, e, exc_info=True)

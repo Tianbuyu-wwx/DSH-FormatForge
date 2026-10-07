@@ -16,6 +16,65 @@ from parsers import BaseParser
 
 logger = logging.getLogger("parsers.email")
 
+#: FF-M-email/audit: 附件尺寸统计的物化上限。旧实现无条件
+#: `len(part.get_payload(decode=True) or b"")`——为了一个数字把任意大小的附件
+#: 完整解码进内存（一封带 2GB 附件的邮件即可拖垮进程）。现在 base64 流式统计
+#: 编码字符（零解码、零整串复制），其他 CTE 只有不超过该上限才真正解码；
+#: 两条路径超限都只报「≥ 上限」。
+ATTACHMENT_SIZE_CAP_BYTES = 8 * 1024 * 1024
+
+
+def _attachment_size(part: Any, cap: int = ATTACHMENT_SIZE_CAP_BYTES) -> tuple[int, bool]:
+    """附件字节数。返回 ``(size, exact)``；``exact=False`` 表示只报下限（超 cap）。"""
+    cte = str(part.get("Content-Transfer-Encoding") or "").strip().lower()
+    raw = part.get_payload()
+    if cte == "base64" and isinstance(raw, str):
+        # T3-12: split/rstrip/slice 都会复制接近 FF_MAX_BYTES 的整块字符串。
+        # 单次扫描只保留末两个非空白字符；一旦即使扣除最大 padding 也已超 cap，
+        # 立即返回下限，既不解码也不继续遍历剩余编码载荷。
+        compact_len = 0
+        penultimate = last = ""
+        for char in raw:
+            if char.isspace():
+                continue
+            compact_len += 1
+            penultimate, last = last, char
+            if compact_len // 4 * 3 - 2 > cap:
+                return cap, False
+        padding = int(last == "=") + int(penultimate == "=")
+        size = max(0, compact_len // 4 * 3 - padding)
+        return (cap, False) if size > cap else (size, True)
+    if isinstance(raw, str) and len(raw) > cap:
+        return cap, False
+    try:
+        payload = part.get_payload(decode=True)
+    except Exception as e:  # 损坏的 CTE/编码：不因统计尺寸而整封失败
+        logger.warning("附件尺寸解析失败: %s", e)
+        return 0, False
+    if not payload:
+        return 0, True
+    if len(payload) > cap:
+        return cap, False
+    return len(payload), True
+
+
+def _decode_body(payload: bytes, charset: str | None) -> str:
+    """按声明字符集解码正文；未知字符集（``LookupError``）回退 utf-8。
+
+    FF-M-email/audit: 头部路径早有该兜底（`_decode_email_header`），但正文路径
+    （multipart 与非 multipart 共 4 处）直接把 `get_content_charset()` 交给
+    `bytes.decode` —— 声明了未知字符集的邮件会抛 `LookupError`，被 ParseStep 吞掉
+    后退化成 raw 透传假成功。
+    """
+    for candidate in (charset or "utf-8", "utf-8"):
+        try:
+            return payload.decode(candidate, errors="replace")
+        except LookupError:
+            logger.info("未知字符集 %r，回退 utf-8", candidate)
+            continue
+    return payload.decode("latin-1", errors="replace")
+
+
 # 可选依赖：MSG 解析
 try:
     import extract_msg
@@ -79,8 +138,9 @@ class EmailParser(BaseParser):
 
     @property
     def supported_magic(self) -> list[bytes]:
-        # EML 无固定魔数；MSG 是 OLE2 格式
-        return [b"\xd0\xcf\x11\xe0"] if MSG_AVAILABLE else []
+        # H18/audit: OLE2 魔数已移除——它属于 .doc/.ppt/.xls/.msg 四种格式且无法
+        # 区分，曾在无扩展名/收缩格式上把文件误路由到本解析器。.msg 由扩展名匹配。
+        return []
 
     def parse(self, file_path: Path) -> list[PageContent]:
         """解析邮件文件"""
@@ -201,11 +261,14 @@ class EmailParser(BaseParser):
                     filename = part.get_filename()
                     if filename:
                         decoded_name = _decode_email_header(filename)
+                        size, size_exact = _attachment_size(part)
                         attachments.append(
                             {
                                 "filename": decoded_name,
                                 "content_type": content_type,
-                                "size": len(part.get_payload(decode=True) or b""),
+                                "size": size,
+                                # FF-M-email/audit: 超过物化上限时 size 只是下限
+                                "size_exact": size_exact,
                             }
                         )
                     continue
@@ -215,16 +278,14 @@ class EmailParser(BaseParser):
                     try:
                         payload = cast(bytes | None, part.get_payload(decode=True))
                         if payload:
-                            charset = part.get_content_charset() or "utf-8"
-                            body_text += payload.decode(charset, errors="replace")
+                            body_text += _decode_body(payload, part.get_content_charset())
                     except Exception:
                         pass
                 elif content_type == "text/html":
                     try:
                         payload = cast(bytes | None, part.get_payload(decode=True))
                         if payload:
-                            charset = part.get_content_charset() or "utf-8"
-                            body_html += payload.decode(charset, errors="replace")
+                            body_html += _decode_body(payload, part.get_content_charset())
                     except Exception:
                         pass
         else:
@@ -233,13 +294,11 @@ class EmailParser(BaseParser):
             if content_type == "text/plain":
                 payload = cast(bytes | None, msg.get_payload(decode=True))
                 if payload:
-                    charset = msg.get_content_charset() or "utf-8"
-                    body_text = payload.decode(charset, errors="replace")
+                    body_text = _decode_body(payload, msg.get_content_charset())
             elif content_type == "text/html":
                 payload = cast(bytes | None, msg.get_payload(decode=True))
                 if payload:
-                    charset = msg.get_content_charset() or "utf-8"
-                    body_html = payload.decode(charset, errors="replace")
+                    body_html = _decode_body(payload, msg.get_content_charset())
 
         # 3. 输出正文（优先使用纯文本，回退到 HTML 提取）
         final_body = body_text.strip()
@@ -272,7 +331,8 @@ class EmailParser(BaseParser):
         # 4. 附件摘要
         if attachments:
             att_summary = f"附件 ({len(attachments)} 个): " + ", ".join(
-                f"{a['filename']} ({a['size'] // 1024}KB)" for a in attachments
+                f"{a['filename']} ({a['size'] // 1024}KB{'' if a.get('size_exact', True) else '+'})"
+                for a in attachments
             )
             elements.append(
                 ExtractedElement(
@@ -416,7 +476,9 @@ class EmailParser(BaseParser):
                 attachments.append(
                     {
                         "filename": att.longFilename or att.shortFilename or "(unnamed)",
-                        "size": att.dataSize if hasattr(att, "dataSize") else 0,
+                        # dataSize 缺失/为 None 时按 0（extract-msg 各版本字段不一）
+                        "size": int(getattr(att, "dataSize", 0) or 0),
+                        "size_exact": True,
                     }
                 )
         except Exception:

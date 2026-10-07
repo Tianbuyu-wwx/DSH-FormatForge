@@ -85,7 +85,7 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
       if (args.prompt) cliArgs.push('--prompt', String(args.prompt))
       // B9/v0.10.0: 目标语言透传
       if (args.language) cliArgs.push('--language', String(args.language).toLowerCase())
-      // A9/v0.10.0: output_file 透传
+      // A9/v0.10.0: output_file 透传（T2-2：多目标时下面会先拒掉，不会重复透传）
       if (args.output_file) cliArgs.push('--output-file', String(args.output_file))
       // R3.1 智能默认：quality 由模型显式传入，或 auto 模式下自动附带
       // （低置信/劣化场景在结果里自动出现 quality.actions，供自愈闭环消费）
@@ -113,6 +113,27 @@ export function createTranslateTool({ repoRoot, maxBytes, timeoutMs, log }) {
         targets = [...new Set(targets)]
         if (targets.length === 0) {
           return { ok: false, code: -1, error: { kind: 'file_not_found', message: `没有可用文件。${errors.join('; ')}` } }
+        }
+        // T2-2/audit: `output_file` 是**一个**路径。多目标时旧代码把同一个
+        // `--output-file` 原样传给每一次 spawn：后一份转换覆盖前一份，磁盘上只剩
+        // 最后一个文档，而返回给模型的 content 里是**全部**文档 ——「另存 content」
+        // 的承诺与落盘结果互相矛盾，中间产物无声丢失。
+        //
+        // 选「明确拒绝」而不是「自动派生多个输出路径」：多文件落盘已经有
+        // `ff_batch(out=...)`，它走 output guard，并用 `batch.py::_plan_out_paths`
+        // 的消歧规则（扩展名限定 → 源路径哈希）保证产物名两两不同。在 JS 侧再发明
+        // 第二套命名方案，只会多出一份与 batch 不一致、且要单独维护的语义。
+        if (args.output_file && targets.length > 1) {
+          return {
+            ok: false,
+            code: -1,
+            error: {
+              kind: 'bad_request',
+              message:
+                `output_file 只能配单个目标文件（当前 ${targets.length} 个）。` +
+                `多文件落盘请用 ff_batch(out=<目录>)，或对每个文件分别调用 ff_translate。`,
+            },
+          }
         }
         for (const t of targets.slice(0, 20)) {
           const check = validateLocalFile(t, maxBytes)

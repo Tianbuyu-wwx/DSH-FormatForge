@@ -209,5 +209,63 @@ class TestCSVParserTypeGuessing:
         assert parser._guess_type("") == "empty"
 
 
+
+class TestCSVRaggedRowsNotTruncated:
+    """T1-3/audit: 首行比后续行窄时，长行的多余单元格必须保留，不得被截断。"""
+
+    def _parse(self, tmp_path, text, name="ragged.csv"):
+        f = tmp_path / name
+        f.write_text(text, encoding="utf-8")
+        return CSVParser().parse(f)[0]
+
+    def test_wide_rows_survive_a_narrow_first_row(self, tmp_path):
+        # 首行是窄标题行，真正的数据有 4 列。
+        page = self._parse(
+            tmp_path,
+            "月度报表\nid,name,qty,note\n1,apple,7,fresh\n2,pear,9,ripe\n",
+        )
+        table = page.elements[0]
+        rows = [e for e in page.elements if e.elementType == "table_row"]
+
+        # all_rows：整表按最宽行归一，没有任何行被切短。
+        assert table.metadata["cols"] == 4
+        assert all(e.metadata["cols"] == 4 for e in rows)
+
+        # raw_lines / rawText：被截断的单元格原本在这里消失。
+        assert "fresh" in table.content
+        assert "ripe" in table.content
+        assert "note" in table.content
+        assert "fresh" in page.rawText
+        for cell in ("note", "fresh", "ripe"):
+            assert any(cell in e.content for e in rows)
+
+        # 窄首行补 "" 而不是反过来截断数据行。
+        assert rows[0].content.startswith("月度报表")
+        assert rows[0].content.count(",") == 3
+
+    def test_rendered_markdown_keeps_the_extra_columns(self, tmp_path):
+        from core.conversion_strategies import TableExtractionStrategy
+
+        page = self._parse(
+            tmp_path,
+            "月度报表\nid,name,qty,note\n1,apple,7,fresh\n",
+        )
+        rows = TableExtractionStrategy()._parse_table_rows(page.elements[0].content)
+        assert max(len(r) for r in rows) == 4
+        assert rows[-1] == ["1", "apple", "7", "fresh"]
+
+    def test_ragged_counter_still_counts_nonconforming_rows(self, tmp_path):
+        page = self._parse(tmp_path, "a,b\n1,2,3\n4,5\n")
+        table = page.elements[0]
+        # 宽度 3；第 1 行与第 3 行与整表列宽不一致。
+        assert table.metadata["cols"] == 3
+        assert table.metadata["ragged_rows"] == 2
+
+    def test_uniform_table_is_not_ragged(self, tmp_path):
+        page = self._parse(tmp_path, "a,b,c\n1,2,3\n")
+        assert page.elements[0].metadata["ragged_rows"] == 0
+        assert page.elements[0].metadata["cols"] == 3
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v', '--tb=short'])

@@ -45,11 +45,19 @@ function metaFromScan(head) {
     const m = new RegExp(`"${key}"\\s*:\\s*([0-9.]+)`).exec(head)
     return m ? Number(m[1]) : null
   }
+  // 顶层 ok 写在信封最前面（{"ok": true, "code": ..., "data": {...}），只看开头 4KB
+  // 判定即可，免得把正文里出现的 "ok":false 当成信封状态。
+  const okMatch = /"ok"\s*:\s*(true|false)/.exec(head.slice(0, 4096))
+  // T3-1: 大产物列表项也要带 enhance —— 否则只有索引库路径有，无库的 >2MB 产物一律 null
+  const enhMatch = /"enhance"\s*:\s*\{[^}]*?"reason"\s*:\s*"([^"]*)"/.exec(head)
   return {
     result_id: grab('result_id') || grab('resultId'),
     parser: grab('parser') || grab('fileType'),
     confidence: num('confidence'),
     source_name: grab('source_name') || grab('fileName'),
+    file_size: num('file_size'),
+    enhance: enhMatch ? { reason: enhMatch[1] } : null,
+    ok: okMatch ? okMatch[1] === 'true' : null,
   }
 }
 
@@ -70,11 +78,27 @@ function artifactMeta(doc, fileName) {
     fileType: meta.file_type || fileInfo.fileType || null,
     pages: meta.page_count ?? fileInfo.pageCount ?? 0,
     confidence,
+    fileSize: typeof meta.file_size === 'number' ? meta.file_size : typeof fileInfo.fileSize === 'number' ? fileInfo.fileSize : null,
     enhance: (data && data.enhance) || null,
     format: data.format || null,
     chars: rawContent.length,
     content: rawContent,
   }
+}
+
+/**
+ * JS-H1b: 产物信封校验 —— 收件箱目录对任何进程可写，「是合法 JSON」不等于「是一次转换的结果」。
+ * 缺 ok:true / 正文 / result_id（meta.result_id，旧产物用 data.resultId）的信封是伪造或半成品：
+ * 取回时拒绝（not_a_conversion_result），列表里标 valid:false。
+ */
+function isConversionResult(doc) {
+  if (!doc || typeof doc !== 'object' || doc.ok !== true) return false
+  const data = doc.data
+  if (!data || typeof data !== 'object') return false
+  if (typeof data.content !== 'string' && typeof data.convertedContent !== 'string') return false
+  const meta = data.meta || {}
+  const id = typeof meta.result_id === 'string' && meta.result_id ? meta.result_id : data.resultId
+  return typeof id === 'string' && id.length > 0
 }
 
 /** 产物名丢了源文件扩展名（`合同.txt` → `合同.ff.json`），用同目录同 stem 反查真实源名。
@@ -112,9 +136,11 @@ function rowFromFile(name, full) {
   const st = statSync(full)
   let doc = {}
   let scanned = null
+  let parsed = false
   try {
     if (st.size <= FULL_PARSE_LIMIT) {
       doc = JSON.parse(readFileSync(full, { encoding: 'utf8' }))
+      parsed = true
     } else {
       scanned = metaFromScan(readEdgeWindows(full))
     }
@@ -132,7 +158,12 @@ function rowFromFile(name, full) {
     m.parser = m.parser === '?' && scanned.parser ? scanned.parser : m.parser
     m.confidence = m.confidence === null ? scanned.confidence : m.confidence
     m.source = scanned.source_name || m.source
+    if (!m.enhance && scanned.enhance) m.enhance = scanned.enhance
+    if (m.fileSize === null && scanned.file_size !== null) m.fileSize = scanned.file_size
   }
+  // 小文件走整份解析 → 可严格校验；大文件只有首尾窗口 → 以 result_id 存在且信封未自报 ok:false 为准
+  // （顶层 ok 若排在数 MB 正文之后，窗口看不到，但 fetchOne 的整份 JSON.parse 仍会拒绝）。
+  const valid = parsed ? isConversionResult(doc) : Boolean(scanned && scanned.result_id && scanned.ok !== false)
   const stem = String(name).replace(/\.ff\.json$/, '')
   return {
     id: m.id,
@@ -141,10 +172,12 @@ function rowFromFile(name, full) {
     parser: m.parser,
     pages: m.pages,
     confidence: m.confidence,
+    file_size: m.fileSize,
     enhance: m.enhance?.reason || null,
     forged_at: st.mtime.toISOString(),
     size_bytes: st.size,
     path: full,
+    valid,
   }
 }
 
@@ -178,10 +211,12 @@ function rowFromDb(record) {
     parser: record.parser || '?',
     pages: record.pages ?? 0,
     confidence: typeof record.confidence === 'number' ? record.confidence : null,
+    file_size: record.source_bytes ?? null,
     enhance: record.enhance_reason || null,
     forged_at: new Date((record.created_at || 0) * 1000).toISOString(),
     size_bytes: record.source_bytes || 0,
     path: record.json_path || join(inboxDir(), `${record.id}.ff.json`),
+    valid: !record.status || record.status === 'ok',
     status: record.status || 'ok',
     session_id: record.session_id || null,
     chars: record.chars ?? null,
@@ -290,7 +325,7 @@ export function createResultTool({ log = () => {}, repoRoot = null } = {}) {
           }
           const lines = d.items.map(
             (it) =>
-              `- [${it.id}] ${it.source} (parser=${it.parser}, confidence=${it.confidence ?? '?'}` +
+              `- [${it.id}] ${it.source}${it.valid === false ? ' ⚠非转换产物' : ''} (parser=${it.parser}, confidence=${it.confidence ?? '?'}` +
               `${it.enhance ? `, ⚠enhance=${it.enhance}` : ''}, ${Math.round(it.size_bytes / 1024)}KB, ${it.forged_at})`,
           )
           const more = d.next_cursor ? `\n\n[还有更多：cursor=${d.next_cursor}]` : ''
@@ -426,6 +461,16 @@ async function fetchOne(rawId, args, log) {
   } catch (e) {
     return { ok: false, code: 4004, error: { kind: 'parse_failed', message: `产物损坏无法解析: ${e.message}` } }
   }
+  if (!isConversionResult(doc)) {
+    return {
+      ok: false,
+      code: 4004,
+      error: {
+        kind: 'not_a_conversion_result',
+        message: `收件箱里 "${target}" 不是有效转换结果（缺 ok:true / 正文 / meta.result_id），已拒绝取回。`,
+      },
+    }
+  }
   const m = artifactMeta(doc, target)
   const stemOfTarget = basename(target).replace(/\.ff\.json$/, '')
   m.source = resolveSourceName(dir, stemOfTarget, m.source)
@@ -445,6 +490,7 @@ async function fetchOne(rawId, args, log) {
       file_type: m.fileType,
       pages: m.pages,
       confidence: m.confidence,
+      file_size: m.fileSize,
       enhance: m.enhance,
       format: m.format,
       chars: m.chars,

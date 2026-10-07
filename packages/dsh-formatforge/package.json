@@ -1,7 +1,7 @@
 {
   "name": "@tianbuyu-wwx/dsh-formatforge",
-  "version": "3.0.0",
-  "description": "FormatForge for DeepSeek Harness: forge any file format (pdf/docx/xlsx/pptx/eml/toml/...) into AI-readable structured data. v3.0.0: 收件箱升级为 SQLite 索引库（元数据/全文检索 trigram/内容去重/会话溯源）+ 宿主右侧栏面板（搜索、预览、重转）+ 只读 API/SSE；顺带修好 ff_result 字段错配。v2.0.2: 拖拽文件夹不再卡死。协议仍为 v1。Thin bundle spawns local Python CLI (`python -m formatforge`) returning protocol JSON; enhancement delegated to current session model via enhance hints.",
+  "version": "3.0.1",
+  "description": "FormatForge for DeepSeek Harness: forge any file format (pdf/docx/xlsx/pptx/eml/toml/...) into AI-readable structured data. v3.0.0: 收件箱升级为 SQLite 索引库（元数据/全文检索 trigram/内容去重/会话溯源）+ 宿主右侧栏面板（搜索、预览、重转）+ 只读 API/SSE；顺带修好 ff_result 字段错配。v3.0.1: 采纳外部审计整改（PR #15 部分合并）。v2.0.2: 拖拽文件夹不再卡死。协议仍为 v1。Thin bundle spawns local Python CLI (`python -m formatforge`) returning protocol JSON; enhancement delegated to current session model via enhance hints.",
   "type": "module",
   "main": "./index.mjs",
   "exports": {

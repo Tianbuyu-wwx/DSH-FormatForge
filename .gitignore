@@ -58,8 +58,7 @@ logs/
 *.orig
 .commit_msg
 
-# ==================== 运行时数据 ====================
-data/
+# ==================== 运行时数据 =============data/
 probe_*.md
 probe_*.txt
 
@@ -70,3 +69,15 @@ packages/*/cordis.patch.yml.bak-*
 
 # 根目录 node_modules：本地脚手架可能创建（junction），不入库
 node_modules/
+=======
+# ==================== 本地测试脚手架产物 ====================
+# 手工跑 pytest / test-local 时重定向出来的捕获文件与临时脚本。
+# 它们不进版本库：结果随运行变化，且 `*-fails.txt` 只记录当次失败集。
+*.err
+*.out
+*-fails.txt
+pytest-*.out
+tmp_smoke_*.py
+tl.err
+tl.out
+>>>>>>> pr/15

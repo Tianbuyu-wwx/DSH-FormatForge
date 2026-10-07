@@ -6,6 +6,7 @@ OCR 引擎模块
 """
 
 import logging
+import os
 import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -44,6 +45,50 @@ try:
 except ImportError:
     pytesseract = None
     TESSERACT_AVAILABLE = False
+
+# H17 跟进：tesseract 在 Windows 上的常见安装位置（PATH 之外的兜底探测列表）。
+_TESSERACT_FALLBACK_PATHS = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Tesseract-OCR", "tesseract.exe"),
+)
+
+
+def _locate_standard_tesseract_binary() -> str | None:
+    """H17 跟进：按常见 Windows 安装位置探测 tesseract.exe，找到返回绝对路径。
+
+    机器上装了 tesseract 但没把它加进 PATH 是常态（用户提醒过：本机就装了）；
+    pytesseract 只会按 PATH 找二进制，所以这里显式兜底，让 OCR 在这类机器上
+    真正可用，而不是「诚实地不可用」。"""
+    for candidate in _TESSERACT_FALLBACK_PATHS:
+        try:
+            if candidate and os.path.isfile(candidate):
+                return candidate
+        except OSError:  # pragma: no cover - 环境变量损坏等极端情形
+            continue
+    return None
+
+
+if TESSERACT_AVAILABLE:
+    # H17/audit: 只凭 pytesseract *可导入* 就声明可用，会在没有 tesseract 二进制的
+    # 环境里静默返回空文本（confidence 0.0）却声称可用——这里必须再验证二进制本体。
+    try:
+        pytesseract.get_tesseract_version()
+    except Exception:
+        # H17 跟进：tesseract 常见于标准安装目录但不在 PATH 上（Windows 上尤其普遍）。
+        # 探测这些位置：找到就把 pytesseract 指向它，让 OCR 真正可用，而不是诚实地不可用。
+        located = _locate_standard_tesseract_binary()
+        if located:
+            try:
+                pytesseract.pytesseract.tesseract_cmd = located
+                pytesseract.get_tesseract_version()
+                logger.info("H17: tesseract 不在 PATH，但在标准安装位置找到并启用: %s", located)
+            except Exception:
+                TESSERACT_AVAILABLE = False
+                logger.warning("H17: 标准位置找到的 tesseract 无法运行，OCR 后端标记为不可用")
+        else:
+            TESSERACT_AVAILABLE = False
+            logger.warning("H17: pytesseract 可导入但 tesseract 二进制不可用（含标准位置探测），OCR 后端标记为不可用")
 
 try:
     from paddleocr import PaddleOCR

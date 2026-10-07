@@ -263,3 +263,42 @@ class TestOcrEngineIntegration:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v', '--tb=short'])
+
+
+class TestH17AvailabilityHonesty:
+    """H17/audit: is_available() 必须验证 tesseract 二进制，而非只看 pytesseract 可导入。"""
+
+    def test_tesseract_backend_without_binary_is_unavailable(self):
+        import core.ocr_engine as ocr
+
+        # 环境里没有 tesseract 二进制时，可用性标志必须是 False（而不是 import 成功就 True）
+        if not ocr.TESSERACT_AVAILABLE:
+            from core.ocr_engine import OcrEngine
+
+            engine = OcrEngine()
+            assert "tesseract" not in engine.get_available_backends()
+            assert not engine.is_available() or engine.get_available_backends()
+
+    def test_recognize_returns_empty_at_zero_confidence_when_unavailable(self, tmp_path):
+        import core.ocr_engine as ocr
+
+        if ocr.TESSERACT_AVAILABLE:
+            pytest.skip("本机装了 tesseract")
+        backend = ocr.TesseractBackend()
+        text, conf = backend.recognize(tmp_path / "whatever.png")
+        assert text == "" and conf == 0.0
+
+    def test_fallback_locates_binary_in_standard_location(self, tmp_path, monkeypatch):
+        """H17 跟进：PATH 没有 tesseract 时，标准安装位置探测应找到二进制并启用。"""
+        import core.ocr_engine as ocr
+
+        fake_exe = tmp_path / "tesseract.exe"
+        fake_exe.write_bytes(b"")  # 只验证「文件存在即命中探测」，版本由 mock 验证
+        monkeypatch.setattr(ocr, "_TESSERACT_FALLBACK_PATHS", (str(fake_exe),))
+        assert ocr._locate_standard_tesseract_binary() == str(fake_exe)
+
+    def test_fallback_returns_none_when_no_standard_location(self, tmp_path, monkeypatch):
+        import core.ocr_engine as ocr
+
+        monkeypatch.setattr(ocr, "_TESSERACT_FALLBACK_PATHS", (str(tmp_path / "missing.exe"),))
+        assert ocr._locate_standard_tesseract_binary() is None

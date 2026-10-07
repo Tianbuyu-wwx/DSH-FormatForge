@@ -59,13 +59,18 @@ export function smartTruncate(text, maxChars, start = 0) {
     // 没找到多文件分隔符 → 走原有逻辑（段落 > 行 > 硬切）
     cut = window.lastIndexOf('\n\n')
     sepLen = 2 // "\n\n"
-    if (cut < maxChars / 2) {
+    // audit M7: Python 用 `max_chars // 2`（下取整）；JS 此前是浮点 `maxChars / 2`，
+    // 奇数 max_chars 时恰好落在 max//2 的段落边界会被 Python 保留、被 JS 丢弃 → 分页不一致
+    if (cut < Math.floor(maxChars / 2)) {
       cut = window.lastIndexOf('\n')
       sepLen = 1 // "\n"
     }
   }
   let chunk, next
   if (cut <= 0) {
+    // H2/audit 镜像注释（与 core/utils.py::smart_truncate 同步修复）：
+    // windowEnd 本身就是绝对偏移，硬切分支直接用其作为 next——这里 JS 侧原本就正确，
+    // Python 侧曾写成 start + window_end（double-count start）导致丢内容与假 EOF。
     chunk = window
     next = windowEnd
   } else {

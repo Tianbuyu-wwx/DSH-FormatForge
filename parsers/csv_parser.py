@@ -42,31 +42,46 @@ class CSVParser(BaseParser):
 
         elements = []
         raw_lines = []
-        row_idx = 0
         all_rows = []
+        ragged_rows = 0
 
+        parsed_rows: list[list[str]] = []
         try:
-            with open(file_path, encoding=encoding, errors="ignore", newline="") as f:
+            # FF-L-csv/audit: errors="ignore" 会把 UTF-8 BOM 解成 ﻿ 字符粘到
+            # 首行第一列（表头变成 "﻿id"）；utf-8-sig 透明剥 BOM，gbk 不受影响。
+            read_encoding = "utf-8-sig" if encoding.startswith("utf-8") else encoding
+            with open(file_path, encoding=read_encoding, errors="ignore", newline="") as f:
                 reader = csv.reader(f, delimiter=delimiter)
                 for row in reader:
                     # 过滤空行
                     if not any(cell.strip() for cell in row):
                         continue
-                    all_rows.append(row)
-                    row_text = delimiter.join(cell.strip() for cell in row)
-                    raw_lines.append(row_text)
-                    elements.append(
-                        ExtractedElement(
-                            elementId=f"elem_1_{row_idx}",
-                            elementType="table_row",
-                            content=row_text,
-                            metadata={"row_index": row_idx, "cols": len(row)},
-                        )
-                    )
-                    row_idx += 1
+                    parsed_rows.append(row)
         except Exception as e:
             logger.error("CSV 解析失败: %s", e)
             raise ValueError(f"CSV 解析失败: {e}") from e
+
+        # T1-3/audit: 列宽以「全表最宽行」为准，短行补 ""，**绝不截断**长行。
+        # 旧实现以首行为准并对更长的行做 row[:width]，首行是标题/窄表头时会静默
+        # 丢列（all_rows、raw_lines、渲染表格三处同时丢），只剩 ragged_rows 计数。
+        # 下游按 header 宽度取列的错位风险由补齐解决，不需要截断。
+        width = max((len(row) for row in parsed_rows), default=0)
+        for row_idx, row in enumerate(parsed_rows):
+            if len(row) < width:
+                # ragged_rows 含义不变：与整表列宽不一致的行数。
+                row = row + [""] * (width - len(row))
+                ragged_rows += 1
+            all_rows.append(row)
+            row_text = delimiter.join(cell.strip() for cell in row)
+            raw_lines.append(row_text)
+            elements.append(
+                ExtractedElement(
+                    elementId=f"elem_1_{row_idx}",
+                    elementType="table_row",
+                    content=row_text,
+                    metadata={"row_index": row_idx, "cols": len(row)},
+                )
+            )
 
         # 表头检测
         has_header = self._detect_header(all_rows)
@@ -84,6 +99,7 @@ class CSVParser(BaseParser):
                 "delimiter": delimiter,
                 "header": header_text,
                 "has_header": has_header,
+                "ragged_rows": ragged_rows,
             },
         )
 

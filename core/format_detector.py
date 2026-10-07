@@ -90,7 +90,8 @@ class FormatDetector:
         b"\xff\xd8\xff": (DataFormat.JPEG, "image/jpeg"),
         b"GIF87a": (DataFormat.GIF, "image/gif"),
         b"GIF89a": (DataFormat.GIF, "image/gif"),
-        b"RIFF": (DataFormat.WEBP, "image/webp"),  # 需要进一步检查
+        # FF-M-riff/audit: b"RIFF" 不是单一格式（WEBP/WAVE/AVI 共用容器头），
+        # 见 RIFF_FORM_TYPES + _detect_riff_subtype（偏移 8..12 的 form type）。
         b"BM": (DataFormat.BMP, "image/bmp"),
         b"II*\x00": (DataFormat.TIFF, "image/tiff"),  # Little endian
         b"MM\x00*": (DataFormat.TIFF, "image/tiff"),  # Big endian
@@ -98,6 +99,14 @@ class FormatDetector:
         b"PK\x03\x04": (DataFormat.ZIP, "application/zip"),
         b"7z\xbc\xaf\x27\x1c": (DataFormat.SEVEN_Z, "application/x-7z-compressed"),
         b"Rar!": (DataFormat.RAR, "application/x-rar"),
+    }
+
+    # RIFF 容器的 form type（偏移 8..12）；FF-M-riff/audit: 曾无条件判为 WEBP，
+    # 使无扩展名/.wav 的 WAV、AVI 被误判成图片并喂给图片解析器。
+    RIFF_FORM_TYPES: dict[bytes, tuple[DataFormat, str]] = {
+        b"WEBP": (DataFormat.WEBP, "image/webp"),
+        b"WAVE": (DataFormat.AUDIO, "audio/wav"),
+        b"AVI ": (DataFormat.BINARY, "video/x-msvideo"),
     }
 
     # 扩展名映射
@@ -260,9 +269,9 @@ class FormatDetector:
         if len(data) < 4:
             return None
 
-        # 检查 WEBP（特殊处理，需要检查 RIFF 后面的格式）
-        if data[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP":
-            return FormatDetectionResult(format=DataFormat.WEBP, mime_type="image/webp", confidence=0.95)
+        # RIFF 容器按 form type 分派（WEBP/WAVE/AVI 共用 b"RIFF" 头）
+        if data[:4] == b"RIFF":
+            return self._detect_riff_subtype(data)
 
         # 检查 ZIP 子类型（DOCX/PPTX/XLSX）
         if data[:4] == b"PK\x03\x04":
@@ -274,6 +283,21 @@ class FormatDetector:
                 return FormatDetectionResult(format=fmt, mime_type=mime, confidence=0.95)
 
         return None
+
+    def _detect_riff_subtype(self, data: bytes) -> FormatDetectionResult | None:
+        """
+        FF-M-riff/audit: 按 RIFF form type（偏移 8..12）判定容器内容。
+
+        未知/过短的 RIFF 只宣称是 RIFF 二进制容器（低置信度），绝不冒充 WEBP——
+        这样扩展名（如 .wav）仍能在 detect() 的后续分支里胜出。
+        """
+        if len(data) < 12:
+            return None
+        mapped = self.RIFF_FORM_TYPES.get(data[8:12])
+        if mapped:
+            fmt, mime = mapped
+            return FormatDetectionResult(format=fmt, mime_type=mime, confidence=0.95)
+        return FormatDetectionResult(format=DataFormat.BINARY, mime_type="application/riff", confidence=0.6)
 
     def _detect_zip_subtype(self, data: bytes) -> FormatDetectionResult:
         """检测 ZIP 压缩包的子类型（DOCX/PPTX/XLSX/ODF）"""

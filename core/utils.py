@@ -120,8 +120,11 @@ def smart_truncate(text: str, max_chars: int, start: int = 0) -> tuple[str, int 
             cut = window.rfind("\n")
             sep_len = 1  # "\n"
     if cut <= 0:
+        # H2/audit 修复：硬切分支不再 double-count start——window_end 是绝对偏移，
+        # 直接作为下一页起点（此前 start + window_end 会跳过 ~60% 内容并提前报 EOF，
+        # 也破坏 JS 侧 smartTruncate 的分页契约，两侧已同步修复）。
         chunk = window
-        nxt = start + window_end
+        nxt = window_end
     else:
         chunk = window[:cut]
         nxt = start + cut + sep_len
@@ -149,7 +152,11 @@ def format_output(content: str, output_format: Any, structured_data: dict | None
             return f"# 转换结果\n\n{content}"
         return content
     elif output_format == OutputFormat.HTML:
-        html = content.replace("\n\n", "</p><p>").replace("\n", "<br>")
+        # H3/audit: 先整体 html.escape 再包 <div>——html_parser 的 unescape 与 markdown
+        # 的 raw-HTML 直通会把活体标签送进这条分支，不转义就是可执行的存储型 XSS 产物。
+        import html as _html
+
+        html = _html.escape(content).replace("\n\n", "</p><p>").replace("\n", "<br>")
         return f"<div class='converted-content'><p>{html}</p></div>"
     else:
         return content

@@ -6,6 +6,7 @@ from core.pdf_enhance import (
     detect_furniture,
     is_page_number_line,
     parse_pages_spec,
+    parse_pages_spec_ordered,
     reorder_two_columns,
     strip_furniture,
 )
@@ -19,14 +20,35 @@ class TestParsePagesSpec:
     def test_ranges_and_singles(self):
         assert parse_pages_spec("1-3,7") == {1, 2, 3, 7}
 
-    def test_reversed_range(self):
-        assert parse_pages_spec("5-3") == {3, 4, 5}
+    def test_reversed_range_rejected(self):
+        """H13: 递减范围是用户输入错误，统一以 "pages 参数格式错误" 拒绝（不再静默互换）。"""
+        with pytest.raises(ValueError, match="pages 参数"):
+            parse_pages_spec("5-3")
+
+    def test_zero_and_nonpositive_rejected(self):
+        """H13: 页号从 1 开始——拒绝 0。"""
+        with pytest.raises(ValueError, match="pages 参数"):
+            parse_pages_spec("0")
+        with pytest.raises(ValueError, match="pages 参数"):
+            parse_pages_spec("1-0")
 
     def test_invalid_raises(self):
         with pytest.raises(ValueError, match="pages 参数"):
             parse_pages_spec("abc")
         with pytest.raises(ValueError, match="pages 参数"):
             parse_pages_spec("1-")
+
+    def test_pathological_range_rejected_before_materialization(self, monkeypatch):
+        """T2-4: reject an enormous range before either parser calls range()."""
+        import core.pdf_enhance as pdf_enhance
+
+        def forbidden_range(*_args):
+            raise AssertionError("pathological page range was materialized")
+
+        monkeypatch.setattr(pdf_enhance, "range", forbidden_range, raising=False)
+        for parser in (parse_pages_spec, parse_pages_spec_ordered):
+            with pytest.raises(ValueError, match="pages 参数"):
+                parser("1-1000000000")
 
 
 class TestPageNumberLine:

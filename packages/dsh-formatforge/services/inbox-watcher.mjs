@@ -5,15 +5,15 @@
 // 行为：
 //   1. 轮询扫描 inbox（2s 间隔，简单可靠，不依赖 chokidar）。
 //   2. 文件稳定检测：连续两次采样 size/mtime 不变才转换（防拖拽半程）。
-//   3. 去重：产物 <stem>.ff.json 已存在且比源文件新 → 跳过（重复拖入不发通知）。
+//   3. 去重：产物 <source>.ff.json（源文件名含扩展名）已存在且比源文件新 → 跳过（重复拖入不发通知）。
 //   4. 转换：复用 runFormatForge（translate --format markdown --quality）。
-//   5. 产物：<stem>.ff.json（协议 JSON 全文）+ <stem>.ff.md（纯内容）；
-//      失败写 <stem>.ff.error.txt。源文件保留不删。
+//   5. 产物：<source>.ff.json（协议 JSON 全文）+ <source>.ff.md（纯内容）；
+//      失败写 <source>.ff.error.txt。源文件保留不删。
 //   6. 每次处理结束回调 onDone(result)，由 index.mjs 决定是否注入会话通知。
 
 import { join, basename, extname } from 'node:path'
 import { homedir } from 'node:os'
-import { readdirSync, statSync, existsSync, writeFileSync, unlinkSync, readFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
+import { readdirSync, statSync, existsSync, writeFileSync, renameSync, unlinkSync, readFileSync, appendFileSync, openSync, readSync, closeSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { runFormatForge } from './python-runner.mjs'
 import { dbDisabled, inboxDir as ffInboxDir } from './ff-paths.mjs'
@@ -58,6 +58,58 @@ const KNOWN_EXT = new Set([
 function isSupported(name) {
   const ext = extname(name).toLowerCase()
   return KNOWN_EXT.has(ext)
+}
+
+/** K-2: terminal bookkeeping must not rethrow when the source disappears. */
+export function sourceMtimeOr(path, fallbackMtimeMs = Date.now()) {
+  try {
+    return statSync(path).mtimeMs
+  } catch {
+    return fallbackMtimeMs
+  }
+}
+
+/**
+ * K-1: write the pair through same-directory temporary files, then publish the
+ * Markdown first and the JSON completion marker last. A crash can therefore
+ * leave Markdown ready for a retry, but never a new JSON marker without it.
+ */
+export function writeArtifactPairAtomic(
+  jsonPath,
+  jsonContent,
+  mdPath,
+  mdContent,
+  fsOps = { writeFileSync, renameSync, unlinkSync },
+) {
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const jsonTmp = `${jsonPath}.tmp-${token}`
+  const mdTmp = `${mdPath}.tmp-${token}`
+  try {
+    fsOps.writeFileSync(jsonTmp, jsonContent, 'utf8')
+    fsOps.writeFileSync(mdTmp, mdContent, 'utf8')
+    fsOps.renameSync(mdTmp, mdPath)
+    fsOps.renameSync(jsonTmp, jsonPath)
+  } finally {
+    try { fsOps.unlinkSync(jsonTmp) } catch { /* already published or absent */ }
+    try { fsOps.unlinkSync(mdTmp) } catch { /* already published or absent */ }
+  }
+}
+
+// ─── 产物键（JS-H4） ───
+// 产物名 = **源文件名（含扩展名）** + `.ff.*`：`foo.pdf` → `foo.pdf.ff.json`。
+// 旧的 stem-only 键在扁平收件箱里让 `foo.pdf` 与 `foo.docx` 都写 `foo.ff.json`，
+// 后到的转换覆盖先到的产物（Python round-1 H4/H5 的 JS 镜像：一次转换永久丢失，
+// 内容还会以错误的名字被 ff_result 供出去）。name → name+'.ff.*' 是单射，
+// 与 Python 侧一样用「结构性唯一键」而不是计数器/哈希来保证不撞。
+// 去重护栏：仅当同目录存在**另一个**源文件在大小写不敏感比较下同名（大小写敏感
+// 文件系统 + 大小写不敏感期望，或 Unicode 归一化）时才补源名短哈希；正常永不触发。
+const ARTIFACT_TAILS = ['.ff.json', '.ff.md', '.ff.error.txt', '.ff.retired.log']
+
+export function isArtifactName(name) {
+  // 大小写不敏感：Windows/macOS 上 `x.FF.JSON` 就是 `x.ff.json` 同一个文件，
+  // 上传口也要用它挡住大小写变体的伪造产物名
+  const lower = String(name ?? '').toLowerCase()
+  return ARTIFACT_TAILS.some((t) => lower.endsWith(t))
 }
 
 /**
@@ -108,13 +160,29 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
     }
   }
 
+  /** JS-H4: 单一产物键来源——写入、去重预检、跳过过滤都用它，保证三者永不脱节。 */
+  function artifactPaths(name, allNames) {
+    const names = allNames || listFiles()
+    const lower = name.toLowerCase()
+    const clash = names.some((o) => o !== name && isSupported(o) && !isArtifactName(o) && o.toLowerCase() === lower)
+    const key = clash ? `${name}.${createHash('sha1').update(name).digest('hex').slice(0, 8)}` : name
+    return {
+      key,
+      json: join(inbox, `${key}.ff.json`),
+      md: join(inbox, `${key}.ff.md`),
+      err: join(inbox, `${key}.ff.error.txt`),
+    }
+  }
+
   /** 返回需要处理的稳定新文件列表 */
   function scanStable() {
     const stable = []
     const seen = new Set()
-    for (const name of listFiles()) {
+    const srcNames = listFiles()
+    for (const name of srcNames) {
       seen.add(name)
-      if (name.endsWith('.ff.json') || name.endsWith('.ff.md') || name.endsWith('.ff.error.txt')) continue
+      // 产物（新式 <源名>.ff.* / 旧式 <stem>.ff.*）不是源文件
+      if (isArtifactName(name)) continue
       if (!isSupported(name)) continue
       const full = join(inbox, name)
       let st
@@ -129,8 +197,7 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
       if (doneAt.get(name) === st.mtimeMs) continue
 
       // 产物已存在且比源新 → 记 done，跳过（重启后不重做）
-      const stem = name.slice(0, -extname(name).length)
-      const jsonPath = join(inbox, `${stem}.ff.json`)
+      const jsonPath = artifactPaths(name, srcNames).json
       try {
         if (existsSync(jsonPath) && statSync(jsonPath).mtimeMs >= st.mtimeMs) {
           doneAt.set(name, st.mtimeMs)
@@ -143,7 +210,7 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
       const sig = `${st.size}:${st.mtimeMs}`
       if (prev === sig) {
         pending.delete(name)
-        stable.push({ full, name, size: st.size })
+        stable.push({ full, name, size: st.size, mtimeMs: st.mtimeMs })
       } else {
         pending.set(name, sig)
       }
@@ -206,16 +273,19 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
     if (pendingArtifacts.length > 0 || pendingPrune) scheduleIndexFlush()
   }
 
-  async function processOne({ full, name, size }) {    log(`[ff-inbox] converting ${name} (${size}B)`)
-    const stem = name.slice(0, -extname(name).length)
-    const jsonPath = join(inbox, `${stem}.ff.json`)
-    const mdPath = join(inbox, `${stem}.ff.md`)
-    const errPath = join(inbox, `${stem}.ff.error.txt`)
+  async function processOne({ full, name, size, mtimeMs }) {
+    log(`[ff-inbox] converting ${name} (${size}B)`)
+    // JS-H4: 产物键含源扩展名（`foo.pdf.ff.json`）——不再让 foo.pdf / foo.docx 互相覆盖
+    const { json: jsonPath, md: mdPath, err: errPath } = artifactPaths(name)
 
     // 尺寸 clamp
     if (size > maxBytes) {
       const msg = `文件 ${size} 字节超过上限 ${maxBytes}`
       writeFileSync(errPath, `[too_large] ${msg}`)
+      // JS-H3: 终态必须记 doneAt —— 此前这是 processOne 里唯一漏记的分支，
+      // 于是超限文件每个 tick 都重写错误文件 + 重发通知，永无止境。
+      // 语义与成功/失败路径一致：源文件 size/mtime 变了才会重新处理（这是对的）。
+      doneAt.set(name, sourceMtimeOr(full, mtimeMs))
       onDone?.({ file: name, ok: false, kind: 'too_large', message: msg })
       return
     }
@@ -231,13 +301,14 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
     })
 
     if (res.ok) {
-      writeFileSync(jsonPath, JSON.stringify(res, null, 2))
       const content = String(res.data?.content ?? '')
-      writeFileSync(mdPath, content)
+      writeArtifactPairAtomic(jsonPath, JSON.stringify(res, null, 2), mdPath, content)
       const meta = res.data?.meta || {}
       const enhance = res.data?.enhance && res.data.enhance.needed ? `；enhance=${res.data.enhance.reason}` : ''
       log(`[ff-inbox] done ${name}: parser=${meta.parser}, confidence=${meta.confidence}${enhance}`)
-      doneAt.set(name, statSync(full).mtimeMs)
+      // K-2/audit: 源文件可能在读写之间消失 —— 用采样到的 mtime 兜底，
+      // 不要在终态再去 stat（此前 statSync 抛错会让整轮 tick 崩掉）。
+      doneAt.set(name, sourceMtimeOr(full, mtimeMs))
       queueIndex(jsonPath) // v3.0.0: 落盘后进索引库（幂等；库不可用时静默跳过）
       onDone?.({
         file: name,
@@ -255,7 +326,7 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
       const message = res.error?.message || 'unknown error'
       writeFileSync(errPath, `[${kind}] ${message}`)
       log(`[ff-inbox] failed ${name}: ${kind}`)
-      doneAt.set(name, statSync(full).mtimeMs)
+      doneAt.set(name, sourceMtimeOr(full, mtimeMs))
       onDone?.({ file: name, ok: false, kind, message })
     }
   }
@@ -368,10 +439,9 @@ export function createInboxWatcher({ repoRoot, maxBytes = 100 * 1024 * 1024, tim
       // 首轮立即把「已有产物」的文件记为 done（重启不重放历史）
       try {
         for (const name of listFiles()) {
-          if (isSupported(name)) {
+          if (isSupported(name) && !isArtifactName(name)) {
             const st = statSync(join(inbox, name))
-            const stem = name.slice(0, -extname(name).length)
-            const jp = join(inbox, `${stem}.ff.json`)
+            const jp = artifactPaths(name).json
             if (existsSync(jp) && statSync(jp).mtimeMs >= st.mtimeMs) doneAt.set(name, st.mtimeMs)
           }
         }
