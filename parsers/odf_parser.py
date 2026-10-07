@@ -376,6 +376,8 @@ class ODFParser(BaseParser):
     def _safe_int(value: str | None, default: int) -> int:
         """H15/audit: 容错解析 int 属性并钳制——非数字回 default，超大值钳上限，
         阻断 text:c / number-columns-repeated / outline-level 的整数扩展炸弹。"""
+        if value is None:
+            return default
         try:
             return max(0, min(int(value), ODFParser._MAX_EXPANSION))
         except (TypeError, ValueError):

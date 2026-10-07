@@ -2,14 +2,17 @@
 
 旧实现 `mkdir(parents=True, exist_ok=True)` + `write_text` 接受任意路径：
 `--output-file ../../.dsh/config.json` 这类目标可被模型驱动的工具调用写入
-（与 H11 同类的无沙箱写原语）。这里把可写范围收敛到**用户显式声明的根**：
+（与 H11 同类的无沙箱写原语）。这里把可写范围收敛到两类根：
 
-  1. `FF_OUTPUT_ROOT` 环境变量（可多个，用 `os.pathsep` 分隔）是唯一授权来源；
-  2. 未声明时 fail closed，不再把 CLI 进程 CWD 当作隐式授权；
+  1. **产品自有数据根** `FF_HOME`（默认 `~/.dsh/formatforge`，收件箱所在目录，
+     与 Node 侧 ffHome/ff-paths 同一口径）——无需任何配置即可写，产品自己的产物就住这里；
+  2. `FF_OUTPUT_ROOT` 环境变量（可多个，用 `os.pathsep` 分隔）声明的**额外**可写根；
   3. 源文件目录只描述输入，不能扩大输出边界；
-  4. 仓库根和任何 Python 导入路径始终是只读保护区，即使配置误把它们包含在内；
+  4. 仓库根和任何 Python 导入路径始终是只读保护区，即使配置误把它们包含在内
+     （把 FF_HOME 指进仓库也不会因此获得写权限）；
   5. **文件写入另行限定输出扩展名白名单**（`resolve_output_file`）——见下方说明。
 
+两类根以外一律 fail closed：不再把 CLI 进程 CWD 当作隐式授权。
 越界即抛 `OutputPathError`，由调用方转成 `bad_request` 协议错误——不再
 「静默警告 + ok:true」。
 """
@@ -44,18 +47,30 @@ def _absolute(path: Path) -> Path:
         return path.expanduser().absolute()
 
 
+def _product_data_root() -> Path:
+    """产品自有数据根（`FF_HOME` → `$DSH_HOME/formatforge` → `~/.dsh/formatforge`）。
+
+    与 Node 侧 `services/ff-paths.mjs::ffHomeDir`、`services/inbox-watcher.mjs` 以及
+    Python 侧 `formatforge.inbox.ff_home` 同一口径：收件箱就住在这里，所以它是唯一
+    无需 `FF_OUTPUT_ROOT` 就能写的根（局部导入以免包初始化期出现循环依赖）。
+    """
+    from formatforge.inbox import ff_home
+
+    return _absolute(ff_home())
+
+
 def allowed_output_roots(*, source: Path | None = None) -> list[Path]:
-    """返回显式声明的可写根（source 仅为向后兼容，绝不授予权限）。"""
-    roots: list[Path] = []
+    """返回可写根：产品自有数据根 + `FF_OUTPUT_ROOT`（source 仅为向后兼容，绝不授予权限）。"""
+    resolved: list[Path] = [_product_data_root()]
     declared = os.environ.get("FF_OUTPUT_ROOT")
     if declared:
-        roots.extend(Path(chunk.strip()) for chunk in declared.split(os.pathsep) if chunk.strip())
-
-    resolved: list[Path] = []
-    for root in roots:
-        root_abs = _absolute(root)
-        if root_abs not in resolved:
-            resolved.append(root_abs)
+        for chunk in declared.split(os.pathsep):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            root_abs = _absolute(Path(chunk))
+            if root_abs not in resolved:
+                resolved.append(root_abs)
     return resolved
 
 
@@ -78,10 +93,6 @@ def resolve_output_path(
     """校验目标路径并返回可写绝对路径；越界抛 OutputPathError。"""
     resolved = _absolute(Path(target))
     roots = allowed_output_roots(source=source)
-    if not roots:
-        raise OutputPathError(
-            f"{label} 写入被拒绝：未配置 FF_OUTPUT_ROOT；请显式声明一个位于代码和 Python 导入路径之外的输出根。"
-        )
     for protected in _protected_output_roots():
         if resolved.is_relative_to(protected):
             raise OutputPathError(f"{label} 目标受保护：{resolved} 位于代码或 Python 导入路径 {protected} 内。")

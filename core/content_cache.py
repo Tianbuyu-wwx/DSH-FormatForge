@@ -49,8 +49,13 @@ class ContentHashCache:
             from core.config import settings
 
             persist_path = settings.CACHE_PERSIST_PATH
-        self._persist_path = persist_path
-        self._enable_disk_cache = enable_disk_cache
+        if persist_path is None:  # pragma: no cover - core/config.py 的 validator 保证非 None
+            # 兜底：没有可用落盘路径就关掉磁盘缓存，绝不退回 CWD 相对目录。
+            self._enable_disk_cache = False
+            self._persist_path: Path = Path.home() / ".dsh" / "formatforge" / "cache"
+        else:
+            self._enable_disk_cache = enable_disk_cache
+            self._persist_path = persist_path
 
         if self._enable_disk_cache:
             self._persist_path.mkdir(parents=True, exist_ok=True)

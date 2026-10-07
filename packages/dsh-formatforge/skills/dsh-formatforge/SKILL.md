@@ -17,7 +17,8 @@ when_to_use: |
     encoding（TXT 类编码覆写如 `gbk`/`latin-1`，**R3.3：自愈重试链路接通了**）、
     **v0.10.0**: language（ISO 639-1 目标语言 metadata，写入 enhance.hint）、
     **v0.10.0**: output_file（content 另存路径，stdout 协议 JSON 不变；**只对单个目标有效**，
-    多文件落盘用 `ff_batch(out=…)`）。
+    多文件落盘用 `ff_batch(out=…)`）。**3.0.1**: 落盘位置只能写在 `FF_HOME`（收件箱根）或
+    `FF_OUTPUT_ROOT` 之内，越界返回 `bad_request`（不要尝试写到仓库或任意 CWD 路径）。
   - `ff_formats` — 列出支持的输入格式。**v0.10.0**: category 过滤（document/data/email/image/archive/audio）。
     **v0.14.0**: 返回 `data.details[]` 含每个 format 的 capabilities 列表（如 `pdf` 有 `[furniture_strip, ocr, table, two_column]`），按能力选择 format。
   - `ff_result` — 收件箱取回。参数：id（单 id）/ ids（批量 `id1,id2,...`，**R3.2 ≤20**）/

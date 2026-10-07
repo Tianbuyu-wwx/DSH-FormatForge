@@ -27,8 +27,8 @@
   DOCX `w:sdt`/`w:ins` 与逐元素隔离；加密 PDF 未上报；邮件附件上限与正文 charset；
   `pdf_options` 只发给支持的解析器；`text_coverage` 改为证据式。
 - **复审轮**：stdout/stderr 累积后一次性 UTF-8 解码（修多字节中文跨 pipe chunk 的
-  静默损坏）；gb18030 必须先自证结构；未声明输出根时 fail closed；`--output-file` 与
-  `ff_batch --out` 先过输出守卫；CLI 标准流编码钉死（`formatforge/protocol.py`）；
+  静默损坏）；gb18030 必须先自证结构；`--output-file` 与 `ff_batch --out` 先过输出守卫；
+  CLI 标准流编码钉死（`formatforge/protocol.py`）；
   收件箱产物对原子发布、终态 mtime 守卫、批处理墙钟截止。
 
 ### 采纳（JS/插件）
@@ -46,8 +46,11 @@
 
 - **不再声明 `.doc` / `.ppt` / `.xlsb`**：这三个扩展名此前只是把 OLE2 二进制塞进
   摘要，属误导性声明；本次删除声明与四个解析器的 OLE2 分派（见 README 的格式表）。
-- **输出根未声明时 fail closed**：`--output-file` 与 `ff_batch --out` 必须落在显式
-  `FF_OUTPUT_ROOT` 内，仓库、CWD 与 `sys.path` 保护路径默认拒绝写入。
+- **输出边界收窄**：`--output-file` 与 `ff_batch --out` 只能落在产品自有数据根
+  `FF_HOME`（默认 `~/.dsh/formatforge`，收件箱所在目录）或显式声明的 `FF_OUTPUT_ROOT`
+  之内；仓库根、CWD 与任何 `sys.path` 导入路径永不授权。此前是「任意路径 + 失败只记
+  warning」，现在越界报 `bad_request`（退出码 7）。需要写到别处时声明 `FF_OUTPUT_ROOT`
+  （多个用 `os.pathsep` 分隔）。
 - upload 只接受绑定本机 GUI 端口的同源请求。
 
 ### 未采纳
@@ -63,10 +66,22 @@
 - 短样本 Big5（`test/fixtures/big5_traditional.txt` 仅 173 字节，chardet 给 Big5/0.45）
   曾被 0.5 置信度硬门整条丢弃，最终落到 latin-1；新增多字节弱置信兜底，且只在 utf-8
   与经佐证的 gb18030 都失败后才采信。
+- `--output-file` 的守卫曾把**产品自己的收件箱回写**也拒之门外（CI 的 `inbox` 往返步骤
+  因此退出码 7，插件 `ff_translate(output_file=…)` 也会连带失败）：改为未声明
+  `FF_OUTPUT_ROOT` 时回落到 `FF_HOME` 这一产品自有数据根，其余位置仍 fail closed。
+- mypy 阻塞项（CI `lint-python` 的 `Run mypy (blocking)`，14 errors / 3 files）：
+  `parsers/odf_parser.py` 的 `_safe_int` 缺 `None` 分支、`core/content_cache.py` 的
+  `_persist_path` 可空未收窄、`formatforge/batch.py` 的 `previous_integrity.get()`
+  结果未判空；三处均按「行为等价 + 显式收窄」修掉。
 
 ### 验证
 
 - `pytest test/ -q`：**800 passed / 5 skipped / 0 failed**（3.0.0 基线 575 passed / 0 failed）。
+- CI 门禁本地复现：`ruff check .` + `ruff format --check .` 全绿；`mypy core/ parsers/ formatforge/`
+  只剩本机 numpy 存根噪声（`numpy\__init__.pyi:737: Type statement is only supported in
+  Python 3.12 and greater`，main 同样报，非本次引入）；CI 的 `inbox` 端到端步骤
+  （`translate … --output-file "$FF_HOME/inbox/合同2024.ff.md" > …ff.json` 后 index/query/stats）
+  本地复现 rc 全 0。
 - 插件 Node 测试全绿：`packages/dsh-formatforge/test/*.mjs` 17 个 + CI 列出的
   `test-client-bundle`/`test-client-drag`/`test-client-panel`/`test-result-contract`/
   `test-plugin-boot`/`test-manifest`/`test-api`/`test-host-http`。

@@ -488,7 +488,12 @@ def cmd_batch(args: argparse.Namespace) -> int:
             continue
         existing = out_path
         record = previous_integrity.get(_out_key(existing))
-        if existing.exists() and existing.stat().st_mtime >= t.stat().st_mtime and _artifact_matches(existing, record):
+        if (
+            record is not None
+            and existing.exists()
+            and existing.stat().st_mtime >= t.stat().st_mtime
+            and _artifact_matches(existing, record)
+        ):
             skipped += 1
             preserved_artifacts.append(
                 {

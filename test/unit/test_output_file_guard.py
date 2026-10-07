@@ -138,14 +138,21 @@ class TestOutputFileGuard:
 
 
 class TestOutputGuardUnit:
-    def test_missing_root_fails_closed(self, monkeypatch, tmp_path):
+    def test_missing_root_falls_back_to_product_data_root(self, monkeypatch, tmp_path):
+        """未声明 FF_OUTPUT_ROOT 时只有产品自有数据根（FF_HOME）可写，其余一律 fail closed。"""
         from formatforge.output_guard import OutputPathError, allowed_output_roots, resolve_output_path
 
         monkeypatch.delenv("FF_OUTPUT_ROOT", raising=False)
-        monkeypatch.chdir(tmp_path)
-        assert allowed_output_roots() == []
+        monkeypatch.setenv("FF_HOME", str(tmp_path / "home"))
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+
+        assert allowed_output_roots() == [(tmp_path / "home").resolve()]
+        inbox_target = tmp_path / "home" / "inbox" / "note.md"
+        assert resolve_output_path(inbox_target) == inbox_target.resolve()
         with pytest.raises(OutputPathError, match="FF_OUTPUT_ROOT"):
-            resolve_output_path("sub/out.md")
+            resolve_output_path(tmp_path / "elsewhere" / "leak.md")
 
     def test_traversal_escape_is_denied(self, monkeypatch, tmp_path):
         from formatforge.output_guard import OutputPathError, resolve_output_path
@@ -163,9 +170,11 @@ class TestOutputGuardUnit:
 
         declared = tmp_path / "declared"
         monkeypatch.setenv("FF_OUTPUT_ROOT", str(declared))
+        monkeypatch.setenv("FF_HOME", str(tmp_path / "home"))
         src = _make_source(tmp_path)
         roots = allowed_output_roots(source=src)
-        assert roots == [declared.resolve()]
+        # 产品自有数据根（FF_HOME）恒在；source 目录既不加根，也不能变成可写目标。
+        assert roots == [(tmp_path / "home").resolve(), declared.resolve()]
         with pytest.raises(OutputPathError):
             resolve_output_path(src.with_suffix(".md"), source=src)
 

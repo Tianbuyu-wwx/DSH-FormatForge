@@ -74,7 +74,8 @@ setx FF_REPO_ROOT "D:\DSH-FormatForge"
 | `FF_MAX_BYTES` | 104857600 | 单文件上限（100MB） |
 | `FF_TIMEOUT_S` | 120 | 单次转换超时（秒） |
 | `FF_INBOX_NOTIFY` | true | 锻造完成后是否向会话注入轻量通知 |
-| `FF_HOME` | `$DSH_HOME/formatforge` → `~/.dsh/formatforge` | 收件箱根目录 |
+| `FF_HOME` | `$DSH_HOME/formatforge` → `~/.dsh/formatforge` | 收件箱根目录，同时也是 `--output-file` / `ff_batch --out` 默认唯一可写根 |
+| `FF_OUTPUT_ROOT` | 无 | 额外可写根（多个用 `os.pathsep` 分隔）；仓库、CWD 与 `sys.path` 永不授权 |
 | `OCR_ENABLED` | true | 启用本地 OCR（tesseract/paddleocr/easyocr 任一） |
 
 ## 链接
